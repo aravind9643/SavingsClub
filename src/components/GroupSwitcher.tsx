@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSession } from '../context/SessionContext';
-import { Sheet, List, Row, Notice, ErrorNote, initials, Tag } from './ui';
+import { Sheet, List, Row, Notice, ErrorNote, initials, Tag, roleLabel } from './ui';
 import { IconPlus, IconCheck } from './icons';
 
 /**
@@ -48,7 +48,7 @@ export default function GroupSwitcher({
 
           const roleText = g.status === 'pending'
             ? 'waiting for approval'
-            : g.role !== 'member' ? g.role : 'member';
+            : roleLabel(g.role);
 
           const subParts = [roleText];
           if (!g.setup_complete && g.status !== 'pending') {
@@ -84,8 +84,8 @@ export default function GroupSwitcher({
       {groups.some((g) => g.status === 'pending') && (
         <div style={{ marginTop: 14 }}>
           <Notice tone="warn">
-            A group you have asked to join shows nothing until one of its officers
-            approves you.
+            A group you asked to join shows nothing until someone from it lets
+            you in.
           </Notice>
         </div>
       )}

@@ -214,7 +214,7 @@ export default function LoanDetail() {
         )}
         {loan.status === 'approved' && isBorrower && (
           <Notice tone="warn">
-            You cannot pay out your own loan — the other officer must do it.
+            You cannot pay out your own loan — the cashier or accountant must do it.
           </Notice>
         )}
       </Screen>

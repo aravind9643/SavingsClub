@@ -4,7 +4,7 @@ import { Screen, useAppTheme, useGroupSwitcher } from '../App';
 import { useSession } from '../context/SessionContext';
 import { supabase } from '../lib/supabase';
 import { useMutation } from '../hooks/useQuery';
-import { List, Row, Panel, Sheet, Field, Busy, ErrorNote, initials, Tag } from '../components/ui';
+import { List, Row, Panel, Sheet, Field, Busy, ErrorNote, initials, Tag, roleLabel } from '../components/ui';
 import {
   IconExpenses, IconBank, IconMembers, IconSettings, IconAudit,
   IconSun, IconMoon, IconLogout, IconPlus, IconChevronDown,
@@ -39,8 +39,8 @@ export default function More() {
           </div>
           <div style={{ marginTop: 7, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {role === 'member'
-              ? <Tag>member</Tag>
-              : <Tag tone="mint">{role}</Tag>}
+              ? <Tag>Member</Tag>
+              : <Tag tone="mint">{roleLabel(role)}</Tag>}
             {openSwitcher && group ? (
               <button
                 type="button"

@@ -7,7 +7,7 @@ import { useSession } from '../context/SessionContext';
 import { formatPaise, formatPaiseShort } from '../lib/money';
 import {
   Panel, List, Row, Sheet, Field, Busy, ErrorNote, Notice,
-  SkeletonList, initials, Stat, Tag, fmtDate,
+  SkeletonList, initials, roleLabel, Stat, Tag, fmtDate,
 } from '../components/ui';
 import { IconPlus } from '../components/icons';
 import type { MemberPosition, Member, Role, PendingMember } from '../lib/types';
@@ -18,10 +18,14 @@ interface RoleRow {
   start_date: string; end_date: string | null;
 }
 
+// The three jobs. The names stay as they are -- these are the titles the group
+// uses out loud and the ones written into the signed agreement, so inventing
+// plainer words here would only make the app disagree with the paperwork.
+// What each one DOES is said plainly instead.
 const OFFICES: { role: Role; label: string; note: string }[] = [
-  { role: 'cashier', label: 'Cashier', note: 'Handles money and the cash float' },
-  { role: 'accountant', label: 'Accountant', note: 'Keeps the records' },
-  { role: 'president', label: 'President', note: 'Third signatory, settles disputes' },
+  { role: 'cashier', label: 'Cashier', note: 'Takes money in and holds the cash' },
+  { role: 'accountant', label: 'Accountant', note: 'Keeps the records and checks the bank' },
+  { role: 'president', label: 'President', note: 'Settles disagreements, does not handle money' },
 ];
 
 export default function Members() {
@@ -147,7 +151,7 @@ export default function Members() {
                       m?.is_active && !m?.auth_user_id
                         ? `${m.email ?? 'no email'} · not signed in`
                         : p.role !== 'member'
-                          ? p.role
+                          ? roleLabel(p.role)
                           : `${Number(p.share_pct).toFixed(0)}% of the fund`
                     }
                     amount={formatPaiseShort(p.contributed_paise)}
@@ -266,8 +270,8 @@ function ReviewJoinSheet({
       </div>
 
       <Notice tone="warn">
-        Approving lets this person see every contribution, loan and expense in the
-        group. Only approve someone you recognise — invite codes get forwarded.
+        Once you let them in they can see every payment, loan and expense in the
+        group. Only let in someone you know — codes get forwarded around.
       </Notice>
 
       <div className="btn-row stack">
@@ -434,7 +438,7 @@ function MemberDetailSheet({
         <div>
           <div style={{ fontWeight: 600, fontSize: '1.05rem' }}>{position.full_name}</div>
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-            <Tag tone={position.role !== 'member' ? 'mint' : undefined}>{position.role}</Tag>
+            <Tag tone={position.role !== 'member' ? 'mint' : undefined}>{roleLabel(position.role)}</Tag>
             {!position.is_active && <Tag tone="coral">Left</Tag>}
           </div>
         </div>

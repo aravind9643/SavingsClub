@@ -379,6 +379,25 @@ export function initials(name: string | undefined | null): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+/**
+ * A role, written the way it is spoken.
+ *
+ * `role` arrives from the database as a lowercase enum -- 'cashier',
+ * 'president'. Four separate places were printing that value straight onto the
+ * screen, so a member's own profile tag read "president" in lower case while
+ * the Members page listed "President" a few rows away. One helper means the
+ * spelling cannot drift apart again.
+ */
+export function roleLabel(role: string | null | undefined): string {
+  switch (role) {
+    case 'cashier': return 'Cashier';
+    case 'accountant': return 'Accountant';
+    case 'president': return 'President';
+    case 'member': return 'Member';
+    default: return role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Member';
+  }
+}
+
 export function toneForStatus(status: string, withdrawn = false): Tone {
   // A withdrawal is not a refusal: the requester changed their mind. Showing
   // it in the same alarming red as a rejection misreports what happened, and

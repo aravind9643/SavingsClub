@@ -177,7 +177,7 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
     <>
       <h1>Join a group</h1>
       <p className="muted" style={{ marginTop: 8, marginBottom: 20 }}>
-        Enter the code an officer of the group gave you.
+        Enter the code someone from the group gave you.
       </p>
 
       <ErrorNote error={check.error ?? join.error} />
@@ -226,7 +226,7 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
 
           <div style={{ marginTop: 14 }}>
             <Notice tone="warn">
-              An officer has to approve you before you can see the group's money.
+              Someone from the group has to let you in before you can see the money.
             </Notice>
           </div>
         </>
@@ -285,9 +285,9 @@ export function AwaitingApproval() {
         <div className="auth-logo">⏳</div>
         <h1>Waiting for approval</h1>
         <p className="muted" style={{ marginTop: 10 }}>
-          Your request to join <strong>{group?.name}</strong> as{' '}
-          <strong>{session?.user.email}</strong> is with the group's officers. You
-          will see the accounts as soon as one of them approves it.
+          You asked to join <strong>{group?.name}</strong> as{' '}
+          <strong>{session?.user.email}</strong>. The cashier, accountant or
+          president will let you in. You will see the money once they do.
         </p>
 
         <ErrorNote error={error} />

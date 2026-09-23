@@ -10,7 +10,7 @@ import { haptic } from '../lib/haptics';
 import { toDateString } from '../lib/dates';
 import {
   Hero, Chip, Notice, Panel, Stat, List, Row, Empty,
-  initials, ago, fmtDate, SkeletonList, Sheet,
+  initials, ago, fmtDate, SkeletonList, Sheet, roleLabel,
 } from '../components/ui';
 import {
   IconPlus, IconArrowUp, IconArrowDown, IconBank, IconInbox, IconCheck, IconShare,
@@ -387,7 +387,7 @@ export default function Dashboard() {
                         {p.member_id === member?.id ? ' · you' : ''}
                       </>
                     }
-                    sub={p.role === 'member' ? `${Number(p.share_pct).toFixed(0)}% of the fund` : p.role}
+                    sub={p.role === 'member' ? `${Number(p.share_pct).toFixed(0)}% of the fund` : roleLabel(p.role)}
                     amount={formatPaiseShort(p.contributed_paise)}
                     note={
                       p.outstanding_paise > 0
@@ -544,7 +544,7 @@ _Sent from Sanchay_`;
       ['Member', 'Role', 'Saved (Rs)', 'Share of fund %', 'Still owes (Rs)'],
       ...positions.map((p) => [
         `"${p.full_name.replace(/"/g, '""')}"`,
-        p.role,
+        roleLabel(p.role),
         (p.contributed_paise / 100).toFixed(2),
         `${Number(p.share_pct).toFixed(1)}%`,
         (p.outstanding_paise / 100).toFixed(2),
