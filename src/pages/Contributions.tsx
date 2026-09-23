@@ -130,28 +130,43 @@ export default function Contributions() {
     });
   }, [allActiveMembers, period]);
 
+  // A member can now pay a month in instalments, so this sums their rows
+  // instead of keeping the last one. Mapping member -> single Contribution
+  // meant a second payment overwrote the first on screen, and "has a row"
+  // counted as "paid in full" -- which is exactly how a half-paid member
+  // used to disappear off the chase-list.
   const paidMap = useMemo(() => {
-    const map = new Map<string, Contribution>();
+    const map = new Map<string, { rows: Contribution[]; paid: number; fees: number }>();
     for (const c of contribsQ.data ?? []) {
-      if (c.period_id === period?.id) map.set(c.member_id, c);
+      if (c.period_id !== period?.id) continue;
+      const at = map.get(c.member_id) ?? { rows: [], paid: 0, fees: 0 };
+      at.rows.push(c);
+      at.paid += c.amount_paise;
+      at.fees += c.late_fee_paise;
+      map.set(c.member_id, at);
     }
     return map;
   }, [contribsQ.data, period?.id]);
 
-  const paidCount = members.filter((m) => paidMap.has(m.id)).length;
+  // Per member for this month. The group-wide total is `expectedTotal` below.
+  const perMember = period?.amount_paise ?? 0;
+  const isSettled = (id: string) =>
+    perMember > 0 && (paidMap.get(id)?.paid ?? 0) >= perMember;
+
+  const paidCount = members.filter((m) => isSettled(m.id)).length;
   const unpaidCount = members.length - paidCount;
 
   const shownMembers = useMemo(() => {
-    if (memberFilter === 'paid') return members.filter((m) => paidMap.has(m.id));
-    if (memberFilter === 'unpaid') return members.filter((m) => !paidMap.has(m.id));
+    if (memberFilter === 'paid') return members.filter((m) => isSettled(m.id));
+    if (memberFilter === 'unpaid') return members.filter((m) => !isSettled(m.id));
     return members;
-  }, [members, paidMap, memberFilter]);
+  }, [members, paidMap, memberFilter, perMember]);
 
   const collected = members.reduce((sum, m) => {
     const c = paidMap.get(m.id);
-    return sum + (c ? c.amount_paise + c.late_fee_paise : 0);
+    return sum + (c ? c.paid + c.fees : 0);
   }, 0);
-  const expected = (period?.amount_paise ?? 0) * members.length;
+  const expectedTotal = (period?.amount_paise ?? 0) * members.length;
 
   if ((periodsQ.loading && !periodsQ.data) || (rolesQ.loading && !rolesQ.data)) {
     return <Screen title="Collection"><SkeletonList rows={5} /></Screen>;
@@ -221,10 +236,10 @@ export default function Contributions() {
               {formatPaise(collected)}
             </div>
             <div className="dim" style={{ marginTop: 2 }}>
-              {paidCount} of {members.length} paid · {formatPaiseShort(expected)} expected
+              {paidCount} of {members.length} paid · {formatPaiseShort(expectedTotal)} expected
             </div>
             <div className="meter">
-              <i style={{ width: `${expected ? (collected / expected) * 100 : 0}%` }} />
+              <i style={{ width: `${expectedTotal ? (collected / expectedTotal) * 100 : 0}%` }} />
             </div>
           </div>
         )}
@@ -293,33 +308,45 @@ export default function Contributions() {
             <List>
               {shownMembers.map((m) => {
                 const c = paidMap.get(m.id);
-                const overdue = !c && period && new Date(period.grace_date) < new Date();
+                const settled = isSettled(m.id);
+                // Part paid is its own state. Showing a tick for someone who
+                // has paid half is how the group stops chasing the rest.
+                const part = !!c && !settled;
+                const short = perMember - (c?.paid ?? 0);
+                const last = c?.rows[c.rows.length - 1];
+                const overdue = !settled && period && new Date(period.grace_date) < new Date();
                 return (
                   <Row
                     key={m.id}
-                    icon={c ? <IconCheck width={17} height={17} /> : initials(m.full_name)}
-                    iconTone={c ? 'mint' : overdue ? 'coral' : undefined}
+                    icon={settled ? <IconCheck width={17} height={17} /> : initials(m.full_name)}
+                    iconTone={settled ? 'mint' : overdue ? 'coral' : undefined}
                     title={m.full_name}
                     sub={
-                      c
-                        ? `Paid ${fmtDate(c.paid_on)}${c.late_fee_paise > 0 ? ' · late' : ''}`
-                        : overdue
-                          ? `Overdue since ${fmtDate(period?.grace_date)}`
-                          : `Due ${fmtDate(period?.due_date)}`
+                      settled
+                        ? `Paid ${fmtDate(last?.paid_on)}${(c?.fees ?? 0) > 0 ? ' · late' : ''}`
+                        : part
+                          ? `${formatPaiseShort(short)} still to pay`
+                          : overdue
+                            ? `Overdue since ${fmtDate(period?.grace_date)}`
+                            : `Due ${fmtDate(period?.due_date)}`
                     }
-                    amount={c ? formatPaiseShort(c.amount_paise) : '—'}
-                    amountTone={c ? 'mint' : undefined}
-                    note={c && c.late_fee_paise > 0 ? `+${formatPaiseShort(c.late_fee_paise)} fee` : undefined}
+                    amount={c ? formatPaiseShort(c.paid) : '—'}
+                    // Only a settled month gets the green figure. A part
+                    // payment is left plain rather than coloured: it is
+                    // neither done nor a problem, and the shortfall in `sub`
+                    // already says what is missing.
+                    amountTone={settled ? 'mint' : undefined}
+                    note={c && c.fees > 0 ? `+${formatPaiseShort(c.fees)} fee` : undefined}
                     onClick={() => {
                       haptic(10);
-                      if (c) {
+                      if (settled && last) {
                         setReceiptData({
                           memberName: m.full_name,
-                          amountPaise: c.amount_paise,
-                          lateFeePaise: c.late_fee_paise,
+                          amountPaise: c!.paid,
+                          lateFeePaise: c!.fees,
                           month: monthLabel(period.period_month),
-                          paidOn: c.paid_on,
-                          method: c.method,
+                          paidOn: last.paid_on,
+                          method: last.method,
                         });
                       } else if (isMoneyHandler && period && !period.closed_at) {
                         setUnpaidAction({ period, member: m });
@@ -351,7 +378,14 @@ export default function Contributions() {
         <RecordSheet
           period={paying.period}
           member={paying.member}
-          defaultPaise={config.monthly_contribution_paise}
+          // What is still owed, not the full month -- someone topping up a
+          // part payment should not have to clear the field first.
+          defaultPaise={Math.max(
+            0,
+            (paying.period.amount_paise ?? config.monthly_contribution_paise)
+              - (paidMap.get(paying.member.id)?.paid ?? 0),
+          )}
+          alreadyPaid={paidMap.get(paying.member.id)?.paid ?? 0}
           onClose={() => setPaying(null)}
           onRecorded={(r) => setReceiptData(r)}
         />
@@ -399,11 +433,13 @@ function isThisMonth(iso: string): boolean {
 }
 
 function RecordSheet({
-  period, member, defaultPaise, onClose, onRecorded,
+  period, member, defaultPaise, alreadyPaid, onClose, onRecorded,
 }: {
   period: ContributionPeriod;
   member: Member;
   defaultPaise: number;
+  /** Paid toward this month already. Non-zero means this is a top-up. */
+  alreadyPaid: number;
   onClose: () => void;
   onRecorded: (r: { memberName: string; amountPaise: number; lateFeePaise: number; month: string; paidOn: string; method: string }) => void;
 }) {
@@ -449,7 +485,20 @@ function RecordSheet({
 
       <ErrorNote error={save.error} />
 
+      {alreadyPaid > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <Notice>
+            Already paid {formatPaise(alreadyPaid)} of{' '}
+            {formatPaise(period.amount_paise)} this month.
+          </Notice>
+        </div>
+      )}
+
       <AmountField value={amount} onChange={setAmount} autoFocus />
+
+      <p className="dim" style={{ marginTop: 8, fontSize: '0.85rem' }}>
+        A part payment is fine — record the rest whenever it arrives.
+      </p>
 
       <div className="field-row" style={{ marginTop: 14 }}>
         <Field label="Paid on">

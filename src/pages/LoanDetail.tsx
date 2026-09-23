@@ -107,7 +107,10 @@ export default function LoanDetail() {
           <div className="hero-meta">
             <Tag tone={loan.is_overdue ? 'coral'
               : toneForStatus(loan.status, loan.withdrawn_by_requester)}>
-              {loan.is_overdue ? `${loan.days_overdue} days overdue`
+              {loan.is_overdue
+                ? loan.arrears_paise > 0
+                  ? `${formatPaiseShort(loan.arrears_paise)} behind`
+                  : `${loan.days_overdue} days overdue`
                 : labelForStatus(loan.status, loan.withdrawn_by_requester)}
             </Tag>
             <Tag>{(loan.rate_bp / 100).toFixed(0)}% / month</Tag>
@@ -144,7 +147,11 @@ export default function LoanDetail() {
                 ? `incl. ${formatPaiseShort(loan.accrued_penalty_paise)} penalty`
                 : 'on reducing balance'}
             />
-            <Stat k="Due date" v={fmtDate(loan.due_on)} s={loan.disbursed_on ? `from ${fmtDate(loan.disbursed_on)}` : 'not given out yet'} />
+            <Stat
+              k="Next payment"
+              v={fmtDate(loan.next_due_on ?? loan.due_on)}
+              s={loan.next_due_on ? `last one ${fmtDate(loan.due_on)}` : 'final payment'}
+            />
           </div>
           <div style={{ marginTop: 12 }}>
             <p className="dim" style={{ margin: 0 }}>

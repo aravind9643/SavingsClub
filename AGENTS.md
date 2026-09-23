@@ -377,7 +377,7 @@ Six rules, every one of which was learned by breaking a real push:
 The backfill block in `0012` returns early when `members` is empty, so it is a
 no-op on a fresh database.
 
-### Applied & Prepared Migrations (0001–0019)
+### Applied & Prepared Migrations (0001–0032)
 
 | Migration | Name | Description |
 |---|---|---|
@@ -407,6 +407,130 @@ no-op on a fresh database.
 | `0024` | `rename_president_to_admin.sql` | `role_enum` label renamed in place; all 17 functions and 1 policy redefined in the same transaction |
 
 ---
+
+## The group lifecycle (0025–0032)
+
+Until 0025 the app was an excellent ledger and an incomplete group: it recorded
+money moving in and out with real rigour, but had almost nothing for the events
+that END things. Those are exactly the moments savings groups argue about.
+
+### Money can now leave (`member_payouts`, 0025)
+
+**This was a wrong number, not a missing feature.** `remove_member` marked a
+member `left` and never returned their savings; `fn_fund_total_paise()` had no
+payout term, so their money was absorbed and every remaining member's share
+quietly grew to swallow it. In a three-member worked example, a departing
+member's ₹54,545 inflated one remaining member's share by ₹27,272.
+
+- A payout is **not** an expense (it would hit the annual cap and lose the
+  member link) and **not** a reversed contribution (history stays as recorded).
+  It is its own event; the fund nets the two.
+- `member_share_paise()` is pro-rata by net contribution — a rule the group can
+  check by hand at a meeting. A time-weighted rule is arguably fairer to early
+  joiners but cannot be verified, and an unverifiable figure will not be
+  trusted.
+- `remove_member` now refuses while a share of more than ₹1 remains. The ₹1 of
+  slack absorbs the truncating division, which always rounds toward the fund —
+  the group can never be made short by a rounding rule.
+
+### Part payments are recordable (0026)
+
+`unique (period_id, member_id)` made a routine event impossible. Worse: because
+`v_unpaid_contributions` used `where c.id is null`, the FIRST payment marked the
+month fully settled, so **a half-paid member vanished off the group's own
+chase-list**.
+
+- Unpaid now means `sum(paid) < expected`, not "no row exists". The 0004 design
+  note was right — unpaid is derived, never stored. The bug was comparing
+  existence where it should have compared amounts.
+- Late fee is charged **once per member per period**, not per instalment.
+- Overpayment is refused explicitly. The unique constraint used to prevent it
+  by accident.
+- The 10x sanity ceiling from 0021 is deliberately NOT carried forward: the new
+  overpayment check is strictly tighter, so it would be a branch that can never
+  run — a guard that reads like protection and provides none.
+
+### Loans have a schedule (`loan_instalments`, 0027)
+
+A loan was one balloon payment at term end. **A borrower nine months delinquent
+on a twelve-month loan showed as perfectly healthy**, because nothing was
+overdue until the entire term expired.
+
+- **Equal principal**, not equal EMI — interest rides on the reducing balance.
+  Checkable on paper at the meeting.
+- The rounding remainder goes on the **first** instalment. If a borrower stops
+  paying partway the group has collected more, not less. Rounding never favours
+  the debtor.
+- `is_overdue` now means "behind on the plan **or** past the final date".
+  `days_overdue` stays 0 mid-term, so the UI shows `arrears_paise` instead —
+  "₹X behind" rather than "0 days overdue".
+- Interest accrual is **unchanged**. The schedule is EXPECTATION; accrual is
+  what the outstanding money earned. Different questions, kept apart. Repayments
+  are recorded against the loan, not against a schedule row — making a cashier
+  allocate a part payment across instalments is how a simple app becomes an
+  accounting package nobody in the group can operate.
+
+### Existing groups can onboard (0028)
+
+Every group started at zero, which blocked the most likely user: a group that
+already exists. The only alternatives were inventing fake historical
+contributions (wrong in every per-member figure forever) or abandoning years of
+history.
+
+An opening balance is per-member and belongs to no month — it carries no late
+fee and makes no claim about when the money arrived. It is locked once agreed,
+and refused outright once any money has moved, because changing it would
+silently restate every share and payout already computed from it.
+
+### The cycle can end (`distributions`, 0029)
+
+Interest flowed in and stayed forever; the fund could only grow. `share_pct` was
+displayed, implying a distribution, but nothing acted on it.
+
+- `profit` distributes earnings and the group continues; `final` distributes
+  everything and archives the group.
+- **Savings are never distributed as profit** — that would liquidate the group
+  while reporting a good year.
+- **Proposed, then confirmed by a different person.** A share-out is the largest
+  and most irreversible movement a group makes; computing and committing in one
+  call would mean the group learns the figures only after the fact. A proposal
+  is refused at confirmation if the fund has moved since.
+- The rounding remainder goes to the last member so the lines sum to the total
+  exactly and the books close at zero.
+
+### Meetings are recorded (0030)
+
+"fine" appeared 44 times and every one was a late fee. Groups also fine for
+missing the meeting — and the meeting is where decisions happen.
+
+This is **not** a second approval mechanism. Loan voting is untouched; adding a
+quorum gate to the one flow that most needs to stay predictable would be a poor
+trade. The value is the record. `excused` exists so the group can record that it
+chose not to fine someone, rather than that choice living in memory.
+
+### Write-offs are reversible (0031)
+
+Borrowers sometimes pay after a write-off, and there was no way to record it.
+A recovery books a **negative expense**, landing in the same account the loss
+came from so the two net correctly. Partial recovery leaves the loan
+`written_off` — truthfully, some of it is still lost.
+
+**The trap:** a negative expense would SUBTRACT from the year's spending total
+and raise the cap. A group recovering ₹20,000 could then spend ₹20,000 beyond
+its own rule (headroom would have gone from ₹22,000 to ₹42,000).
+`fn_expenses_ytd_paise()` excludes recoveries for the same reason it already
+excluded write-offs.
+
+### Reminders and export (0032)
+
+- **No message-sending service is included.** Choosing an SMS/WhatsApp provider
+  costs money and is the group's decision. What lives in the database is the
+  part that has to either way: `v_reminders` computes WHO needs telling WHAT,
+  server-side, from the same figures the screens use. The app renders it as a
+  message the cashier forwards by hand — which is what these groups already do.
+- `export_group_data()` returns the whole ledger as JSON, runnable by **any
+  active member**. "Can we see our own books" is not a privilege a group should
+  have to be granted.
 
 ## Deliberate decisions that look like omissions
 

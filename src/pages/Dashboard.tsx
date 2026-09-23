@@ -128,7 +128,7 @@ export default function Dashboard() {
   if (latestPeriod.data) {
     if (myUnpaid) {
       monthStat = {
-        v: formatPaiseShort(myUnpaid.expected_paise),
+        v: formatPaiseShort(myUnpaid.shortfall_paise),
         s: myUnpaid.is_overdue ? 'overdue' : `due ${fmtDate(myUnpaid.due_date)}`,
         tone: myUnpaid.is_overdue ? 'coral' : 'amber',
       };
@@ -156,7 +156,9 @@ export default function Dashboard() {
   // name, then pushed the fund total off the top of the screen. It also made
   // the header the only part of the app that changes for no reason, which is
   // how a region trains people to stop looking at it.
-  const dueThisMonth = myUnpaid?.expected_paise ?? 0;
+  // The shortfall, not the full month -- a part payment must reduce what
+  // the member is told they owe, or the figure contradicts their receipt.
+  const dueThisMonth = myUnpaid?.shortfall_paise ?? 0;
   const homeSub = dueThisMonth > 0
     ? `${formatPaiseShort(dueThisMonth)} ${myUnpaid?.is_overdue ? 'late' : 'to pay this month'}`
     : myPosition

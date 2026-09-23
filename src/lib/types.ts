@@ -74,6 +74,10 @@ export interface FundSummary {
   cash_float_limit_paise: number;
   expected_bank_balance_paise: number;
   accrued_receivable_paise: number;
+  /** Savings and profit paid back out to members. Subtracted from the fund. */
+  payouts_paise: number;
+  /** What the group already held on the day it started using this app. */
+  opening_paise: number;
 }
 
 export interface MemberPosition {
@@ -84,6 +88,10 @@ export interface MemberPosition {
   contributed_paise: number;
   late_fees_paise: number;
   periods_paid: number;
+  /** What this member has already been paid back. */
+  paid_out_paise: number;
+  /** What they would get if they left today: their slice, less what they have had. */
+  share_paise: number;
   outstanding_paise: number;
   cap_paise: number;
   cap_breached: boolean;
@@ -101,6 +109,7 @@ export interface LoanRow {
   rate_bp: number;
   overdue_rate_bp: number;
   term_months: number;
+  repayment_plan: 'monthly' | 'end_of_term';
   status: LoanStatus;
   requested_at: string;
   disbursed_on: string | null;
@@ -115,6 +124,11 @@ export interface LoanRow {
   interest_paid_paise: number;
   total_due_paise: number;
   days_overdue: number;
+  /** Principal that should have arrived by now but has not. */
+  arrears_paise: number;
+  /** When the next instalment falls due. */
+  next_due_on: string | null;
+  /** Behind on the plan, or past the final date. Either counts. */
   is_overdue: boolean;
   approvals: number;
   rejections: number;
@@ -174,6 +188,12 @@ export interface UnpaidRow {
   member_id: string;
   full_name: string;
   expected_paise: number;
+  /** Paid so far this month -- may be a part payment. */
+  paid_paise: number;
+  /** Still owed. This is the figure to chase, not expected_paise. */
+  shortfall_paise: number;
+  /** They have paid something, just not all of it. */
+  part_paid: boolean;
   is_overdue: boolean;
 }
 
@@ -238,4 +258,74 @@ export interface AppConfig {
   expense_annual_pct_bp: number;
   cash_float_limit_paise: number;
   cash_report_hours: number;
+}
+
+export type PayoutKind = 'exit' | 'dividend' | 'interim';
+
+export interface MemberPayout {
+  id: string;
+  member_id: string;
+  kind: PayoutKind;
+  amount_paise: number;
+  paid_on: string;
+  method: PaymentMethod;
+  note: string | null;
+  distribution_id: string | null;
+}
+
+export type DistributionKind = 'profit' | 'final';
+
+export interface Distribution {
+  id: string;
+  kind: DistributionKind;
+  status: 'proposed' | 'confirmed' | 'cancelled';
+  total_paise: number;
+  as_of: string;
+  note: string | null;
+  proposed_by: string;
+  proposed_at: string;
+  confirmed_at: string | null;
+}
+
+export interface DistributionLine {
+  id: string;
+  distribution_id: string;
+  member_id: string;
+  full_name: string;
+  amount_paise: number;
+  kind: DistributionKind;
+  status: string;
+  as_of: string;
+}
+
+export type Attendance = 'present' | 'absent' | 'excused';
+
+export interface Meeting {
+  id: string;
+  held_on: string;
+  note: string | null;
+  absent_fee_paise: number;
+}
+
+export interface AttendanceSummary {
+  member_id: string;
+  full_name: string;
+  present_count: number;
+  absent_count: number;
+  excused_count: number;
+  fines_paise: number;
+}
+
+export type ReminderKind =
+  | 'contribution_due' | 'contribution_overdue'
+  | 'loan_instalment_due' | 'loan_overdue' | 'meeting';
+
+/** Who needs telling what. Derived from the ledger, never stored. */
+export interface Reminder {
+  member_id: string;
+  full_name: string;
+  kind: ReminderKind;
+  amount_paise: number;
+  due_on: string | null;
+  subject: string;
 }

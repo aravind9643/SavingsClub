@@ -423,8 +423,26 @@ function MemberDetailSheet({
     },
   );
 
+  const payout = useMutation(
+    async () => {
+      // Amount left null: the server works out the share itself, from the
+      // same function the screen read. Sending the displayed figure back
+      // would let a stale screen decide what the group pays out.
+      const { error } = await supabase.rpc('pay_out_member', {
+        p_member_id: position.member_id,
+        p_kind: 'exit',
+        p_paid_on: today(),
+      });
+      if (error) throw error;
+    },
+    { invalidates: ['members', 'positions', 'fund', 'cash'] },
+  );
+
   const hasDebt = position.outstanding_paise > 0;
   const isAdmin = position.role === 'admin';
+  // A rupee of slack, matching the server's own tolerance for the rounding
+  // remainder -- otherwise a fully paid member is blocked by a stray paise.
+  const owedShare = position.share_paise > 100;
 
   return (
     <Sheet open title={position.full_name} onClose={onClose}>
@@ -444,17 +462,26 @@ function MemberDetailSheet({
         </div>
       </div>
 
-      <ErrorNote error={remove.error} />
+      <ErrorNote error={remove.error ?? payout.error} />
 
       <div className="stats three" style={{ marginBottom: 16 }}>
-        <Stat k="Contributed" v={formatPaiseShort(position.contributed_paise)} />
+        <Stat k="Paid in" v={formatPaiseShort(position.contributed_paise)} />
         <Stat
           k="Still owes"
           v={formatPaiseShort(position.outstanding_paise)}
           tone={hasDebt ? 'coral' : undefined}
         />
-        <Stat k="Share of fund" v={`${Number(position.share_pct).toFixed(0)}%`} />
+        {/* What they would actually get if they left today -- the figure that
+            matters at the moment someone asks. The percentage alone never
+            answered the only question anyone asks here. */}
+        <Stat k="Would get back" v={formatPaiseShort(position.share_paise)} />
       </div>
+
+      {position.paid_out_paise > 0 && (
+        <Notice>
+          Already paid back: {formatPaise(position.paid_out_paise)}
+        </Notice>
+      )}
 
       <Panel title="Contact details" flush>
         <List>
@@ -491,15 +518,35 @@ function MemberDetailSheet({
             </Notice>
           ) : hasDebt ? (
             <Notice tone="warn">
-              Cannot remove this member: outstanding loan of {formatPaise(position.outstanding_paise)} must be settled first.
+              This member still owes {formatPaise(position.outstanding_paise)}.
+              The loan must be settled before they can leave.
             </Notice>
+          ) : owedShare ? (
+            /* The money has to go back before the person is marked gone.
+               Leaving first would absorb their savings into the fund and
+               quietly enlarge everyone else's share. */
+            <div className="btn-row stack">
+              <Notice tone="warn">
+                {position.full_name} is owed {formatPaise(position.share_paise)} —
+                their savings plus their share of what the group earned.
+                Pay this back before marking them as left.
+              </Notice>
+              <Busy
+                className="primary lg"
+                pending={payout.pending}
+                onClick={() => void payout.run()}
+              >
+                Pay back {formatPaise(position.share_paise)}
+              </Busy>
+            </div>
           ) : confirmExit ? (
             <div className="btn-row stack">
               <Notice tone="danger">
-                Are you sure you want to mark {position.full_name} as left? Past contribution history will remain preserved.
+                Mark {position.full_name} as left? They have been paid back in
+                full. Their record stays in the books.
               </Notice>
               <Busy className="danger lg" pending={remove.pending} onClick={() => void remove.run()}>
-                Confirm member exit
+                Yes, mark as left
               </Busy>
               <button type="button" onClick={() => setConfirmExit(false)}>
                 Cancel
@@ -513,7 +560,7 @@ function MemberDetailSheet({
                 style={{ color: 'var(--coral)', width: '100%' }}
                 onClick={() => setConfirmExit(true)}
               >
-                Mark as left (Exit group)
+                Mark as left
               </button>
             </div>
           )}

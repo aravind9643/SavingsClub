@@ -71,16 +71,24 @@ export default function Loans() {
                   l.status === 'requested'
                     ? `${l.approvals} of ${l.required_approvals} approvals${l.can_i_vote ? ' · your vote needed' : ''}`
                     : l.is_overdue
-                      ? `Overdue by ${l.days_overdue} days`
+                      // Behind on the plan is now the common case, and
+                      // days_overdue stays 0 until the final date -- so say
+                      // what is actually missing rather than a day count
+                      // that reads "0 days overdue".
+                      ? l.arrears_paise > 0
+                        ? `${formatPaiseShort(l.arrears_paise)} behind`
+                        : `Overdue by ${l.days_overdue} days`
                       : l.status === 'disbursed'
-                        ? `Due ${fmtDate(l.due_on)}`
+                        ? `Next payment ${fmtDate(l.next_due_on ?? l.due_on)}`
                         : labelForStatus(l.status, l.withdrawn_by_requester)
                 }
                 amount={formatPaiseShort(
                   l.status === 'disbursed' ? l.outstanding_principal_paise : l.principal_paise,
                 )}
                 amountTone={l.is_overdue ? 'coral' : undefined}
-                note={l.status === 'disbursed' ? 'outstanding' : l.status}
+                note={l.status === 'disbursed'
+                  ? 'still to repay'
+                  : labelForStatus(l.status, l.withdrawn_by_requester)}
                 onClick={() => nav(`/loans/${l.id}`)}
                 chevron
               />
