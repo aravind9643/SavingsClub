@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery } from '../hooks/useQuery';
+import { useSession } from '../context/SessionContext';
 import { formatPaise } from '../lib/money';
 import {
-  Panel, List, Row, Empty, SkeletonList, Segments, Sheet, ago, fmtDateTime,
+  Panel, List, Row, Empty, SkeletonList, Segments, Sheet, Busy, ago, fmtDateTime,
 } from '../components/ui';
 import { IconAudit, IconCheck, IconClose, IconMore } from '../components/icons';
 import type { AuditRow } from '../lib/types';
@@ -19,13 +20,32 @@ const GROUPS: Record<Filter, string[] | null> = {
   people: ['members', 'role_assignments', 'groups', 'group_invites'],
 };
 
+const PAGE_SIZE = 50;
+
 export default function Audit() {
+  const { currentGroupId } = useSession();
   const [filter, setFilter] = useState<Filter>('all');
+  const [limit, setLimit] = useState(PAGE_SIZE);
   const [open, setOpen] = useState<number | null>(null);
 
-  const q = useQuery<AuditRow[]>(`audit:${filter}`, async () => {
+  const prevGroupRef = useRef(currentGroupId);
+  const prevRowsRef = useRef<AuditRow[]>([]);
+
+  if (prevGroupRef.current !== currentGroupId) {
+    prevGroupRef.current = currentGroupId;
+    prevRowsRef.current = [];
+  }
+
+  const handleFilterChange = (next: Filter) => {
+    setFilter(next);
+    setLimit(PAGE_SIZE);
+    prevRowsRef.current = [];
+  };
+
+  const q = useQuery<AuditRow[]>(`audit:${filter}:${limit}`, async () => {
     let query = supabase.from('audit_log').select('*')
-      .order('occurred_at', { ascending: false }).limit(200);
+      .order('occurred_at', { ascending: false }).limit(limit);
+    if (currentGroupId) query = query.eq('group_id', currentGroupId);
     const tables = GROUPS[filter];
     if (tables) query = query.in('table_name', tables);
     const { data, error } = await query;
@@ -33,8 +53,17 @@ export default function Audit() {
     return (data ?? []) as AuditRow[];
   });
 
+  if (q.data) {
+    prevRowsRef.current = q.data;
+  }
+
+  const activeRows = q.data ?? (q.loading ? prevRowsRef.current : []);
+  const hasMore = (q.data ? q.data.length : prevRowsRef.current.length) >= limit;
+
   const names = useQuery<Record<string, string>>('members:names', async () => {
-    const { data, error } = await supabase.from('members').select('id, full_name');
+    let query = supabase.from('members').select('id, full_name');
+    if (currentGroupId) query = query.eq('group_id', currentGroupId);
+    const { data, error } = await query;
     if (error) throw error;
     const map: Record<string, string> = {};
     for (const m of (data ?? []) as { id: string; full_name: string }[]) map[m.id] = m.full_name;
@@ -45,7 +74,7 @@ export default function Audit() {
     <Screen title="Audit" sub="Every change, and who made it">
       <Segments<Filter>
         value={filter}
-        onChange={setFilter}
+        onChange={handleFilterChange}
         options={[
           { value: 'all', label: 'Everything' },
           { value: 'money', label: 'Money' },
@@ -55,43 +84,57 @@ export default function Audit() {
       />
 
       <Panel flush>
-        {q.loading && !q.data ? (
+        {q.loading && activeRows.length === 0 ? (
           <SkeletonList rows={6} />
-        ) : (q.data ?? []).length === 0 ? (
+        ) : activeRows.length === 0 ? (
           <Empty icon={<IconAudit width={22} height={22} />}>Nothing recorded yet.</Empty>
         ) : (
-          <List>
-            {(q.data ?? []).map((r) => (
-              <Row
-                key={r.id}
-                icon={
-                  r.action === 'INSERT' ? <IconCheck width={16} height={16} />
-                    : r.action === 'DELETE' ? <IconClose width={16} height={16} />
-                      : <IconMore width={16} height={16} />
-                }
-                iconTone={
-                  r.action === 'INSERT' ? 'mint' : r.action === 'DELETE' ? 'coral' : 'violet'
-                }
-                title={describe(r)}
-                sub={
-                  <>
-                    {r.actor_member_id
-                      ? (names.data?.[r.actor_member_id] ?? 'a member')
-                      : 'direct database'}
-                    {' · '}{ago(r.occurred_at)}
-                  </>
-                }
-                onClick={() => setOpen(open === r.id ? null : r.id)}
-                chevron
-              />
-            ))}
-          </List>
+          <>
+            <List>
+              {activeRows.map((r) => (
+                <Row
+                  key={r.id}
+                  icon={
+                    r.action === 'INSERT' ? <IconCheck width={16} height={16} />
+                      : r.action === 'DELETE' ? <IconClose width={16} height={16} />
+                        : <IconMore width={16} height={16} />
+                  }
+                  iconTone={
+                    r.action === 'INSERT' ? 'mint' : r.action === 'DELETE' ? 'coral' : 'violet'
+                  }
+                  title={describe(r)}
+                  sub={
+                    <>
+                      {r.actor_member_id
+                        ? (names.data?.[r.actor_member_id] ?? 'a member')
+                        : 'direct database'}
+                      {' · '}{ago(r.occurred_at)}
+                    </>
+                  }
+                  onClick={() => setOpen(open === r.id ? null : r.id)}
+                  chevron
+                />
+              ))}
+            </List>
+            {hasMore && (
+              <div style={{ padding: '12px 14px', textAlign: 'center', borderTop: '1px solid var(--border)' }}>
+                <Busy
+                  className="ghost"
+                  style={{ width: '100%' }}
+                  pending={q.loading}
+                  onClick={() => setLimit((l) => l + PAGE_SIZE)}
+                >
+                  Load older entries
+                </Busy>
+              </div>
+            )}
+          </>
         )}
       </Panel>
 
       {open !== null && (
         <Sheet open title="Audit detail" onClose={() => setOpen(null)}>
-          <Detail row={(q.data ?? []).find((r) => r.id === open)} />
+          <Detail row={activeRows.find((r) => r.id === open)} />
         </Sheet>
       )}
 

@@ -14,7 +14,7 @@ import type { Member, MemberPosition } from '../lib/types';
 
 export default function NewLoan() {
   const nav = useNavigate();
-  const { member, config } = useSession();
+  const { member, config, currentGroupId } = useSession();
   const { fund } = useFund();
 
   const [amount, setAmount] = useState('');
@@ -23,8 +23,11 @@ export default function NewLoan() {
   const [purpose, setPurpose] = useState('');
 
   const membersQ = useQuery<Member[]>('members', async () => {
-    const { data, error } = await supabase
-      .from('members').select('*').is('left_on', null).order('full_name');
+    let q = supabase.from('members').select('*').is('left_on', null).order('full_name');
+    if (currentGroupId) {
+      q = q.eq('group_id', currentGroupId);
+    }
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as Member[];
   });
@@ -133,9 +136,9 @@ export default function NewLoan() {
         <Field label="Guarantor" hint="Another member who takes responsibility if you do not repay">
           <select value={guarantor} onChange={(e) => setGuarantor(e.target.value)}>
             <option value="">Choose a member…</option>
-            {(membersQ.data ?? [])
-              .filter((m) => m.id !== member?.id)
-              .map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+            {Array.from(new Map((membersQ.data ?? []).filter((m) => m.id !== member?.id).map((m) => [m.id, m])).values()).map((m) => (
+              <option key={m.id} value={m.id}>{m.full_name}</option>
+            ))}
           </select>
         </Field>
 

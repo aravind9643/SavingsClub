@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
 import { useSession } from '../context/SessionContext';
-import { formatPaiseShort } from '../lib/money';
+import { formatPaise, formatPaiseShort } from '../lib/money';
 import {
   Panel, List, Row, Sheet, Field, Busy, ErrorNote, Notice,
-  SkeletonList, initials,
+  SkeletonList, initials, Stat, Tag, fmtDate,
 } from '../components/ui';
 import { IconPlus } from '../components/icons';
 import type { MemberPosition, Member, Role, PendingMember } from '../lib/types';
@@ -25,8 +25,9 @@ const OFFICES: { role: Role; label: string; note: string }[] = [
 
 export default function Members() {
   const nav = useNavigate();
-  const { member: me, isOfficer } = useSession();
+  const { member: me, isOfficer, currentGroupId } = useSession();
   const [sheet, setSheet] = useState<'add' | 'roles' | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
 
   const positions = useQuery<MemberPosition[]>('positions', async () => {
     const { data, error } = await supabase
@@ -36,7 +37,11 @@ export default function Members() {
   });
 
   const membersQ = useQuery<Member[]>('members', async () => {
-    const { data, error } = await supabase.from('members').select('*').order('full_name');
+    let q = supabase.from('members').select('*').order('full_name');
+    if (currentGroupId) {
+      q = q.eq('group_id', currentGroupId);
+    }
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as Member[];
   });
@@ -57,6 +62,7 @@ export default function Members() {
   });
 
   const byId = new Map((membersQ.data ?? []).map((m) => [m.id, m]));
+  const inspectPosition = (positions.data ?? []).find((p) => p.member_id === inspectId);
   const current = (rolesQ.data ?? []).filter((r) => r.role !== 'member');
   const cashier = current.find((r) => r.role === 'cashier');
   const accountant = current.find((r) => r.role === 'accountant');
@@ -145,6 +151,8 @@ export default function Members() {
                         ? `owes ${formatPaiseShort(p.outstanding_paise)}`
                         : m?.nominee_name ? undefined : 'no nominee'
                     }
+                    onClick={() => setInspectId(p.member_id)}
+                    chevron
                   />
                 );
               })}
@@ -166,6 +174,14 @@ export default function Members() {
           members={(membersQ.data ?? []).filter((m) => m.is_active)}
           current={current}
           onClose={() => setSheet(null)}
+        />
+      )}
+      {inspectPosition && (
+        <MemberDetailSheet
+          position={inspectPosition}
+          member={byId.get(inspectPosition.member_id)}
+          isOfficer={isOfficer}
+          onClose={() => setInspectId(null)}
         />
       )}
     </>
@@ -323,6 +339,15 @@ function AddSheet({ onClose }: { onClose: () => void }) {
 function RolesSheet({
   members, current, onClose,
 }: { members: Member[]; current: RoleRow[]; onClose: () => void }) {
+  const distinctMembers = useMemo<Member[]>(() => {
+    const seen = new Set<string>();
+    return members.filter((m: Member) => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+  }, [members]);
+
   const assign = useMutation(
     async ({ memberId, role }: { memberId: string; role: Role }) => {
       if (memberId) {
@@ -352,7 +377,7 @@ function RolesSheet({
             onChange={(e) => void assign.run({ memberId: e.target.value, role: o.role })}
           >
             {o.role !== 'president' && <option value="">Nobody</option>}
-            {members.map((m) => (
+            {distinctMembers.map((m) => (
               <option key={m.id} value={m.id}>{m.full_name}</option>
             ))}
           </select>
@@ -361,6 +386,130 @@ function RolesSheet({
       <div className="btn-row stack">
         <button className="primary lg" onClick={onClose}>Done</button>
       </div>
+    </Sheet>
+  );
+}
+
+function MemberDetailSheet({
+  position, member, isOfficer, onClose,
+}: {
+  position: MemberPosition;
+  member?: Member;
+  isOfficer: boolean;
+  onClose: () => void;
+}) {
+  const [confirmExit, setConfirmExit] = useState(false);
+
+  const remove = useMutation(
+    async () => {
+      const { error } = await supabase.rpc('remove_member', {
+        p_member_id: position.member_id,
+        p_left_on: new Date().toISOString().slice(0, 10),
+      });
+      if (error) throw error;
+    },
+    {
+      invalidates: ['members', 'positions', 'fund'],
+      onSuccess: onClose,
+    },
+  );
+
+  const hasDebt = position.outstanding_paise > 0;
+  const isPresident = position.role === 'president';
+
+  return (
+    <Sheet open title={position.full_name} onClose={onClose}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <span
+          className="row-ico violet"
+          style={{ width: 48, height: 48, borderRadius: 16, fontSize: '1.1rem' }}
+        >
+          {initials(position.full_name)}
+        </span>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: '1.05rem' }}>{position.full_name}</div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <Tag tone={position.role !== 'member' ? 'mint' : undefined}>{position.role}</Tag>
+            {!position.is_active && <Tag tone="coral">Left</Tag>}
+          </div>
+        </div>
+      </div>
+
+      <ErrorNote error={remove.error} />
+
+      <div className="stats three" style={{ marginBottom: 16 }}>
+        <Stat k="Contributed" v={formatPaiseShort(position.contributed_paise)} />
+        <Stat
+          k="Outstanding"
+          v={formatPaiseShort(position.outstanding_paise)}
+          tone={hasDebt ? 'coral' : undefined}
+        />
+        <Stat k="Share" v={`${Number(position.share_pct).toFixed(0)}%`} />
+      </div>
+
+      <Panel title="Contact & Nominee" flush>
+        <List>
+          {member?.phone && (
+            <Row
+              title="Phone"
+              note={member.phone}
+              onClick={() => { window.location.href = `tel:${member.phone}`; }}
+            />
+          )}
+          {member?.email && (
+            <Row
+              title="Email"
+              note={member.email}
+              onClick={() => { window.location.href = `mailto:${member.email}`; }}
+            />
+          )}
+          {member?.joined_on && (
+            <Row title="Joined" note={fmtDate(member.joined_on)} />
+          )}
+          <Row
+            title="Nominee"
+            sub={member?.nominee_phone ? `Phone: ${member.nominee_phone}` : undefined}
+            note={member?.nominee_name ?? 'None registered'}
+          />
+        </List>
+      </Panel>
+
+      {isOfficer && position.is_active && (
+        <div style={{ marginTop: 20 }}>
+          {isPresident ? (
+            <Notice tone="warn">
+              The president cannot be removed. Hand over the president role in Offices first.
+            </Notice>
+          ) : hasDebt ? (
+            <Notice tone="warn">
+              Cannot remove this member: outstanding loan of {formatPaise(position.outstanding_paise)} must be settled first.
+            </Notice>
+          ) : confirmExit ? (
+            <div className="btn-row stack">
+              <Notice tone="danger">
+                Are you sure you want to mark {position.full_name} as left? Past contribution history will remain preserved.
+              </Notice>
+              <Busy className="danger lg" pending={remove.pending} onClick={() => void remove.run()}>
+                Confirm member exit
+              </Busy>
+              <button type="button" onClick={() => setConfirmExit(false)}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="btn-row stack">
+              <button
+                type="button"
+                className="subtle"
+                style={{ color: 'var(--coral)', width: '100%' }}
+                onClick={() => setConfirmExit(true)}
+              >
+                Mark as left (Exit group)
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </Sheet>
   );
 }

@@ -1,6 +1,6 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
-import { useQuery } from '../hooks/useQuery';
+import { useQuery, invalidate } from '../hooks/useQuery';
 import { useSession } from './SessionContext';
 import type { FundSummary, CashAlert, LoanRow, UnpaidRow } from '../lib/types';
 
@@ -23,8 +23,41 @@ interface FundValue {
 const Ctx = createContext<FundValue | null>(null);
 
 export function FundProvider({ children }: { children: ReactNode }) {
-  const { member } = useSession();
-  const enabled = Boolean(member);
+  const { member, currentGroupId, group } = useSession();
+  const enabled = Boolean(member && currentGroupId);
+
+  // Group-level realtime live update across devices
+  useEffect(() => {
+    if (!currentGroupId) return;
+    const ch = supabase.channel(`group-live-${currentGroupId}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'contributions', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'contributions', 'positions', 'feed'))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'loans', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'loans', 'feed'))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'cash_ledger', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'cash', 'feed'))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'expenses', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'expenses', 'feed'))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'members', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('members', 'positions', 'fund'))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'role_assignments', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'roles', 'members', 'positions'))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'loan_votes', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'loans', 'feed'))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'bank_statements', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'bank', 'feed'))
+      .subscribe();
+
+    return () => { void supabase.removeChannel(ch); };
+  }, [currentGroupId]);
 
   const fundQ = useQuery<FundSummary>(enabled ? FUND_KEY : null, async () => {
     const { data, error } = await supabase
@@ -54,9 +87,13 @@ export function FundProvider({ children }: { children: ReactNode }) {
     return (data ?? []) as UnpaidRow[];
   });
 
-  const offices = useQuery<{ role: string }[]>(enabled ? 'roles' : null, async () => {
-    const { data, error } = await supabase
+  const offices = useQuery<{ role: string }[]>(enabled ? `${FUND_KEY}:roles` : null, async () => {
+    let q = supabase
       .from('role_assignments').select('role').is('end_date', null);
+    if (currentGroupId) {
+      q = q.eq('group_id', currentGroupId);
+    }
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as { role: string }[];
   });
@@ -124,11 +161,20 @@ export function FundProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  if (group && !group.setup_complete && !alerts.some((a) => a.id === 'offices')) {
+    alerts.push({
+      id: 'setup',
+      severity: 'warn',
+      message: 'Group setup is incomplete — review and save your group rules',
+      to: '/settings',
+    });
+  }
+
   const value: FundValue = {
     fund,
     alerts,
-    loading: fundQ.loading,
-    error: fundQ.error,
+    loading: fundQ.loading || offices.loading,
+    error: fundQ.error || offices.error,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

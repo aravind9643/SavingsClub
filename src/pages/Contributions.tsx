@@ -4,23 +4,39 @@ import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
 import { useSession, useIsOfficer } from '../context/SessionContext';
+import { useFund } from '../context/FundContext';
 import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees } from '../lib/money';
+import { haptic } from '../lib/haptics';
 import {
   List, Row, Panel, Empty, SkeletonList, Sheet, Field, AmountField, Busy,
   ErrorNote, Segments, initials, fmtDate, Notice,
 } from '../components/ui';
-import { IconContributions, IconCheck } from '../components/icons';
+import { IconContributions, IconCheck, IconShare } from '../components/icons';
 import type { Member, ContributionPeriod, Contribution } from '../lib/types';
+
+type MemberFilter = 'all' | 'unpaid' | 'paid';
 
 export default function Contributions() {
   const nav = useNavigate();
-  const { config, role } = useSession();
+  const { config, role, currentGroupId, group } = useSession();
+  const { fund } = useFund();
   const isOfficer = useIsOfficer();
   const [periodId, setPeriodId] = useState<string>('');
+  const [memberFilter, setMemberFilter] = useState<MemberFilter>('all');
   const [paying, setPaying] = useState<{ period: ContributionPeriod; member: Member } | null>(null);
+  const [reminding, setReminding] = useState<{ period: ContributionPeriod; member: Member } | null>(null);
+  const [unpaidAction, setUnpaidAction] = useState<{ period: ContributionPeriod; member: Member } | null>(null);
+  const [receiptData, setReceiptData] = useState<{
+    memberName: string; amountPaise: number; lateFeePaise: number;
+    month: string; paidOn: string; method: string;
+  } | null>(null);
 
   const membersQ = useQuery<Member[]>('members', async () => {
-    const { data, error } = await supabase.from('members').select('*').order('full_name');
+    let q = supabase.from('members').select('*').order('full_name');
+    if (currentGroupId) {
+      q = q.eq('group_id', currentGroupId);
+    }
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as Member[];
   });
@@ -40,9 +56,9 @@ export default function Contributions() {
 
   const openPeriod = useMutation(
     async () => {
-      const m = new Date(); m.setDate(1);
+      const now = new Date(); now.setDate(1);
       const { error } = await supabase.rpc('open_period', {
-        p_month: m.toISOString().slice(0, 10),
+        p_month: now.toISOString().slice(0, 10),
       });
       if (error) throw error;
     },
@@ -57,7 +73,13 @@ export default function Contributions() {
   }, [periods, periodId]);
 
   const period = periods.find((p) => p.id === periodId) ?? periods[0];
-  const members = (membersQ.data ?? []).filter((m) => m.is_active);
+  const members = useMemo(() => {
+    const map = new Map<string, Member>();
+    for (const mem of (membersQ.data ?? []).filter((x) => x.is_active)) {
+      if (!map.has(mem.id)) map.set(mem.id, mem);
+    }
+    return Array.from(map.values());
+  }, [membersQ.data]);
 
   const paidMap = useMemo(() => {
     const map = new Map<string, Contribution>();
@@ -68,6 +90,14 @@ export default function Contributions() {
   }, [contribsQ.data, period?.id]);
 
   const paidCount = members.filter((m) => paidMap.has(m.id)).length;
+  const unpaidCount = members.length - paidCount;
+
+  const shownMembers = useMemo(() => {
+    if (memberFilter === 'paid') return members.filter((m) => paidMap.has(m.id));
+    if (memberFilter === 'unpaid') return members.filter((m) => !paidMap.has(m.id));
+    return members;
+  }, [members, paidMap, memberFilter]);
+
   const collected = members.reduce((sum, m) => {
     const c = paidMap.get(m.id);
     return sum + (c ? c.amount_paise + c.late_fee_paise : 0);
@@ -119,7 +149,10 @@ export default function Contributions() {
       >
         <Segments
           value={period?.id ?? ''}
-          onChange={setPeriodId}
+          onChange={(id) => {
+            haptic(10);
+            setPeriodId(id);
+          }}
           options={periods.slice(0, 12).map((p) => ({
             value: p.id,
             label: monthLabel(p.period_month, true),
@@ -145,6 +178,21 @@ export default function Contributions() {
           <Notice tone="warn">This month is closed — entries can no longer be changed.</Notice>
         )}
 
+        <div style={{ margin: '14px 0 8px' }}>
+          <Segments<MemberFilter>
+            value={memberFilter}
+            onChange={(f) => {
+              haptic(8);
+              setMemberFilter(f);
+            }}
+            options={[
+              { value: 'all', label: 'All', count: members.length },
+              { value: 'unpaid', label: 'Unpaid', count: unpaidCount },
+              { value: 'paid', label: 'Paid', count: paidCount },
+            ]}
+          />
+        </div>
+
         <Panel
           title="Members"
           action={
@@ -156,38 +204,67 @@ export default function Contributions() {
           }
           flush
         >
-          <List>
-            {members.map((m) => {
-              const c = paidMap.get(m.id);
-              const overdue = !c && period && new Date(period.grace_date) < new Date();
-              return (
-                <Row
-                  key={m.id}
-                  icon={c ? <IconCheck width={17} height={17} /> : initials(m.full_name)}
-                  iconTone={c ? 'mint' : overdue ? 'coral' : undefined}
-                  title={m.full_name}
-                  sub={
-                    c
-                      ? `Paid ${fmtDate(c.paid_on)}${c.late_fee_paise > 0 ? ' · late' : ''}`
-                      : overdue
-                        ? `Overdue since ${fmtDate(period?.grace_date)}`
-                        : `Due ${fmtDate(period?.due_date)}`
-                  }
-                  amount={c ? formatPaiseShort(c.amount_paise) : '—'}
-                  amountTone={c ? 'mint' : undefined}
-                  note={c && c.late_fee_paise > 0 ? `+${formatPaiseShort(c.late_fee_paise)} fee` : undefined}
-                  onClick={
-                    isOfficer && !c && period && !period.closed_at
-                      ? () => setPaying({ period, member: m })
-                      : undefined
-                  }
-                  chevron={Boolean(isOfficer && !c && period && !period.closed_at)}
-                />
-              );
-            })}
-          </List>
+          {shownMembers.length === 0 ? (
+            <Empty icon={<IconCheck width={22} height={22} />}>
+              {memberFilter === 'unpaid' ? 'All members have paid for this month!' : 'No members found.'}
+            </Empty>
+          ) : (
+            <List>
+              {shownMembers.map((m) => {
+                const c = paidMap.get(m.id);
+                const overdue = !c && period && new Date(period.grace_date) < new Date();
+                return (
+                  <Row
+                    key={m.id}
+                    icon={c ? <IconCheck width={17} height={17} /> : initials(m.full_name)}
+                    iconTone={c ? 'mint' : overdue ? 'coral' : undefined}
+                    title={m.full_name}
+                    sub={
+                      c
+                        ? `Paid ${fmtDate(c.paid_on)}${c.late_fee_paise > 0 ? ' · late' : ''}`
+                        : overdue
+                          ? `Overdue since ${fmtDate(period?.grace_date)}`
+                          : `Due ${fmtDate(period?.due_date)}`
+                    }
+                    amount={c ? formatPaiseShort(c.amount_paise) : '—'}
+                    amountTone={c ? 'mint' : undefined}
+                    note={c && c.late_fee_paise > 0 ? `+${formatPaiseShort(c.late_fee_paise)} fee` : undefined}
+                    onClick={() => {
+                      haptic(10);
+                      if (c) {
+                        setReceiptData({
+                          memberName: m.full_name,
+                          amountPaise: c.amount_paise,
+                          lateFeePaise: c.late_fee_paise,
+                          month: monthLabel(period.period_month),
+                          paidOn: c.paid_on,
+                          method: c.method,
+                        });
+                      } else if (isOfficer && period && !period.closed_at) {
+                        setUnpaidAction({ period, member: m });
+                      } else if (period) {
+                        setReminding({ period, member: m });
+                      }
+                    }}
+                    chevron
+                  />
+                );
+              })}
+            </List>
+          )}
         </Panel>
       </Screen>
+
+      {unpaidAction && (
+        <UnpaidActionSheet
+          member={unpaidAction.member}
+          period={unpaidAction.period}
+          isOfficer={isOfficer}
+          onRecord={() => setPaying({ period: unpaidAction.period, member: unpaidAction.member })}
+          onRemind={() => setReminding({ period: unpaidAction.period, member: unpaidAction.member })}
+          onClose={() => setUnpaidAction(null)}
+        />
+      )}
 
       {paying && config && (
         <RecordSheet
@@ -195,6 +272,25 @@ export default function Contributions() {
           member={paying.member}
           defaultPaise={config.monthly_contribution_paise}
           onClose={() => setPaying(null)}
+          onRecorded={(r) => setReceiptData(r)}
+        />
+      )}
+
+      {reminding && (
+        <ReminderSheet
+          member={reminding.member}
+          period={reminding.period}
+          groupName={group?.name ?? 'Savings Group'}
+          onClose={() => setReminding(null)}
+        />
+      )}
+
+      {receiptData && (
+        <ReceiptSheet
+          receipt={receiptData}
+          groupName={group?.name ?? 'Savings Group'}
+          fundTotalPaise={fund?.total_fund_paise}
+          onClose={() => setReceiptData(null)}
         />
       )}
     </>
@@ -214,16 +310,20 @@ function isThisMonth(iso: string): boolean {
 }
 
 function RecordSheet({
-  period, member, defaultPaise, onClose,
+  period, member, defaultPaise, onClose, onRecorded,
 }: {
   period: ContributionPeriod;
   member: Member;
   defaultPaise: number;
   onClose: () => void;
+  onRecorded: (r: { memberName: string; amountPaise: number; lateFeePaise: number; month: string; paidOn: string; method: string }) => void;
 }) {
+  const { config } = useSession();
   const [amount, setAmount] = useState(String(paiseToRupees(defaultPaise)));
   const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState<'bank' | 'cash'>('bank');
+
+  const late = new Date(paidOn) > new Date(period.grace_date);
 
   const save = useMutation(
     async () => {
@@ -236,10 +336,21 @@ function RecordSheet({
       });
       if (error) throw error;
     },
-    { invalidates: ['contributions', 'positions', 'fund', 'cash', 'feed'], onSuccess: onClose },
+    {
+      invalidates: ['contributions', 'positions', 'fund', 'cash', 'feed'],
+      onSuccess: () => {
+        onClose();
+        onRecorded({
+          memberName: member.full_name,
+          amountPaise: rupeesToPaise(amount),
+          lateFeePaise: late ? (config?.late_fee_paise ?? 0) : 0,
+          month: monthLabel(period.period_month),
+          paidOn,
+          method,
+        });
+      },
+    },
   );
-
-  const late = new Date(paidOn) > new Date(period.grace_date);
 
   return (
     <Sheet open title={member.full_name} onClose={onClose}>
@@ -284,3 +395,214 @@ function RecordSheet({
     </Sheet>
   );
 }
+
+function ReceiptSheet({
+  receipt, groupName, fundTotalPaise, onClose,
+}: {
+  receipt: {
+    memberName: string; amountPaise: number; lateFeePaise: number;
+    month: string; paidOn: string; method: string;
+  };
+  groupName: string;
+  fundTotalPaise?: number;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const text = `🧾 *Sanchay Contribution Receipt*
+*Group:* ${groupName}
+*Member:* ${receipt.memberName}
+*Period:* ${receipt.month}
+*Amount Paid:* ${formatPaise(receipt.amountPaise)} (${receipt.method.toUpperCase()})
+${receipt.lateFeePaise > 0 ? `*Late Fee:* ${formatPaise(receipt.lateFeePaise)}\n` : ''}*Date:* ${fmtDate(receipt.paidOn)}
+${fundTotalPaise !== undefined ? `*Group Fund Total:* ${formatPaise(fundTotalPaise)}\n` : ''}
+_Recorded on Sanchay_`;
+
+  async function share() {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Receipt - ${receipt.memberName} (${receipt.month})`,
+          text,
+        });
+        return;
+      } catch {
+        /* fallback to copy */
+      }
+    }
+    copy();
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard write error */
+    }
+  }
+
+  return (
+    <Sheet open title="Payment receipt" onClose={onClose}>
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <div style={{ fontSize: '1.8rem', fontWeight: 700, fontFamily: 'var(--display)' }}>
+          {formatPaise(receipt.amountPaise + receipt.lateFeePaise)}
+        </div>
+        <p className="dim" style={{ marginTop: 4 }}>
+          {receipt.memberName} · {receipt.month}
+        </p>
+      </div>
+
+      <Panel title="Details" flush>
+        <List>
+          <Row title="Payment date" note={fmtDate(receipt.paidOn)} />
+          <Row title="Method" note={receipt.method.toUpperCase()} />
+          <Row title="Base contribution" amount={formatPaise(receipt.amountPaise)} />
+          {receipt.lateFeePaise > 0 && (
+            <Row title="Late fee" amount={`+${formatPaise(receipt.lateFeePaise)}`} amountTone="coral" />
+          )}
+          {fundTotalPaise !== undefined && (
+            <Row title="Group fund total" amount={formatPaise(fundTotalPaise)} amountTone="mint" />
+          )}
+        </List>
+      </Panel>
+
+      <div className="btn-row stack" style={{ marginTop: 20 }}>
+        <button type="button" className="primary lg" onClick={() => void share()}>
+          <IconShare width={16} height={16} style={{ marginRight: 8 }} />
+          Share to WhatsApp
+        </button>
+        <button type="button" className="subtle" onClick={() => void copy()}>
+          {copied ? 'Copied to clipboard!' : 'Copy text receipt'}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+function UnpaidActionSheet({
+  member, period, isOfficer, onRecord, onRemind, onClose,
+}: {
+  member: Member;
+  period: ContributionPeriod;
+  isOfficer: boolean;
+  onRecord: () => void;
+  onRemind: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet open title={member.full_name} onClose={onClose}>
+      <p className="dim" style={{ marginTop: -4, marginBottom: 18 }}>
+        {monthLabel(period.period_month)} · Due {fmtDate(period.due_date)}
+      </p>
+      <div className="btn-row stack">
+        {isOfficer && !period.closed_at && (
+          <button
+            type="button"
+            className="primary lg"
+            onClick={() => {
+              onClose();
+              onRecord();
+            }}
+          >
+            Record payment
+          </button>
+        )}
+        <button
+          type="button"
+          className="subtle lg"
+          onClick={() => {
+            onClose();
+            onRemind();
+          }}
+        >
+          <IconShare width={16} height={16} style={{ marginRight: 8 }} />
+          Send WhatsApp reminder
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+function ReminderSheet({
+  member, period, groupName, onClose,
+}: {
+  member: Member;
+  period: ContributionPeriod;
+  groupName: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const text = `📢 *Contribution Reminder*
+*Group:* ${groupName}
+*Member:* ${member.full_name}
+*Period:* ${monthLabel(period.period_month)}
+*Amount Due:* ${formatPaise(period.amount_paise)}
+*Due Date:* ${fmtDate(period.due_date)} (grace until ${fmtDate(period.grace_date)})
+
+Please send your monthly contribution via UPI or direct bank transfer.
+_Sent via Sanchay_`;
+
+  async function share() {
+    haptic(12);
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Reminder - ${member.full_name} (${monthLabel(period.period_month)})`,
+          text,
+        });
+        return;
+      } catch {
+        /* fallback to wa.me */
+      }
+    }
+    const cleanPhone = member.phone?.replace(/[^\d]/g, '');
+    const url = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  }
+
+  async function copy() {
+    haptic(10);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return (
+    <Sheet open title="Send reminder" onClose={onClose}>
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <div style={{ fontSize: '1.8rem', fontWeight: 700, fontFamily: 'var(--display)' }}>
+          {formatPaise(period.amount_paise)}
+        </div>
+        <p className="dim" style={{ marginTop: 4 }}>
+          {member.full_name} · {monthLabel(period.period_month)}
+        </p>
+      </div>
+
+      <Panel title="Reminder message" flush>
+        <div style={{ padding: 14, fontSize: '0.88rem', whiteSpace: 'pre-wrap', lineHeight: 1.5, background: 'var(--surface-2)', borderRadius: 'var(--r-sm)' }}>
+          {text}
+        </div>
+      </Panel>
+
+      <div className="btn-row stack" style={{ marginTop: 20 }}>
+        <button type="button" className="primary lg" onClick={() => void share()}>
+          <IconShare width={16} height={16} style={{ marginRight: 8 }} />
+          Send via WhatsApp
+        </button>
+        <button type="button" className="subtle" onClick={() => void copy()}>
+          {copied ? 'Copied to clipboard!' : 'Copy reminder text'}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+

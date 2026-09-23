@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
 import { useSession } from '../context/SessionContext';
 import { useFund } from '../context/FundContext';
-import { formatPaiseShort, rupeesToPaise } from '../lib/money';
+import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees } from '../lib/money';
+import { haptic } from '../lib/haptics';
 import {
   Hero, Chip, Panel, List, Row, Empty, SkeletonList, Sheet, Field, AmountField,
   Busy, ErrorNote, Notice, fmtDateTime, ago,
@@ -19,6 +20,11 @@ export default function Cash() {
   const { fund } = useFund();
   const isCashier = role === 'cashier';
   const [sheet, setSheet] = useState(false);
+  const [initialData, setInitialData] = useState<{
+    direction: 'in' | 'out';
+    amount: string;
+    purpose: string;
+  } | undefined>();
 
   const entriesQ = useQuery<CashEntry[]>('cash', async () => {
     const { data, error } = await supabase
@@ -63,8 +69,27 @@ export default function Cash() {
         />
 
         {balance > limit && (
-          <Notice tone="danger">
-            Over the limit — deposit the excess into the bank.
+          <Notice
+            tone="danger"
+            onClick={
+              isCashier
+                ? () => {
+                    haptic(10);
+                    const excessRupees = paiseToRupees(balance - limit);
+                    setInitialData({
+                      direction: 'out',
+                      amount: String(excessRupees),
+                      purpose: 'Deposit excess cash into bank',
+                    });
+                    setSheet(true);
+                  }
+                : undefined
+            }
+          >
+            Float is over the limit by {formatPaise(balance - limit)}.
+            {isCashier
+              ? ' Tap here to deposit the excess into the bank.'
+              : ' Deposit the excess into the bank.'}
           </Notice>
         )}
 
@@ -130,21 +155,41 @@ export default function Cash() {
       </Screen>
 
       {isCashier && (
-        <button className="fab" onClick={() => setSheet(true)}>
+        <button
+          className="fab"
+          onClick={() => {
+            haptic(10);
+            setSheet(true);
+          }}
+        >
           <IconPlus width={18} height={18} />
           Cash
         </button>
       )}
 
-      {sheet && <CashSheet onClose={() => setSheet(false)} />}
+      {sheet && (
+        <CashSheet
+          initialData={initialData}
+          onClose={() => {
+            setSheet(false);
+            setInitialData(undefined);
+          }}
+        />
+      )}
     </>
   );
 }
 
-function CashSheet({ onClose }: { onClose: () => void }) {
-  const [direction, setDirection] = useState<'in' | 'out'>('out');
-  const [amount, setAmount] = useState('');
-  const [purpose, setPurpose] = useState('');
+function CashSheet({
+  initialData,
+  onClose,
+}: {
+  initialData?: { direction: 'in' | 'out'; amount: string; purpose: string };
+  onClose: () => void;
+}) {
+  const [direction, setDirection] = useState<'in' | 'out'>(initialData?.direction ?? 'out');
+  const [amount, setAmount] = useState(initialData?.amount ?? '');
+  const [purpose, setPurpose] = useState(initialData?.purpose ?? '');
   const [counterparty, setCounterparty] = useState('');
   const [reportNow, setReportNow] = useState(true);
 
@@ -167,10 +212,22 @@ function CashSheet({ onClose }: { onClose: () => void }) {
       <ErrorNote error={save.error} />
 
       <div className="seg-row" style={{ marginBottom: 14 }}>
-        <button className={`seg${direction === 'out' ? ' on' : ''}`} onClick={() => setDirection('out')}>
+        <button
+          className={`seg${direction === 'out' ? ' on' : ''}`}
+          onClick={() => {
+            haptic(8);
+            setDirection('out');
+          }}
+        >
           Paid out
         </button>
-        <button className={`seg${direction === 'in' ? ' on' : ''}`} onClick={() => setDirection('in')}>
+        <button
+          className={`seg${direction === 'in' ? ' on' : ''}`}
+          onClick={() => {
+            haptic(8);
+            setDirection('in');
+          }}
+        >
           Taken in
         </button>
       </div>
@@ -185,9 +242,30 @@ function CashSheet({ onClose }: { onClose: () => void }) {
             placeholder={direction === 'out' ? 'Emergency help' : 'Withdrawn from the bank'}
           />
         </Field>
-        <Field label="Who (optional)">
-          <input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} />
-        </Field>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+          {(direction === 'out'
+            ? ['Deposit excess to bank', 'Emergency help', 'Meeting snacks', 'Stationery']
+            : ['Withdrawn from bank', 'Contribution in cash', 'Cash refund']
+          ).map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              className="seg"
+              style={{ padding: '3px 8px', fontSize: '0.72rem' }}
+              onClick={() => {
+                haptic(8);
+                setPurpose(preset);
+              }}
+            >
+              {preset}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <Field label="Who (optional)">
+            <input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} />
+          </Field>
+        </div>
       </div>
 
       <label style={{

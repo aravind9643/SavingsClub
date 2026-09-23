@@ -3,7 +3,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase, friendlyError } from '../lib/supabase';
 import { setQueryGroup } from '../hooks/useQuery';
 import type { Member, Role, AppConfig, MyGroup } from '../lib/types';
 
@@ -22,6 +22,8 @@ interface SessionValue {
   /** Joined with a code and waiting for an officer to approve. */
   awaitingApproval: boolean;
   isOfficer: boolean;
+  networkError: string | null;
+  retry: () => void;
   switchGroup: (groupId: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => void;
@@ -52,18 +54,43 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role>('member');
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [networkError, setNetworkError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'SIGNED_OUT' || !s) {
+        setSession(null);
+        return;
+      }
+      setSession((prev) => {
+        if (prev?.user?.id === s.user.id && prev.access_token === s.access_token) {
+          return prev;
+        }
+        return s;
+      });
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  // Multi-tab synchronization: keep active group in sync across browser tabs
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LAST_GROUP && e.newValue && e.newValue !== currentGroupId) {
+        setCurrentGroupId(e.newValue);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [currentGroupId]);
 
   // The cache is namespaced by group. This must run before any child query
   // renders under a new group, so it is a layout-time concern, not an effect
   // that competes with the fetches it is meant to govern.
   setQueryGroup(currentGroupId);
+
+  const userId = session?.user?.id;
 
   useEffect(() => {
     let cancelled = false;
@@ -74,14 +101,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setRole('member');
       setConfig(null);
       setLoading(false);
+      setNetworkError(null);
       return;
     }
 
-    setLoading(true);
+    // Only set full-screen loading on initial load when there is no data.
+    // Background session updates must never tear down the UI.
+    if (!member && groups.length === 0) {
+      setLoading(true);
+    }
     (async () => {
-      const { data: gs } = await supabase
+      const { data: gs, error: gsError } = await supabase
         .from('v_my_groups').select('*').order('name');
       if (cancelled) return;
+
+      if (gsError) {
+        // Transient network or server error -- preserve existing group state
+        // and do not redirect to onboarding!
+        setNetworkError(friendlyError(gsError));
+        setLoading(false);
+        return;
+      }
+      setNetworkError(null);
 
       const list = (gs ?? []) as MyGroup[];
       setGroups(list);
@@ -104,19 +145,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // someone who already had a working group would be dropped onto a
       // "waiting for approval" screen and cut off from the books they were
       // using. A group you cannot see yet never displaces one you can.
-      const remembered = list.find((g) => g.id === currentGroupId);
       const claimed = list.find((g) => g.is_current);
+      const remembered = list.find((g) => g.id === currentGroupId);
       const active =
-        (remembered?.status === 'active' ? remembered : undefined)
-        ?? (claimed?.status === 'active' ? claimed : undefined)
+        (claimed?.status === 'active' ? claimed : undefined)
+        ?? (remembered?.status === 'active' ? remembered : undefined)
         ?? list.find((g) => g.status === 'active')
-        ?? remembered
         ?? claimed
+        ?? remembered
         ?? list[0];
 
       if (active.id !== currentGroupId) {
         setCurrentGroupId(active.id);
         try { localStorage.setItem(LAST_GROUP, active.id); } catch { /* private window */ }
+      }
+
+      if (claimed && active.id !== claimed.id && active.status === 'active') {
+        await supabase.rpc('set_active_group', { p_group_id: active.id });
       }
 
       // A pending member can see nothing by design, so there is no point
@@ -131,20 +176,37 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       const [{ data: me }, { data: r }, { data: c }] = await Promise.all([
         supabase.from('members').select('*')
+          .eq('group_id', active.id)
           .eq('id', active.member_id).maybeSingle(),
         supabase.rpc('current_role_of'),
         supabase.from('groups').select('*').eq('id', active.id).maybeSingle(),
       ]);
       if (cancelled) return;
 
-      setMember((me as Member) ?? null);
-      setRole((r as Role) ?? 'member');
+      const memberObj = (me as Member) ?? (active ? {
+        id: active.member_id,
+        group_id: active.id,
+        auth_user_id: session.user.id,
+        full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Member',
+        email: session.user.email ?? null,
+        phone: null,
+        nominee_name: null,
+        nominee_phone: null,
+        joined_on: new Date().toISOString().slice(0, 10),
+        status: active.status,
+        is_active: active.status === 'active',
+        left_on: null,
+        created_at: new Date().toISOString(),
+      } as Member : null);
+
+      setMember(memberObj);
+      setRole((r as Role) ?? active.role ?? 'member');
       setConfig((c as AppConfig) ?? null);
       setLoading(false);
     })();
 
     return () => { cancelled = true; };
-  }, [session, currentGroupId, tick]);
+  }, [userId, currentGroupId, tick]);
 
   const switchGroup = useCallback(async (groupId: string) => {
     if (groupId === currentGroupId) return;
@@ -165,7 +227,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setCurrentGroupId(groupId);
   }, [currentGroupId]);
 
-  const group = groups.find((g) => g.id === currentGroupId) ?? null;
+  const group = groups.find((g) => g.id === currentGroupId) ?? groups[0] ?? null;
 
   const value = useMemo<SessionValue>(() => ({
     session,
@@ -178,15 +240,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     loading,
     noGroups: Boolean(session) && !loading && groups.length === 0,
     awaitingApproval:
-      Boolean(session) && !loading && groups.length > 0 && group?.status === 'pending',
+      Boolean(session) && !loading && groups.length > 0 && (group?.status === 'pending' || groups.every((g) => g.status === 'pending')),
     isOfficer: role === 'cashier' || role === 'accountant' || role === 'president',
+    networkError,
+    retry: () => setTick((n) => n + 1),
     switchGroup,
     signOut: async () => {
       try { localStorage.removeItem(LAST_GROUP); } catch { /* private window */ }
       await supabase.auth.signOut();
     },
     refresh: () => setTick((n) => n + 1),
-  }), [session, groups, currentGroupId, group, member, role, config, loading, switchGroup]);
+  }), [session, groups, currentGroupId, group, member, role, config, loading, networkError, switchGroup]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

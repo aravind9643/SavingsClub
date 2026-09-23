@@ -205,6 +205,16 @@ export function Stat({
  * Escape closes it, the scrim closes it, and the page behind is locked from
  * scrolling while it is open.
  */
+let activeSheetsCount = 0;
+
+/** Unconditionally unlock body scroll, used during navigation or route changes. */
+export function resetScrollLock(): void {
+  activeSheetsCount = 0;
+  if (typeof document !== 'undefined') {
+    document.body.style.overflow = '';
+  }
+}
+
 export function Sheet({
   open, title, onClose, children, footer,
 }: {
@@ -217,12 +227,15 @@ export function Sheet({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    const prev = document.body.style.overflow;
+    activeSheetsCount++;
     document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKey);
     return () => {
-      document.body.style.overflow = prev;
       window.removeEventListener('keydown', onKey);
+      activeSheetsCount = Math.max(0, activeSheetsCount - 1);
+      if (activeSheetsCount === 0) {
+        document.body.style.overflow = '';
+      }
     };
   }, [open, onClose]);
 

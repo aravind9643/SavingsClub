@@ -12,7 +12,7 @@ import {
   faHouse, faCalendarCheck, faIndianRupeeSign, faReceipt, faWallet,
   faBuildingColumns, faUserGroup, faGear, faClipboardList, faSun, faMoon,
   faRightFromBracket, faChevronRight, faChevronDown, faXmark, faPlus, faEllipsis, faCheck,
-  faArrowUp, faArrowDown, faInbox, faTableColumns, faHandHoldingDollar,
+  faArrowUp, faArrowDown, faInbox, faTableColumns, faHandHoldingDollar, faShareNodes,
 } from '@fortawesome/free-solid-svg-icons';
 
 config.autoAddCss = false;
@@ -65,3 +65,4 @@ export const IconArrowUp = make(faArrowUp);
 export const IconArrowDown = make(faArrowDown);
 export const IconInbox = make(faInbox);
 export const IconLoan = make(faHandHoldingDollar);
+export const IconShare = make(faShareNodes);

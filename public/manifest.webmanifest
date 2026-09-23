@@ -1,0 +1,18 @@
+{
+  "name": "Sanchay — Savings & Chit Fund",
+  "short_name": "Sanchay",
+  "description": "Multi-tenant savings group ledger, monthly contributions, member loans, and audit log.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c1322",
+  "theme_color": "#1f4e79",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useMutation, useQuery } from '../hooks/useQuery';
@@ -28,6 +28,27 @@ export default function Settings() {
     float_limit: String(paiseToRupees(config.cash_float_limit_paise)),
     report_hours: String(config.cash_report_hours),
   }));
+
+  useEffect(() => {
+    if (!config) return;
+    setForm({
+      group_name: config.name,
+      monthly: String(paiseToRupees(config.monthly_contribution_paise)),
+      due_day: String(config.due_day),
+      grace_day: String(config.grace_day),
+      late_fee: String(paiseToRupees(config.late_fee_paise)),
+      loan_rate: String(config.loan_rate_bp / 100),
+      overdue_rate: String(config.overdue_rate_bp / 100),
+      max_months: String(config.max_loan_months),
+      max_loan_pct: String(config.max_loan_pct_bp / 100),
+      reserve_pct: String(config.reserve_pct_bp / 100),
+      loan_approvals: String(config.loan_required_approvals),
+      expense_approvals: String(config.expense_required_approvals),
+      expense_pct: String(config.expense_annual_pct_bp / 100),
+      float_limit: String(paiseToRupees(config.cash_float_limit_paise)),
+      report_hours: String(config.cash_report_hours),
+    });
+  }, [config?.id]);
 
   const save = useMutation(
     async () => {
@@ -156,7 +177,7 @@ export default function Settings() {
         be told.
       </Notice>
 
-      <div className="btn-row stack" style={{ paddingBottom: 12 }}>
+      <div className="btn-row stack" style={{ marginTop: 12, paddingBottom: 36 }}>
         <Busy className="primary lg" pending={save.pending} onClick={() => void save.run()}>
           Save rules
         </Busy>

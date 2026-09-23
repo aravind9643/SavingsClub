@@ -12,9 +12,16 @@ import { friendlyError } from '../lib/supabase';
 
 type Listener = () => void;
 
+interface CacheEntry<T = unknown> {
+  data: T;
+  timestamp: number;
+}
+
+const STALE_TIME_MS = 60_000;
+
 const versions = new Map<string, number>();
 const listeners = new Map<string, Set<Listener>>();
-const cache = new Map<string, unknown>();
+const cache = new Map<string, CacheEntry>();
 
 /**
  * Tenancy, enforced in one place.
@@ -32,7 +39,9 @@ const cache = new Map<string, unknown>();
 let activeGroup = '_';
 
 function scoped(key: string | null): string | null {
-  return key === null ? null : `${activeGroup}/${key}`;
+  if (key === null) return null;
+  if (key.startsWith(`${activeGroup}/`)) return key;
+  return `${activeGroup}/${key}`;
 }
 
 /**
@@ -75,7 +84,9 @@ function subscribe(key: string, fn: Listener): () => void {
  * the keys were: invalidating 'fund' never disturbs another group's cache.
  */
 export function invalidate(...prefixes: string[]): void {
-  const scopedPrefixes = prefixes.map((p) => `${activeGroup}/${p}`);
+  const scopedPrefixes = prefixes.map((p) =>
+    p.startsWith(`${activeGroup}/`) ? p : `${activeGroup}/${p}`,
+  );
   // `cache` is scanned as well as `listeners` and `versions`. A key that was
   // fetched but is not currently mounted appears in neither of those, so
   // leaving it out let a stale row survive its own invalidation and be served
@@ -107,11 +118,10 @@ export function useQuery<T>(
   // cache read below cannot hand back the outgoing group's rows.
   const key = scoped(rawKey);
 
-  const [data, setData] = useState<T | undefined>(
-    key ? (cache.get(key) as T | undefined) : undefined,
-  );
+  const initialEntry = key ? (cache.get(key) as CacheEntry<T> | undefined) : undefined;
+  const [data, setData] = useState<T | undefined>(initialEntry?.data);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(Boolean(key));
+  const [loading, setLoading] = useState<boolean>(Boolean(key) && initialEntry === undefined);
   const [, bump] = useState(0);
 
   // The key changing means the group changed (or the caller's own key did).
@@ -120,10 +130,10 @@ export function useQuery<T>(
   const shownFor = useRef(key);
   if (shownFor.current !== key) {
     shownFor.current = key;
-    const hit = key ? (cache.get(key) as T | undefined) : undefined;
-    setData(hit);
+    const hitEntry = key ? (cache.get(key) as CacheEntry<T> | undefined) : undefined;
+    setData(hitEntry?.data);
     setError(null);
-    setLoading(Boolean(key) && hit === undefined);
+    setLoading(Boolean(key) && hitEntry === undefined);
   }
 
   // Keep the latest fetcher without making it a dependency: callers pass an
@@ -139,18 +149,46 @@ export function useQuery<T>(
     return subscribe(key, () => bump((n) => n + 1));
   }, [key]);
 
+  // Revalidate on tab focus if data has become stale
+  useEffect(() => {
+    if (!key) return;
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const currentEntry = cache.get(key) as CacheEntry<T> | undefined;
+        if (!currentEntry || Date.now() - currentEntry.timestamp >= STALE_TIME_MS) {
+          bump((n) => n + 1);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [key]);
+
   const version = key ? (versions.get(key) ?? 0) : 0;
 
   useEffect(() => {
     if (!key) return;
     let cancelled = false;
-    setLoading(true);
+
+    const currentEntry = cache.get(key) as CacheEntry<T> | undefined;
+    const isFresh =
+      currentEntry !== undefined && Date.now() - currentEntry.timestamp < STALE_TIME_MS;
+
+    // Fresh cached data does not need refetching on mount
+    if (isFresh) {
+      setLoading(false);
+      return;
+    }
+
+    if (!currentEntry) {
+      setLoading(true);
+    }
 
     fetcherRef
       .current()
       .then((result) => {
         if (cancelled) return;
-        cache.set(key, result);
+        cache.set(key, { data: result, timestamp: Date.now() });
         setData(result);
         setError(null);
       })
@@ -167,8 +205,8 @@ export function useQuery<T>(
   }, [key, version]);
 
   const refetch = useCallback(() => {
-    if (key) invalidate(key);
-  }, [key]);
+    if (rawKey) invalidate(rawKey);
+  }, [rawKey]);
 
   return { data, error, loading, refetch };
 }

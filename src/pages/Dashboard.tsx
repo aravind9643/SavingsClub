@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { useFund } from '../context/FundContext';
@@ -5,25 +6,37 @@ import { useSession } from '../context/SessionContext';
 import { useQuery } from '../hooks/useQuery';
 import { supabase } from '../lib/supabase';
 import { formatPaise, formatPaiseShort } from '../lib/money';
+import { haptic } from '../lib/haptics';
 import {
   Hero, Chip, Notice, Panel, Stat, List, Row, Empty,
-  initials, ago, fmtDate, SkeletonList,
+  initials, ago, fmtDate, SkeletonList, Sheet,
 } from '../components/ui';
 import {
-  IconPlus, IconArrowUp, IconArrowDown, IconBank, IconInbox, IconCheck,
+  IconPlus, IconArrowUp, IconArrowDown, IconBank, IconInbox, IconCheck, IconShare,
 } from '../components/icons';
-import type { MemberPosition, BankStatement, LoanRow, AuditRow } from '../lib/types';
+import type {
+  MemberPosition, BankStatement, LoanRow, AuditRow, UnpaidRow, FundSummary,
+  ContributionPeriod, Contribution,
+} from '../lib/types';
 
 export default function Dashboard() {
   const nav = useNavigate();
   const { fund, alerts, loading } = useFund();
-  const { member, config, group } = useSession();
+  const { member, config, group, currentGroupId } = useSession();
+  const [reportOpen, setReportOpen] = useState(false);
 
   const positions = useQuery<MemberPosition[]>('positions', async () => {
     const { data, error } = await supabase
       .from('v_member_positions').select('*').order('contributed_paise', { ascending: false });
     if (error) throw error;
     return (data ?? []) as MemberPosition[];
+  });
+
+  const unpaidQ = useQuery<UnpaidRow[]>('unpaid:mine', async () => {
+    const { data, error } = await supabase
+      .from('v_unpaid_contributions').select('*');
+    if (error) throw error;
+    return (data ?? []) as UnpaidRow[];
   });
 
   const lastStatement = useQuery<BankStatement | null>('bank:last', async () => {
@@ -50,6 +63,38 @@ export default function Dashboard() {
     return (data ?? []) as AuditRow[];
   });
 
+  const latestPeriod = useQuery<ContributionPeriod | null>('periods:latest', async () => {
+    let q = supabase
+      .from('contribution_periods')
+      .select('*')
+      .order('period_month', { ascending: false })
+      .limit(1);
+    if (currentGroupId) {
+      q = q.eq('group_id', currentGroupId);
+    }
+    const { data, error } = await q.maybeSingle();
+    if (error) throw error;
+    return (data as ContributionPeriod) ?? null;
+  });
+
+  const myPaidContrib = useQuery<Contribution | null>(
+    latestPeriod.data && member ? `contrib:${latestPeriod.data.id}:${member.id}` : null,
+    async () => {
+      if (!latestPeriod.data || !member) return null;
+      let q = supabase
+        .from('contributions')
+        .select('*')
+        .eq('period_id', latestPeriod.data.id)
+        .eq('member_id', member.id);
+      if (currentGroupId) {
+        q = q.eq('group_id', currentGroupId);
+      }
+      const { data, error } = await q.maybeSingle();
+      if (error) throw error;
+      return (data as Contribution) ?? null;
+    },
+  );
+
   if (loading && !fund) {
     return (
       <Screen title="Home">
@@ -59,13 +104,45 @@ export default function Dashboard() {
     );
   }
 
+  const myPosition = (positions.data ?? []).find((p) => p.member_id === member?.id);
+  const myUnpaid = (unpaidQ.data ?? []).find((u) => u.member_id === member?.id);
+
+  let monthStat = {
+    v: 'Not opened',
+    s: 'no active period',
+    tone: undefined as 'mint' | 'amber' | 'coral' | undefined,
+  };
+
+  if (latestPeriod.data) {
+    if (myUnpaid) {
+      monthStat = {
+        v: formatPaiseShort(myUnpaid.expected_paise),
+        s: myUnpaid.is_overdue ? 'overdue' : `due ${fmtDate(myUnpaid.due_date)}`,
+        tone: myUnpaid.is_overdue ? 'coral' : 'amber',
+      };
+    } else if (myPaidContrib.data) {
+      monthStat = {
+        v: 'Paid',
+        s: 'up to date',
+        tone: 'mint',
+      };
+    } else {
+      monthStat = {
+        v: 'Not due',
+        s: 'exempt',
+        tone: undefined,
+      };
+    }
+  }
+
   const myVoteNeeded = (pending.data ?? []).filter((l) => l.can_i_vote);
   const diff = lastStatement.data?.difference_paise;
   const hour = new Date().getHours();
   const greetingTitle = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
 
   return (
-    <Screen
+    <>
+      <Screen
       title={greetingTitle}
       sub={member?.full_name}
       action={
@@ -99,6 +176,32 @@ export default function Dashboard() {
         />
       )}
 
+      {/* Personal standing for the logged-in member */}
+      {myPosition && (
+        <Panel title="Your standing">
+          <div className="stats three">
+            <Stat
+              k="Your savings"
+              v={formatPaiseShort(myPosition.contributed_paise)}
+              s={`${Number(myPosition.share_pct).toFixed(0)}% fund share`}
+              tone="mint"
+            />
+            <Stat
+              k="This month"
+              v={monthStat.v}
+              s={monthStat.s}
+              tone={monthStat.tone}
+            />
+            <Stat
+              k="Active loan"
+              v={myPosition.outstanding_paise > 0 ? formatPaiseShort(myPosition.outstanding_paise) : 'None'}
+              s={myPosition.outstanding_paise > 0 ? 'outstanding' : 'debt free'}
+              tone={myPosition.outstanding_paise > 0 ? 'coral' : undefined}
+            />
+          </div>
+        </Panel>
+      )}
+
       {/* Anything that needs a human, first. */}
       {myVoteNeeded.length > 0 && (
         <Notice tone="warn" onClick={() => nav('/loans')}>
@@ -111,7 +214,7 @@ export default function Dashboard() {
           {a.message}
         </Notice>
       ))}
-      {alerts.length === 0 && myVoteNeeded.length === 0 && (
+      {!loading && alerts.length === 0 && myVoteNeeded.length === 0 && (
         <Notice tone="good">Everything is in order — nothing needs attention.</Notice>
       )}
 
@@ -161,7 +264,20 @@ export default function Dashboard() {
           </Panel>
 
           {fund && (
-            <Panel title="This month">
+            <Panel
+              title="This month"
+              action={
+                <button
+                  className="sec-link"
+                  onClick={() => {
+                    haptic(10);
+                    setReportOpen(true);
+                  }}
+                >
+                  Report
+                </button>
+              }
+            >
               <div className="stats three">
                 <Stat
                   k="In bank"
@@ -253,6 +369,16 @@ export default function Dashboard() {
         </div>
       </div>
     </Screen>
+
+    {reportOpen && fund && (
+      <MonthlyReportSheet
+        groupName={group?.name ?? 'Savings Group'}
+        fund={fund}
+        positions={positions.data ?? []}
+        onClose={() => setReportOpen(false)}
+      />
+    )}
+  </>
   );
 }
 
@@ -280,3 +406,135 @@ function describe(r: AuditRow): string {
       return `${r.table_name} ${r.action.toLowerCase()}`;
   }
 }
+
+function MonthlyReportSheet({
+  groupName, fund, positions, onClose,
+}: {
+  groupName: string;
+  fund: FundSummary;
+  positions: MemberPosition[];
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const totalContributed = positions.reduce((s, p) => s + p.contributed_paise, 0);
+
+  const text = `📊 *${groupName} — Monthly Group Statement*
+📅 *Period:* ${dateStr}
+
+💰 *Fund Overview:*
+• Total Fund: ${formatPaise(fund.total_fund_paise)}
+• In Bank (Expected): ${formatPaise(fund.expected_bank_balance_paise)}
+• Cash Float: ${formatPaise(fund.cash_float_paise)}
+• 25% Statutory Reserve: ${formatPaise(fund.reserve_paise)}
+
+📈 *Lending Status:*
+• Outstanding Loans: ${formatPaise(fund.outstanding_paise)}
+• Lending Capacity Left: ${formatPaise(fund.still_lendable_paise)}
+
+👥 *Members & Equity:*
+• Total Members: ${positions.length}
+• Total Savings Contributed: ${formatPaise(totalContributed)}
+
+_Generated via Sanchay Ledger_`;
+
+  async function share() {
+    haptic(12);
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${groupName} - Statement (${dateStr})`,
+          text,
+        });
+        return;
+      } catch {
+        /* fallback to wa.me */
+      }
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  }
+
+  async function copy() {
+    haptic(10);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function downloadCsv() {
+    haptic(15);
+    const rows: string[][] = [
+      ['Group Financial Report', groupName],
+      ['Date', now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })],
+      [],
+      ['Fund Metric', 'Amount (Rupees)'],
+      ['Total Fund', (fund.total_fund_paise / 100).toFixed(2)],
+      ['Expected Bank Balance', (fund.expected_bank_balance_paise / 100).toFixed(2)],
+      ['Cash Float', (fund.cash_float_paise / 100).toFixed(2)],
+      ['25% Statutory Reserve', (fund.reserve_paise / 100).toFixed(2)],
+      ['Outstanding Loans Principal', (fund.outstanding_paise / 100).toFixed(2)],
+      ['Lendable Capacity', (fund.still_lendable_paise / 100).toFixed(2)],
+      [],
+      ['Member Directory', 'Role', 'Total Contributed (Rs)', 'Fund Share %', 'Outstanding Debt (Rs)'],
+      ...positions.map((p) => [
+        `"${p.full_name.replace(/"/g, '""')}"`,
+        p.role,
+        (p.contributed_paise / 100).toFixed(2),
+        `${Number(p.share_pct).toFixed(1)}%`,
+        (p.outstanding_paise / 100).toFixed(2),
+      ]),
+    ];
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `${groupName.toLowerCase().replace(/\s+/g, '-')}-statement-${now.toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  return (
+    <Sheet open title="Monthly Statement" onClose={onClose}>
+      <div style={{ textAlign: 'center', marginBottom: 16 }}>
+        <div style={{ fontSize: '1.8rem', fontWeight: 700, fontFamily: 'var(--display)' }}>
+          {formatPaise(fund.total_fund_paise)}
+        </div>
+        <p className="dim" style={{ marginTop: 4 }}>
+          {groupName} · {dateStr}
+        </p>
+      </div>
+
+      <Panel title="Fund summary" flush>
+        <List>
+          <Row title="Bank expected balance" amount={formatPaise(fund.expected_bank_balance_paise)} amountTone="mint" />
+          <Row title="Cash float" amount={formatPaise(fund.cash_float_paise)} />
+          <Row title="Money on loan" amount={formatPaise(fund.outstanding_paise)} />
+          <Row title="25% Minimum reserve" amount={formatPaise(fund.reserve_paise)} />
+          <Row title="Available to lend" amount={formatPaise(fund.still_lendable_paise)} amountTone="mint" />
+          <Row title="Active members" note={`${positions.length} members`} />
+        </List>
+      </Panel>
+
+      <div className="btn-row stack" style={{ marginTop: 20 }}>
+        <button type="button" className="primary lg" onClick={() => void share()}>
+          <IconShare width={16} height={16} style={{ marginRight: 8 }} />
+          Share to WhatsApp
+        </button>
+        <button type="button" className="subtle" onClick={() => void copy()}>
+          {copied ? 'Copied to clipboard!' : 'Copy text statement'}
+        </button>
+        <button type="button" className="subtle" onClick={downloadCsv}>
+          Download Excel / CSV
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+

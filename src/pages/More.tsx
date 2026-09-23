@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Screen, useAppTheme, useGroupSwitcher } from '../App';
 import { useSession } from '../context/SessionContext';
-import { List, Row, Panel, initials, Tag } from '../components/ui';
+import { supabase } from '../lib/supabase';
+import { useMutation } from '../hooks/useQuery';
+import { List, Row, Panel, Sheet, Field, Busy, ErrorNote, initials, Tag } from '../components/ui';
 import {
   IconExpenses, IconBank, IconMembers, IconSettings, IconAudit,
   IconSun, IconMoon, IconLogout, IconPlus, IconChevronDown,
@@ -16,6 +19,7 @@ export default function More() {
   const { member, role, group, groups, signOut, isOfficer } = useSession();
   const { theme, setTheme } = useAppTheme();
   const openSwitcher = useGroupSwitcher();
+  const [editingProfile, setEditingProfile] = useState(false);
 
   return (
     <Screen title="More">
@@ -31,7 +35,7 @@ export default function More() {
             {member?.full_name}
           </div>
           <div className="dim" style={{ marginTop: 2 }}>
-            {member?.email}
+            {member?.email ?? (member?.phone ? member.phone : 'Member')}
           </div>
           <div style={{ marginTop: 7, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {role === 'member'
@@ -50,6 +54,14 @@ export default function More() {
             ) : null}
           </div>
         </div>
+        <button
+          type="button"
+          className="sec-link"
+          onClick={() => setEditingProfile(true)}
+          style={{ fontSize: '0.85rem' }}
+        >
+          Edit
+        </button>
       </div>
 
       <Panel title="Money" flush>
@@ -135,6 +147,80 @@ export default function More() {
       <p className="dim" style={{ textAlign: 'center', paddingBottom: 8 }}>
         Sanchay · your group's books
       </p>
+
+      {editingProfile && (
+        <EditProfileSheet onClose={() => setEditingProfile(false)} />
+      )}
     </Screen>
+  );
+}
+
+function EditProfileSheet({ onClose }: { onClose: () => void }) {
+  const { member, refresh } = useSession();
+  const [phone, setPhone] = useState(member?.phone ?? '');
+  const [nomineeName, setNomineeName] = useState(member?.nominee_name ?? '');
+  const [nomineePhone, setNomineePhone] = useState(member?.nominee_phone ?? '');
+
+  const save = useMutation(
+    async () => {
+      if (!member) return;
+      const { error } = await supabase
+        .from('members')
+        .update({
+          phone: phone.trim() || null,
+          nominee_name: nomineeName.trim() || null,
+          nominee_phone: nomineePhone.trim() || null,
+        })
+        .eq('id', member.id);
+      if (error) throw error;
+    },
+    {
+      invalidates: ['members', 'positions'],
+      onSuccess: () => {
+        refresh();
+        onClose();
+      },
+    },
+  );
+
+  return (
+    <Sheet open title="Your details" onClose={onClose}>
+      <p className="dim" style={{ marginTop: -4, marginBottom: 14 }}>
+        Update your contact and nominee information for {member?.full_name}.
+      </p>
+      <ErrorNote error={save.error} />
+      <Field label="Phone number">
+        <input
+          type="tel"
+          inputMode="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="+91 98765 43210"
+        />
+      </Field>
+      <div className="field-row" style={{ marginTop: 14 }}>
+        <Field label="Nominee name" hint="Who receives your fund share in emergency">
+          <input
+            value={nomineeName}
+            onChange={(e) => setNomineeName(e.target.value)}
+            placeholder="Spouse / Parent / Sibling"
+          />
+        </Field>
+        <Field label="Nominee phone">
+          <input
+            type="tel"
+            inputMode="tel"
+            value={nomineePhone}
+            onChange={(e) => setNomineePhone(e.target.value)}
+            placeholder="+91 98765 43210"
+          />
+        </Field>
+      </div>
+      <div className="btn-row stack" style={{ marginTop: 20 }}>
+        <Busy className="primary lg" pending={save.pending} onClick={() => void save.run()}>
+          Save details
+        </Busy>
+      </div>
+    </Sheet>
   );
 }

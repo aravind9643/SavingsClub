@@ -4,7 +4,8 @@ import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation, invalidate } from '../hooks/useQuery';
 import { useSession, useIsOfficer } from '../context/SessionContext';
-import { formatPaise, formatPaiseShort, rupeesToPaise } from '../lib/money';
+import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees } from '../lib/money';
+import { haptic } from '../lib/haptics';
 import {
   Panel, Stat, List, Row, Sheet, Field, AmountField, Busy, ErrorNote,
   Tag, Notice, Loading, fmtDate, ago, toneForStatus,
@@ -339,7 +340,22 @@ function RepaySheet({
 
       <ErrorNote error={save.error} />
 
-      <label>Principal</label>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <label style={{ margin: 0 }}>Principal</label>
+        <button
+          type="button"
+          className="seg"
+          style={{ padding: '3px 9px', fontSize: '0.72rem', background: 'var(--surface-3)' }}
+          onClick={() => {
+            haptic(10);
+            setPrincipal(String(paiseToRupees(loan.outstanding_principal_paise)));
+            setInterest(String(paiseToRupees(dueInterest)));
+            setPenalty('0');
+          }}
+        >
+          Settle in full ({formatPaiseShort(loan.outstanding_principal_paise + dueInterest)})
+        </button>
+      </div>
       <AmountField value={principal} onChange={setPrincipal} autoFocus />
 
       <div className="field-row" style={{ marginTop: 14 }}>

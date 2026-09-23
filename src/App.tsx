@@ -1,28 +1,29 @@
 import {
-  createContext, useContext, useEffect, useState, type ReactNode,
+  createContext, useContext, useEffect, useState, lazy, Suspense, type ReactNode,
 } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import { SessionProvider, useSession } from './context/SessionContext';
 import { FundProvider, useFund } from './context/FundContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Contributions from './pages/Contributions';
 import Loans from './pages/Loans';
-import LoanDetail from './pages/LoanDetail';
-import NewLoan from './pages/NewLoan';
-import Expenses from './pages/Expenses';
-import Cash from './pages/Cash';
-import Bank from './pages/Bank';
-import Members from './pages/Members';
-import Audit from './pages/Audit';
 import Onboard, { AwaitingApproval } from './pages/Onboard';
-import Settings from './pages/Settings';
-import More from './pages/More';
 import GroupSwitcher from './components/GroupSwitcher';
-import { Loading, initials } from './components/ui';
+import { Loading, initials, resetScrollLock } from './components/ui';
 import {
   IconHome, IconContributions, IconLoans, IconWallet, IconMore, IconChevronDown,
 } from './components/icons';
+
+const LoanDetail = lazy(() => import('./pages/LoanDetail'));
+const NewLoan = lazy(() => import('./pages/NewLoan'));
+const Expenses = lazy(() => import('./pages/Expenses'));
+const Cash = lazy(() => import('./pages/Cash'));
+const Bank = lazy(() => import('./pages/Bank'));
+const Members = lazy(() => import('./pages/Members'));
+const Audit = lazy(() => import('./pages/Audit'));
+const Settings = lazy(() => import('./pages/Settings'));
+const More = lazy(() => import('./pages/More'));
 
 /** Five destinations, the most anyone can hit accurately on a phone. */
 const TABS = [
@@ -113,6 +114,12 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
 function Shell() {
   const [switcher, setSwitcher] = useState(false);
   const [adding, setAdding] = useState(false);
+  const { networkError, retry } = useSession();
+  const location = useLocation();
+
+  useEffect(() => {
+    resetScrollLock();
+  }, [location.pathname]);
 
   // Adding a group takes over the screen: create/join both end in a session
   // refresh, and a half-visible ledger behind them would be the old group's.
@@ -121,21 +128,57 @@ function Shell() {
   return (
     <SwitcherCtx.Provider value={() => setSwitcher(true)}>
     <div className="app">
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/contributions" element={<Contributions />} />
-        <Route path="/loans" element={<Loans />} />
-        <Route path="/loans/new" element={<NewLoan />} />
-        <Route path="/loans/:id" element={<LoanDetail />} />
-        <Route path="/expenses" element={<Expenses />} />
-        <Route path="/cash" element={<Cash />} />
-        <Route path="/bank" element={<Bank />} />
-        <Route path="/members" element={<Members />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/audit" element={<Audit />} />
-        <Route path="/more" element={<More />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      {networkError && (
+        <div style={{
+          background: 'var(--coral-ghost)',
+          borderBottom: '1px solid var(--coral-dim)',
+          color: 'var(--coral)',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '0.86rem',
+          fontWeight: 500,
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+        }}>
+          <span>Connection issue: {networkError}</span>
+          <button
+            type="button"
+            onClick={retry}
+            style={{
+              background: 'var(--coral)',
+              color: '#fff',
+              border: 0,
+              borderRadius: 6,
+              padding: '4px 10px',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      <Suspense fallback={<div className="auth" style={{ minHeight: '40vh' }}><Loading /></div>}>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/contributions" element={<Contributions />} />
+          <Route path="/loans" element={<Loans />} />
+          <Route path="/loans/new" element={<NewLoan />} />
+          <Route path="/loans/:id" element={<LoanDetail />} />
+          <Route path="/expenses" element={<Expenses />} />
+          <Route path="/cash" element={<Cash />} />
+          <Route path="/bank" element={<Bank />} />
+          <Route path="/members" element={<Members />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/audit" element={<Audit />} />
+          <Route path="/more" element={<More />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
       <TabBar onSwitchGroup={() => setSwitcher(true)} />
       <GroupSwitcher
         open={switcher}
@@ -149,14 +192,16 @@ function Shell() {
 
 function Gate() {
   const {
-    session, member, loading, noGroups, awaitingApproval, currentGroupId,
+    session, member, loading, noGroups, awaitingApproval, currentGroupId, groups,
   } = useSession();
   useTheme();
 
   if (loading) return <div className="auth"><Loading what="Signing in" /></div>;
   if (!session) return <Login />;
   if (noGroups) return <Onboard />;
-  if (awaitingApproval) return <AwaitingApproval />;
+  if (awaitingApproval || (groups.length > 0 && groups.every((g) => g.status === 'pending'))) {
+    return <AwaitingApproval />;
+  }
   // Signed in, in an active group, but the member row has not arrived. A brief
   // window during a switch rather than a state anyone can get stuck in.
   if (!member) return <div className="auth"><Loading what="Opening your group" /></div>;
