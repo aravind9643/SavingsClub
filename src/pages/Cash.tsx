@@ -57,7 +57,7 @@ export default function Cash() {
 
   return (
     <>
-      <Screen title="Cash" sub="Emergency float">
+      <Screen title="Cash" sub="Cash in hand">
         <Hero
           label="With the cashier"
           paise={balance}
@@ -98,7 +98,7 @@ export default function Cash() {
         )}
 
         {(alertsQ.data ?? []).length > 0 && (
-          <Panel title="Not yet told to the group" flush>
+          <Panel title="Group not told yet" flush>
             <List>
               {(alertsQ.data ?? []).map((a) => (
                 <Row
@@ -126,7 +126,7 @@ export default function Cash() {
           </Panel>
         )}
 
-        <Panel title="Register" flush>
+        <Panel title="All cash movements" flush>
           {entriesQ.loading && !entriesQ.data ? (
             <SkeletonList rows={4} />
           ) : (entriesQ.data ?? []).length === 0 ? (
@@ -212,7 +212,7 @@ function CashSheet({
   );
 
   return (
-    <Sheet open title="Record cash" onClose={onClose}>
+    <Sheet open title="Cash in or out" onClose={onClose}>
       <ErrorNote error={save.error} />
 
       <div className="seg-row" style={{ marginBottom: 14 }}>

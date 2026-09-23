@@ -154,41 +154,41 @@ export default function Contributions() {
   const expected = (period?.amount_paise ?? 0) * members.length;
 
   if ((periodsQ.loading && !periodsQ.data) || (rolesQ.loading && !rolesQ.data)) {
-    return <Screen title="Chanda"><SkeletonList rows={5} /></Screen>;
+    return <Screen title="Savings"><SkeletonList rows={5} /></Screen>;
   }
 
   if (periods.length === 0) {
     return (
-      <Screen title="Chanda">
+      <Screen title="Savings">
         <Empty icon={<IconContributions width={22} height={22} />}>
-          No months opened yet.
+          This month has not been started yet.
           {!hasMoneyOfficer ? (
             role === 'president' ? (
               <>
                 <p className="dim" style={{ marginTop: 8, maxWidth: 360, marginInline: 'auto' }}>
-                  A cashier or accountant must be assigned before contributions can be opened and recorded.
+                  Pick a cashier and an accountant first. Until then nobody can take money in.
                 </p>
                 <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
                   <button type="button" className="primary lg" onClick={() => nav('/members')}>
-                    Assign roles in Members
+                    Choose who does what
                   </button>
                 </div>
               </>
             ) : (
               <p className="dim" style={{ marginTop: 8 }}>
-                The group officers will open this month once contributions begin.
+                The cashier will start this month when collection begins.
               </p>
             )
           ) : canOpen ? (
             <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
               <Busy className="primary lg" pending={openPeriod.pending}
                 onClick={() => void openPeriod.run()}>
-                Open this month
+                Start this month
               </Busy>
             </div>
           ) : (
             <p className="dim" style={{ marginTop: 8 }}>
-              The group officers will open this month once contributions begin.
+              The cashier will start this month when collection begins.
             </p>
           )}
         </Empty>
@@ -199,7 +199,7 @@ export default function Contributions() {
   return (
     <>
       <Screen
-        title="Chanda"
+        title="Savings"
         sub={period ? monthLabel(period.period_month) : undefined}
       >
         <Segments
@@ -279,7 +279,7 @@ export default function Contributions() {
           action={
             canOpen && !periods.some((p) => isThisMonth(p.period_month)) ? (
               <button className="sec-link" onClick={() => void openPeriod.run()}>
-                Open this month
+                Start this month
               </button>
             ) : undefined
           }
@@ -547,7 +547,7 @@ _Recorded on Sanchay_`;
         <List>
           <Row title="Payment date" note={fmtDate(receipt.paidOn)} />
           <Row title="Method" note={receipt.method.toUpperCase()} />
-          <Row title="Base contribution" amount={formatPaise(receipt.amountPaise)} />
+          <Row title="Savings" amount={formatPaise(receipt.amountPaise)} />
           {receipt.lateFeePaise > 0 && (
             <Row title="Late fee" amount={`+${formatPaise(receipt.lateFeePaise)}`} amountTone="coral" />
           )}

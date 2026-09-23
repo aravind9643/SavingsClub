@@ -71,7 +71,7 @@ export default function Audit() {
   });
 
   return (
-    <Screen title="Audit" sub="Every change, and who made it">
+    <Screen title="History" sub="Every change, and who made it">
       <Segments<Filter>
         value={filter}
         onChange={handleFilterChange}
@@ -133,7 +133,7 @@ export default function Audit() {
       </Panel>
 
       {open !== null && (
-        <Sheet open title="Audit detail" onClose={() => setOpen(null)}>
+        <Sheet open title="What changed" onClose={() => setOpen(null)}>
           <Detail row={activeRows.find((r) => r.id === open)} />
         </Sheet>
       )}

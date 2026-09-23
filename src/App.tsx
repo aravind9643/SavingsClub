@@ -29,7 +29,7 @@ const More = lazy(() => import('./pages/More'));
 /** Five destinations, the most anyone can hit accurately on a phone. */
 const TABS = [
   { to: '/', label: 'Home', Icon: IconHome, end: true },
-  { to: '/contributions', label: 'Chanda', Icon: IconContributions },
+  { to: '/contributions', label: 'Savings', Icon: IconContributions },
   { to: '/loans', label: 'Loans', Icon: IconLoans },
   { to: '/cash', label: 'Cash', Icon: IconWallet },
   { to: '/more', label: 'More', Icon: IconMore },

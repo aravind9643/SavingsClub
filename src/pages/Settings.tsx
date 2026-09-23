@@ -81,7 +81,7 @@ export default function Settings() {
       if (isNaN(loanApprovals) || loanApprovals < 0) throw new Error('Loan approvals cannot be negative');
       if (isNaN(expenseApprovals) || expenseApprovals < 0) throw new Error('Expense approvals cannot be negative');
       if (isNaN(expensePct) || expensePct < 0 || expensePct > 10000) throw new Error('Expense limit % must be between 0 and 100%');
-      if (floatLimit < 0) throw new Error('Cash float limit cannot be negative');
+      if (floatLimit < 0) throw new Error('Cash limit cannot be negative');
       if (isNaN(reportHours) || reportHours < 1) throw new Error('Cash reporting window must be at least 1 hour');
 
       const { error } = await supabase.rpc('update_config', {
@@ -107,7 +107,7 @@ export default function Settings() {
     { invalidates: ['fund'], onSuccess: () => { setSaved(true); refresh(); } },
   );
 
-  if (!config || !form) return <Screen title="Rules"><Loading /></Screen>;
+  if (!config || !form) return <Screen title="Group rules"><Loading /></Screen>;
 
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => {
     setForm({ ...form, [k]: e.target.value });
@@ -116,9 +116,9 @@ export default function Settings() {
 
   if (!isOfficer) {
     return (
-      <Screen title="Rules">
-        <Notice tone="warn">Only an office holder can change the group rules.</Notice>
-        <Panel title="In force">
+      <Screen title="Group rules">
+        <Notice tone="warn">Only the cashier, accountant or president can change these.</Notice>
+        <Panel title="Rules right now">
           <ReadOnly config={config} />
         </Panel>
       </Screen>
@@ -126,7 +126,7 @@ export default function Settings() {
   }
 
   return (
-    <Screen title="Rules" sub="What the database enforces">
+    <Screen title="Group rules" sub="The app follows these, always">
       <ErrorNote error={save.error} />
       {saved && <Notice tone="good">Saved.</Notice>}
 
@@ -138,9 +138,9 @@ export default function Settings() {
 
       <InvitePanel />
 
-      <Panel title="Contributions">
+      <Panel title="Monthly savings">
         <div className="field-row">
-          <Field label="Monthly amount (₹)">
+          <Field label="Amount each month (₹)">
             <input inputMode="decimal" value={form.monthly} onChange={set('monthly')} />
           </Field>
           <Field label="Late fee (₹)">
@@ -148,10 +148,10 @@ export default function Settings() {
           </Field>
         </div>
         <div className="field-row" style={{ marginTop: 14 }}>
-          <Field label="Due day">
+          <Field label="Pay by day">
             <input inputMode="numeric" value={form.due_day} onChange={set('due_day')} />
           </Field>
-          <Field label="Grace until">
+          <Field label="Late after day">
             <input inputMode="numeric" value={form.grace_day} onChange={set('grace_day')} />
           </Field>
         </div>
@@ -159,45 +159,45 @@ export default function Settings() {
 
       <Panel title="Loans">
         <div className="field-row">
-          <Field label="Interest % / month">
+          <Field label="Interest each month (%)">
             <input inputMode="decimal" value={form.loan_rate} onChange={set('loan_rate')} />
           </Field>
-          <Field label="Overdue % / month">
+          <Field label="Extra if late (%)">
             <input inputMode="decimal" value={form.overdue_rate} onChange={set('overdue_rate')} />
           </Field>
         </div>
         <div className="field-row" style={{ marginTop: 14 }}>
-          <Field label="Max term (months)">
+          <Field label="Longest loan (months)">
             <input inputMode="numeric" value={form.max_months} onChange={set('max_months')} />
           </Field>
-          <Field label="Approvals needed" hint="0 for automatic majority">
+          <Field label="Yes votes needed" hint="Leave 0 and the app uses a simple majority">
             <input inputMode="numeric" value={form.loan_approvals} onChange={set('loan_approvals')} />
           </Field>
         </div>
         <div className="field-row" style={{ marginTop: 14 }}>
-          <Field label="Max per member (%)">
+          <Field label="One member can borrow (%)">
             <input inputMode="decimal" value={form.max_loan_pct} onChange={set('max_loan_pct')} />
           </Field>
-          <Field label="Reserve kept (%)" hint="Never lent out">
+          <Field label="Always keep back (%)" hint="This much is never lent out">
             <input inputMode="decimal" value={form.reserve_pct} onChange={set('reserve_pct')} />
           </Field>
         </div>
       </Panel>
 
-      <Panel title="Expenses & cash">
+      <Panel title="Spending and cash">
         <div className="field-row">
-          <Field label="Expense approvals" hint="0 for automatic 2/3 majority">
+          <Field label="Yes votes for spending" hint="Leave 0 and the app uses a two-thirds majority">
             <input inputMode="numeric" value={form.expense_approvals} onChange={set('expense_approvals')} />
           </Field>
-          <Field label="Yearly cap (%)">
+          <Field label="Yearly spending limit (%)">
             <input inputMode="decimal" value={form.expense_pct} onChange={set('expense_pct')} />
           </Field>
         </div>
         <div className="field-row" style={{ marginTop: 14 }}>
-          <Field label="Cash float limit (₹)">
+          <Field label="Most cash in hand (₹)">
             <input inputMode="decimal" value={form.float_limit} onChange={set('float_limit')} />
           </Field>
-          <Field label="Report within (hours)">
+          <Field label="Tell the group within (hours)">
             <input inputMode="numeric" value={form.report_hours} onChange={set('report_hours')} />
           </Field>
         </div>
@@ -335,16 +335,16 @@ function InvitePanel() {
 function ReadOnly({ config }: { config: NonNullable<ReturnType<typeof useSession>['config']> }) {
   const rows: [string, string][] = [
     ['Monthly contribution', `₹${paiseToRupees(config.monthly_contribution_paise)}`],
-    ['Due by', `${config.due_day}th, grace to ${config.grace_day}th`],
+    ['Pay by', `${config.due_day}th, late after the ${config.grace_day}th`],
     ['Late fee', `₹${paiseToRupees(config.late_fee_paise)}`],
-    ['Loan interest', `${config.loan_rate_bp / 100}% per month`],
-    ['Overdue interest', `${config.overdue_rate_bp / 100}% per month`],
-    ['Max term', `${config.max_loan_months} months`],
-    ['Max per member', `${config.max_loan_pct_bp / 100}% of fund`],
-    ['Reserve', `${config.reserve_pct_bp / 100}% of fund`],
-    ['Loan approvals', config.loan_required_approvals > 0 ? `${config.loan_required_approvals} members` : 'Majority (auto)'],
-    ['Expense approvals', config.expense_required_approvals > 0 ? `${config.expense_required_approvals} members` : 'Two-thirds majority (auto)'],
-    ['Cash float limit', `₹${paiseToRupees(config.cash_float_limit_paise)}`],
+    ['Interest on loans', `${config.loan_rate_bp / 100}% per month`],
+    ['Extra if late', `${config.overdue_rate_bp / 100}% per month`],
+    ['Longest loan', `${config.max_loan_months} months`],
+    ['One member can borrow', `${config.max_loan_pct_bp / 100}% of fund`],
+    ['Always kept back', `${config.reserve_pct_bp / 100}% of fund`],
+    ['Yes votes for a loan', config.loan_required_approvals > 0 ? `${config.loan_required_approvals} members` : 'A simple majority'],
+    ['Yes votes for spending', config.expense_required_approvals > 0 ? `${config.expense_required_approvals} members` : 'Two out of every three'],
+    ['Most cash in hand', `₹${paiseToRupees(config.cash_float_limit_paise)}`],
   ];
   return (
     <div style={{ display: 'grid', gap: 10 }}>

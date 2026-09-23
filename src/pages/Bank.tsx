@@ -32,7 +32,7 @@ export default function Bank() {
 
   return (
     <>
-      <Screen title="Bank" sub="Reconciliation">
+      <Screen title="Bank" sub="Check the money matches">
         {fund && (
           <Hero
             label="Should be in the bank"
@@ -56,7 +56,7 @@ export default function Bank() {
         )}
 
         {latest && (
-          <Panel title="Last statement">
+          <Panel title="Last check">
             <div className="stats three">
               <Stat k="Bank says" v={formatPaiseShort(latest.closing_balance_paise)} />
               <Stat k="Books say" v={formatPaiseShort(latest.expected_balance_paise)} />
@@ -137,18 +137,18 @@ function StatementSheet({ expected, onClose }: { expected: number; onClose: () =
   const diff = typed === null ? null : typed - expected;
 
   return (
-    <Sheet open title="Bank statement" onClose={onClose}>
+    <Sheet open title="Check the bank" onClose={onClose}>
       <p className="dim" style={{ marginTop: -4, marginBottom: 14 }}>
         The books say {formatPaise(expected)} should be there.
       </p>
 
       <ErrorNote error={save.error} />
 
-      <label>Closing balance the bank shows</label>
+      <label>What does your bank show?</label>
       <AmountField value={balance} onChange={setBalance} autoFocus />
 
       <div className="field-row" style={{ marginTop: 14 }}>
-        <Field label="Statement date">
+        <Field label="Date on the statement">
           <input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
         </Field>
         <Field label="Note (optional)">
@@ -169,7 +169,7 @@ function StatementSheet({ expected, onClose }: { expected: number; onClose: () =
       <div className="btn-row stack">
         <Busy className="primary lg" pending={save.pending} disabled={!balance}
           onClick={() => void save.run()}>
-          Save statement
+          Save
         </Busy>
       </div>
     </Sheet>

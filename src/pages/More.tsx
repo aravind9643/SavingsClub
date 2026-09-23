@@ -46,7 +46,7 @@ export default function More() {
                 type="button"
                 className="tag violet"
                 onClick={openSwitcher}
-                title="Switch or manage groups"
+                title="Your groups"
               >
                 <span>{group.name}</span>
                 <IconChevronDown width={9} height={9} style={{ opacity: 0.75, flex: 'none' }} />
@@ -70,15 +70,15 @@ export default function More() {
             icon={<IconExpenses width={18} height={18} />}
             iconTone="amber"
             title="Expenses"
-            sub="Trips, parties and admin costs"
+            sub="Trips, parties and running costs"
             onClick={() => nav('/expenses')}
             chevron
           />
           <Row
             icon={<IconBank width={18} height={18} />}
             iconTone="mint"
-            title="Bank & reconciliation"
-            sub="Match the books to the statement"
+            title="Bank"
+            sub="Check our records match the bank"
             onClick={() => nav('/bank')}
             chevron
           />
@@ -90,7 +90,7 @@ export default function More() {
           <Row
             icon={<IconPlus width={18} height={18} />}
             iconTone="violet"
-            title="Switch or create group"
+            title="Switch or start a group"
             sub={groups.length > 1 ? `${groups.length} groups · Current: ${group?.name}` : 'Start or join another group'}
             onClick={openSwitcher ?? undefined}
             chevron
@@ -106,15 +106,15 @@ export default function More() {
           <Row
             icon={<IconSettings width={18} height={18} />}
             iconTone="violet"
-            title="Rules"
-            sub="Interest, caps, approvals"
+            title="Group rules"
+            sub="Interest, limits and voting"
             onClick={() => nav('/settings')}
             chevron
           />
           <Row
             icon={<IconAudit width={18} height={18} />}
             iconTone="coral"
-            title="Audit log"
+            title="History"
             sub="Every change, and who made it"
             onClick={() => nav('/audit')}
             chevron
@@ -145,7 +145,7 @@ export default function More() {
       </Panel>
 
       <p className="dim" style={{ textAlign: 'center', paddingBottom: 8 }}>
-        Sanchay · your group's books
+        Sanchay
       </p>
 
       {editingProfile && (
@@ -190,8 +190,7 @@ function EditProfileSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet open title="Your details" onClose={onClose}>
       <p className="dim" style={{ marginTop: -4, marginBottom: 14 }}>
-        Update your contact and nominee information for {member?.full_name}.
-        Leaving a field blank keeps what is already recorded.
+        Leave a box empty to keep what is already saved.
       </p>
       <ErrorNote error={save.error} />
       <Field label="Phone number">
@@ -204,14 +203,14 @@ function EditProfileSheet({ onClose }: { onClose: () => void }) {
         />
       </Field>
       <div className="field-row" style={{ marginTop: 14 }}>
-        <Field label="Nominee name" hint="Who receives your fund share in emergency">
+        <Field label="Family contact" hint="Who gets your savings if something happens to you">
           <input
             value={nomineeName}
             onChange={(e) => setNomineeName(e.target.value)}
             placeholder="Spouse / Parent / Sibling"
           />
         </Field>
-        <Field label="Nominee phone">
+        <Field label="Their phone">
           <input
             type="tel"
             inputMode="tel"

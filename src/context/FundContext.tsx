@@ -113,7 +113,7 @@ export function FundProvider({ children }: { children: ReactNode }) {
     alerts.push({
       id: 'float',
       severity: 'danger',
-      message: 'Cash float is over the limit — deposit the excess into the bank',
+      message: 'Too much cash in hand — put the extra in the bank',
       to: '/cash',
     });
   }
@@ -121,7 +121,9 @@ export function FundProvider({ children }: { children: ReactNode }) {
     alerts.push({
       id: 'overdue',
       severity: 'danger',
-      message: `${overdueQ.data.length} loan(s) past the due date`,
+      message: overdueQ.data.length === 1
+        ? '1 loan is past its due date'
+        : `${overdueQ.data.length} loans are past their due date`,
       to: '/loans',
     });
   }
@@ -129,7 +131,9 @@ export function FundProvider({ children }: { children: ReactNode }) {
     alerts.push({
       id: 'unreported',
       severity: 'danger',
-      message: `${cashQ.data.length} cash spend(s) not reported to the group in time`,
+      message: cashQ.data.length === 1
+        ? '1 cash payment was not told to the group in time'
+        : `${cashQ.data.length} cash payments were not told to the group in time`,
       to: '/cash',
     });
   }
@@ -137,7 +141,9 @@ export function FundProvider({ children }: { children: ReactNode }) {
     alerts.push({
       id: 'unpaid',
       severity: 'warn',
-      message: `${unpaidQ.data.length} contribution(s) unpaid past the grace date`,
+      message: unpaidQ.data.length === 1
+        ? '1 member has not paid this month yet'
+        : `${unpaidQ.data.length} members have not paid this month yet`,
       to: '/contributions',
     });
   }
@@ -148,7 +154,7 @@ export function FundProvider({ children }: { children: ReactNode }) {
     alerts.push({
       id: 'nolend',
       severity: 'warn',
-      message: 'No lending capacity left — the 25% reserve is the floor',
+      message: 'Nothing left to lend — the rest must stay in the bank',
       to: '/loans',
     });
   }
@@ -163,7 +169,7 @@ export function FundProvider({ children }: { children: ReactNode }) {
         id: 'offices',
         severity: 'danger',
         message:
-          'No cashier or accountant yet — money cannot be recorded until both are assigned',
+          'Pick a cashier and an accountant — until then no money can be recorded',
         to: '/members',
       });
     }
@@ -173,7 +179,7 @@ export function FundProvider({ children }: { children: ReactNode }) {
     alerts.push({
       id: 'setup',
       severity: 'warn',
-      message: 'Group setup is incomplete — review and save your group rules',
+      message: 'Finish setting up — check the group rules and save them',
       to: '/settings',
     });
   }

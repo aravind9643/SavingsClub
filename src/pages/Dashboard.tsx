@@ -120,8 +120,8 @@ export default function Dashboard() {
   const myUnpaid = (unpaidQ.data ?? []).find((u) => u.member_id === member?.id);
 
   let monthStat = {
-    v: 'Not opened',
-    s: 'no active period',
+    v: 'Not started',
+    s: 'this month is not open yet',
     tone: undefined as 'mint' | 'amber' | 'coral' | undefined,
   };
 
@@ -135,13 +135,13 @@ export default function Dashboard() {
     } else if (myPaidContrib.data) {
       monthStat = {
         v: 'Paid',
-        s: 'up to date',
+        s: 'thank you',
         tone: 'mint',
       };
     } else {
       monthStat = {
-        v: 'Not due',
-        s: 'exempt',
+        v: 'Nothing due',
+        s: 'you joined after this month',
         tone: undefined,
       };
     }
@@ -158,9 +158,9 @@ export default function Dashboard() {
   // how a region trains people to stop looking at it.
   const dueThisMonth = myUnpaid?.expected_paise ?? 0;
   const homeSub = dueThisMonth > 0
-    ? `${formatPaiseShort(dueThisMonth)} ${myUnpaid?.is_overdue ? 'overdue' : 'due this month'}`
+    ? `${formatPaiseShort(dueThisMonth)} ${myUnpaid?.is_overdue ? 'late' : 'to pay this month'}`
     : myPosition
-      ? `${formatPaiseShort(myPosition.contributed_paise)} saved · you are up to date`
+      ? `${formatPaiseShort(myPosition.contributed_paise)} saved · nothing to pay`
       : undefined;
 
   // Who may actually do each thing, matching the RPCs exactly. Offering an
@@ -200,13 +200,13 @@ export default function Dashboard() {
           meta={
             <>
               <Chip tone="mint">
-                Lendable <b>{formatPaiseShort(fund.still_lendable_paise)}</b>
+                Can lend <b>{formatPaiseShort(fund.still_lendable_paise)}</b>
               </Chip>
               <Chip tone="violet">
                 On loan <b>{formatPaiseShort(fund.outstanding_paise)}</b>
               </Chip>
               <Chip>
-                Reserve <b>{formatPaiseShort(fund.reserve_paise)}</b>
+                Kept back <b>{formatPaiseShort(fund.reserve_paise)}</b>
               </Chip>
             </>
           }
@@ -220,10 +220,10 @@ export default function Dashboard() {
 
       {/* Personal standing for the logged-in member */}
       {myPosition && (
-        <Panel title="Your standing">
+        <Panel title="Where you stand">
           <div className="stats three">
             <Stat
-              k="Your savings"
+              k="You have saved"
               v={formatPaiseShort(myPosition.contributed_paise)}
               s={`${Number(myPosition.share_pct).toFixed(0)}% fund share`}
               tone="mint"
@@ -237,7 +237,7 @@ export default function Dashboard() {
             <Stat
               k="Active loan"
               v={myPosition.outstanding_paise > 0 ? formatPaiseShort(myPosition.outstanding_paise) : 'None'}
-              s={myPosition.outstanding_paise > 0 ? 'outstanding' : 'debt free'}
+              s={myPosition.outstanding_paise > 0 ? 'still to repay' : 'nothing to repay'}
               tone={myPosition.outstanding_paise > 0 ? 'coral' : undefined}
             />
           </div>
@@ -289,7 +289,7 @@ export default function Dashboard() {
                 icon={<IconArrowUp width={18} height={18} />}
                 iconTone="amber"
                 title="Add an expense"
-                sub="Trip, party or admin cost"
+                sub="Trip, party or running cost"
                 onClick={() => nav('/expenses')}
                 chevron
               />
@@ -297,8 +297,8 @@ export default function Dashboard() {
                 <Row
                   icon={<IconWallet width={18} height={18} />}
                   iconTone="violet"
-                  title="Record cash movement"
-                  sub="Cash in or out of the float"
+                  title="Cash in or out"
+                  sub="Money the cashier holds"
                   onClick={() => nav('/cash')}
                   chevron
                 />
@@ -307,7 +307,7 @@ export default function Dashboard() {
                 <Row
                   icon={<IconBank width={18} height={18} />}
                   iconTone="coral"
-                  title="Reconcile the bank"
+                  title="Check the bank"
                   sub={
                     diff === undefined
                       ? 'No statement recorded yet'
@@ -344,7 +344,7 @@ export default function Dashboard() {
                   s="expected"
                 />
                 <Stat
-                  k="Cash float"
+                  k="Cash in hand"
                   v={formatPaiseShort(fund.cash_float_paise)}
                   s={`of ${formatPaiseShort(fund.cash_float_limit_paise)}`}
                   tone={fund.cash_float_paise > fund.cash_float_limit_paise ? 'coral' : undefined}
@@ -352,7 +352,7 @@ export default function Dashboard() {
                 <Stat
                   k="Difference"
                   v={diff === undefined ? '—' : formatPaiseShort(diff)}
-                  s={diff === 0 ? 'balanced' : diff === undefined ? 'no statement' : 'check this'}
+                  s={diff === 0 ? 'matches' : diff === undefined ? 'not checked yet' : 'does not match'}
                   tone={diff === 0 ? 'mint' : diff === undefined ? undefined : 'coral'}
                 />
               </div>
@@ -531,15 +531,15 @@ _Generated via Sanchay Ledger_`;
       ['Group Financial Report', groupName],
       ['Date', now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })],
       [],
-      ['Fund Metric', 'Amount (Rupees)'],
-      ['Total Fund', (fund.total_fund_paise / 100).toFixed(2)],
-      ['Expected Bank Balance', (fund.expected_bank_balance_paise / 100).toFixed(2)],
-      ['Cash Float', (fund.cash_float_paise / 100).toFixed(2)],
-      ['25% Statutory Reserve', (fund.reserve_paise / 100).toFixed(2)],
-      ['Outstanding Loans Principal', (fund.outstanding_paise / 100).toFixed(2)],
-      ['Lendable Capacity', (fund.still_lendable_paise / 100).toFixed(2)],
+      ['What', 'Amount (Rupees)'],
+      ['Total fund', (fund.total_fund_paise / 100).toFixed(2)],
+      ['Should be in the bank', (fund.expected_bank_balance_paise / 100).toFixed(2)],
+      ['Cash in hand', (fund.cash_float_paise / 100).toFixed(2)],
+      ['Kept back as safety', (fund.reserve_paise / 100).toFixed(2)],
+      ['Money on loan', (fund.outstanding_paise / 100).toFixed(2)],
+      ['Can lend now', (fund.still_lendable_paise / 100).toFixed(2)],
       [],
-      ['Member Directory', 'Role', 'Total Contributed (Rs)', 'Fund Share %', 'Outstanding Debt (Rs)'],
+      ['Member', 'Role', 'Saved (Rs)', 'Share of fund %', 'Still owes (Rs)'],
       ...positions.map((p) => [
         `"${p.full_name.replace(/"/g, '""')}"`,
         p.role,
@@ -560,7 +560,7 @@ _Generated via Sanchay Ledger_`;
   }
 
   return (
-    <Sheet open title="Monthly Statement" onClose={onClose}>
+    <Sheet open title="This month's summary" onClose={onClose}>
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: '1.8rem', fontWeight: 700, fontFamily: 'var(--display)' }}>
           {formatPaise(fund.total_fund_paise)}
@@ -570,13 +570,13 @@ _Generated via Sanchay Ledger_`;
         </p>
       </div>
 
-      <Panel title="Fund summary" flush>
+      <Panel title="Where the money is" flush>
         <List>
-          <Row title="Bank expected balance" amount={formatPaise(fund.expected_bank_balance_paise)} amountTone="mint" />
-          <Row title="Cash float" amount={formatPaise(fund.cash_float_paise)} />
+          <Row title="Should be in the bank" amount={formatPaise(fund.expected_bank_balance_paise)} amountTone="mint" />
+          <Row title="Cash in hand" amount={formatPaise(fund.cash_float_paise)} />
           <Row title="Money on loan" amount={formatPaise(fund.outstanding_paise)} />
-          <Row title="25% Minimum reserve" amount={formatPaise(fund.reserve_paise)} />
-          <Row title="Available to lend" amount={formatPaise(fund.still_lendable_paise)} amountTone="mint" />
+          <Row title="Kept back as safety" amount={formatPaise(fund.reserve_paise)} />
+          <Row title="Can lend now" amount={formatPaise(fund.still_lendable_paise)} amountTone="mint" />
           <Row title="Active members" note={`${positions.length} members`} />
         </List>
       </Panel>

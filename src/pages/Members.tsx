@@ -83,12 +83,12 @@ export default function Members() {
       >
         {clash && (
           <Notice tone="danger">
-            One person is both cashier and accountant. Give one office to someone else.
+            One person is both cashier and accountant. Give one job to someone else.
           </Notice>
         )}
         {missing && !clash && (
           <Notice tone="danger">
-            No cashier or accountant yet — money cannot be recorded until both are set.
+            No cashier or accountant yet — no money can be recorded until both are picked.
           </Notice>
         )}
         {unlinked.length > 0 && (
@@ -103,7 +103,7 @@ export default function Members() {
         )}
 
         {isOfficer && (
-          <Panel title="Offices" flush>
+          <Panel title="Who does what" flush>
             <List>
               {OFFICES.map((o) => {
                 const holder = current.find((r) => r.role === o.role);
@@ -154,7 +154,7 @@ export default function Members() {
                     note={
                       p.outstanding_paise > 0
                         ? `owes ${formatPaiseShort(p.outstanding_paise)}`
-                        : m?.nominee_name ? undefined : 'no nominee'
+                        : m?.nominee_name ? undefined : 'no family contact'
                     }
                     onClick={() => setInspectId(p.member_id)}
                     chevron
@@ -247,7 +247,7 @@ function ReviewJoinSheet({
   );
 
   return (
-    <Sheet open title="Request to join" onClose={onClose}>
+    <Sheet open title="Wants to join" onClose={onClose}>
       <ErrorNote error={decide.error} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
@@ -311,12 +311,12 @@ function AddSheet({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <Sheet open title="Add a member" onClose={onClose}>
+    <Sheet open title="Add someone" onClose={onClose}>
       <ErrorNote error={add.error} />
       <Field label="Full name">
         <input value={fullName} onChange={(e) => setFullName(e.target.value)} autoFocus />
       </Field>
-      <Field label="Email" hint="When they join with an invite code using this email, their profile will be linked">
+      <Field label="Email" hint="If they join with this same email, their name links up automatically">
         <input
           type="email" inputMode="email" value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -327,7 +327,7 @@ function AddSheet({ onClose }: { onClose: () => void }) {
         <Field label="Phone">
           <input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
-        <Field label="Nominee">
+        <Field label="Family contact">
           <input value={nominee} onChange={(e) => setNominee(e.target.value)} />
         </Field>
       </div>
@@ -369,9 +369,9 @@ function RolesSheet({
   );
 
   return (
-    <Sheet open title="Offices" onClose={onClose}>
+    <Sheet open title="Who does what" onClose={onClose}>
       <p className="dim" style={{ marginTop: -4, marginBottom: 14 }}>
-        Change these every year. The cashier and the accountant must be different people.
+        Change these every year. The cashier and the accountant must be two different people.
       </p>
       <ErrorNote error={assign.error} />
       {OFFICES.map((o) => (
@@ -445,14 +445,14 @@ function MemberDetailSheet({
       <div className="stats three" style={{ marginBottom: 16 }}>
         <Stat k="Contributed" v={formatPaiseShort(position.contributed_paise)} />
         <Stat
-          k="Outstanding"
+          k="Still owes"
           v={formatPaiseShort(position.outstanding_paise)}
           tone={hasDebt ? 'coral' : undefined}
         />
         <Stat k="Share" v={`${Number(position.share_pct).toFixed(0)}%`} />
       </div>
 
-      <Panel title="Contact & Nominee" flush>
+      <Panel title="Contact details" flush>
         <List>
           {member?.phone && (
             <Row
@@ -472,7 +472,7 @@ function MemberDetailSheet({
             <Row title="Joined" note={fmtDate(member.joined_on)} />
           )}
           <Row
-            title="Nominee"
+            title="Family contact"
             sub={member?.nominee_phone ? `Phone: ${member.nominee_phone}` : undefined}
             note={member?.nominee_name ?? 'None registered'}
           />
@@ -483,7 +483,7 @@ function MemberDetailSheet({
         <div style={{ marginTop: 20 }}>
           {isPresident ? (
             <Notice tone="warn">
-              The president cannot be removed. Hand over the president role in Offices first.
+              Give the president role to someone else first, then remove them.
             </Notice>
           ) : hasDebt ? (
             <Notice tone="warn">

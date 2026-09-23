@@ -134,7 +134,7 @@ export default function LoanDetail() {
 
         <Panel title="Details">
           <div className="stats">
-            <Stat k="Principal" v={formatPaiseShort(loan.principal_paise)} />
+            <Stat k="Loan amount" v={formatPaiseShort(loan.principal_paise)} />
             <Stat k="Repaid" v={formatPaiseShort(loan.principal_paid_paise)} tone="mint" />
             <Stat
               k="Interest due"
@@ -144,11 +144,11 @@ export default function LoanDetail() {
                 ? `incl. ${formatPaiseShort(loan.accrued_penalty_paise)} penalty`
                 : 'on reducing balance'}
             />
-            <Stat k="Due date" v={fmtDate(loan.due_on)} s={loan.disbursed_on ? `from ${fmtDate(loan.disbursed_on)}` : 'not paid out'} />
+            <Stat k="Due date" v={fmtDate(loan.due_on)} s={loan.disbursed_on ? `from ${fmtDate(loan.disbursed_on)}` : 'not given out yet'} />
           </div>
           <div style={{ marginTop: 12 }}>
             <p className="dim" style={{ margin: 0 }}>
-              Guarantor <strong style={{ color: 'var(--text-2)' }}>{loan.guarantor_name}</strong>
+              Vouched by <strong style={{ color: 'var(--text-2)' }}>{loan.guarantor_name}</strong>
               {loan.purpose ? <> · {loan.purpose}</> : null}
             </p>
           </div>
@@ -214,7 +214,7 @@ export default function LoanDetail() {
         )}
         {loan.status === 'approved' && isBorrower && (
           <Notice tone="warn">
-            You cannot pay out your own loan — the other office holder must do it.
+            You cannot pay out your own loan — the other officer must do it.
           </Notice>
         )}
       </Screen>
@@ -253,7 +253,7 @@ function VotePanel({
   const pct = (loan.approvals / loan.required_approvals) * 100;
 
   return (
-    <Panel title="Approval">
+    <Panel title="Voting">
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
         <span style={{
           fontFamily: 'var(--display)', fontSize: '2rem', fontWeight: 700,
@@ -372,7 +372,7 @@ function RepaySheet({
   );
 
   return (
-    <Sheet open title="Record a repayment" onClose={onClose}>
+    <Sheet open title="Money paid back" onClose={onClose}>
       <p className="dim" style={{ marginTop: -4, marginBottom: 14 }}>
         {formatPaise(loan.outstanding_principal_paise)} principal ·
         {' '}{formatPaise(dueInterest)} interest still due
@@ -381,7 +381,7 @@ function RepaySheet({
       <ErrorNote error={save.error} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <label style={{ margin: 0 }}>Principal</label>
+        <label style={{ margin: 0 }}>Loan amount</label>
         <button
           type="button"
           className="seg"
@@ -393,7 +393,7 @@ function RepaySheet({
             setPenalty('0');
           }}
         >
-          Settle in full ({formatPaiseShort(loan.outstanding_principal_paise + dueInterest)})
+          Pay everything ({formatPaiseShort(loan.outstanding_principal_paise + dueInterest)})
         </button>
       </div>
       <AmountField value={principal} onChange={setPrincipal} autoFocus />
@@ -403,7 +403,7 @@ function RepaySheet({
           <input inputMode="decimal" value={interest}
             onChange={(e) => setInterest(e.target.value)} placeholder="0" />
         </Field>
-        <Field label="Penalty (₹)">
+        <Field label="Late fee (₹)">
           <input inputMode="decimal" value={penalty}
             onChange={(e) => setPenalty(e.target.value)} placeholder="0" />
         </Field>
@@ -413,7 +413,7 @@ function RepaySheet({
         <Field label="Paid on">
           <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
         </Field>
-        <Field label="Method">
+        <Field label="Paid by">
           <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
             <option value="bank">Bank</option>
             <option value="cash">Cash</option>
@@ -459,10 +459,10 @@ function DisburseSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }
         <Field label="Paid out on">
           <input type="date" value={on} onChange={(e) => setOn(e.target.value)} />
         </Field>
-        <Field label="Method">
+        <Field label="Paid by">
           <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
             <option value="bank">Bank transfer</option>
-            <option value="cash">Cash from float</option>
+            <option value="cash">Cash in hand</option>
           </select>
         </Field>
       </div>
@@ -487,7 +487,7 @@ function CancelLoanSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void
   );
 
   return (
-    <Sheet open title="Cancel loan request" onClose={onClose}>
+    <Sheet open title="Cancel this request" onClose={onClose}>
       <Notice tone="danger">
         This will permanently cancel {loan.borrower_name}&apos;s loan request
         for {formatPaise(loan.principal_paise)}. This cannot be undone.
@@ -517,7 +517,7 @@ function WriteOffSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }
   );
 
   return (
-    <Sheet open title="Write off loan" onClose={onClose}>
+    <Sheet open title="Give up on this loan" onClose={onClose}>
       <Notice tone="danger">
         Writing off means the group accepts this {formatPaise(loan.outstanding_principal_paise)} will
         never be repaid. The fund total stays the same, but the outstanding balance drops to zero.

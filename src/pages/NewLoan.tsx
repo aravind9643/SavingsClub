@@ -124,8 +124,8 @@ export default function NewLoan() {
         )}
       </Panel>
 
-      <Panel title="Terms">
-        <Field label="Repay within">
+      <Panel title="Details">
+        <Field label="Pay back within">
           <select value={term} onChange={(e) => setTerm(e.target.value)}>
             {Array.from({ length: config?.max_loan_months ?? 6 }, (_v, i) => i + 1).map((m) => (
               <option key={m} value={m}>{m} month{m > 1 ? 's' : ''}</option>
@@ -133,7 +133,7 @@ export default function NewLoan() {
           </select>
         </Field>
 
-        <Field label="Guarantor" hint="Another member who takes responsibility if you do not repay">
+        <Field label="Who will vouch for you" hint="A member who agrees to cover it if you cannot pay back">
           <select value={guarantor} onChange={(e) => setGuarantor(e.target.value)}>
             <option value="">Choose a member…</option>
             {Array.from(new Map((membersQ.data ?? []).filter((m) => m.id !== member?.id).map((m) => [m.id, m])).values()).map((m) => (
@@ -142,7 +142,7 @@ export default function NewLoan() {
           </select>
         </Field>
 
-        <Field label="Purpose (optional)">
+        <Field label="What is it for (optional)">
           <input
             value={purpose}
             onChange={(e) => setPurpose(e.target.value)}
