@@ -6,6 +6,7 @@ import { useSession } from '../context/SessionContext';
 import { formatPaise } from '../lib/money';
 import {
   Panel, List, Row, Empty, SkeletonList, Segments, Sheet, Busy, ago, fmtDateTime,
+  roleLabel, labelForStatus,
 } from '../components/ui';
 import { IconAudit, IconCheck, IconClose, IconMore } from '../components/icons';
 import type { AuditRow } from '../lib/types';
@@ -206,23 +207,26 @@ function describe(r: AuditRow): string {
     return typeof v === 'number' || typeof v === 'string' ? formatPaise(v) : '';
   };
   switch (r.table_name) {
-    case 'contributions': return `Contribution ${amt('amount_paise')}`;
+    case 'contributions': return `Paid in ${amt('amount_paise')}`;
     case 'loans':
       return r.action === 'INSERT'
-        ? `Loan requested ${amt('principal_paise')}`
-        : `Loan ${String(d.status ?? 'changed')}`;
-    case 'loan_votes': return `Vote: ${String(d.vote ?? '')}`;
-    case 'loan_repayments': return `Repayment ${amt('principal_paise')}`;
+        ? `Loan asked for ${amt('principal_paise')}`
+        : `Loan ${labelForStatus(String(d.status ?? 'changed'))}`;
+    case 'loan_votes': return `Voted ${String(d.vote ?? '')}`;
+    case 'loan_repayments': return `Paid back ${amt('principal_paise')}`;
     case 'expenses': return `${String(d.description ?? 'Expense')} ${amt('amount_paise')}`;
     case 'cash_ledger': return `Cash ${d.direction === 'in' ? 'in' : 'out'} ${amt('amount_paise')}`;
-    case 'bank_statements': return `Bank statement ${amt('closing_balance_paise')}`;
+    case 'bank_statements': return `Bank checked ${amt('closing_balance_paise')}`;
     case 'members': return `Member ${String(d.full_name ?? '')}`;
-    case 'role_assignments': return `Role ${String(d.role ?? '')}`;
+    // roleLabel, or the history would still read "Role president" after 0024.
+    case 'role_assignments': return `Job given: ${roleLabel(String(d.role ?? ''))}`;
     case 'groups': return 'Group rules changed';
     case 'group_invites':
-      return r.action === 'INSERT'
-        ? `Invite code created (${r.row_id})`
-        : `Invite code ${r.action.toLowerCase()}`;
-    default: return `${r.table_name} ${r.action.toLowerCase()}`;
+      return r.action === 'INSERT' ? 'Invite code made' : 'Invite code cancelled';
+    // A table name is not a sentence.
+    default:
+      return r.action === 'INSERT' ? 'Something was added'
+        : r.action === 'DELETE' ? 'Something was removed'
+          : 'Something was changed';
   }
 }

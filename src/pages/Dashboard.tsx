@@ -10,7 +10,7 @@ import { haptic } from '../lib/haptics';
 import { toDateString } from '../lib/dates';
 import {
   Hero, Chip, Notice, Panel, Stat, List, Row, Empty,
-  initials, ago, fmtDate, SkeletonList, Sheet, roleLabel,
+  initials, ago, fmtDate, SkeletonList, Sheet, roleLabel, labelForStatus,
 } from '../components/ui';
 import {
   IconPlus, IconArrowUp, IconArrowDown, IconBank, IconInbox, IconCheck, IconShare,
@@ -270,9 +270,9 @@ export default function Dashboard() {
               <Row
                 icon={<IconArrowDown width={18} height={18} />}
                 iconTone="mint"
-                title={isMoneyHandler ? 'Record a contribution' : 'This month\'s chanda'}
+                title={isMoneyHandler ? 'Take a payment' : "This month's collection"}
                 sub={isMoneyHandler
-                  ? 'Monthly chanda received'
+                  ? 'Record money received'
                   : 'See who has paid so far'}
                 onClick={() => nav('/contributions')}
                 chevron
@@ -451,18 +451,22 @@ function describe(r: AuditRow): string {
 
   switch (r.table_name) {
     case 'contributions':
-      return `Contribution of ${amt('amount_paise')} recorded`;
+      return `${amt('amount_paise')} paid in`;
     case 'loans':
-      if (r.action === 'INSERT') return `Loan of ${amt('principal_paise')} requested`;
-      return `Loan ${String(d.status ?? 'updated')}`;
+      if (r.action === 'INSERT') return `Loan asked for — ${amt('principal_paise')}`;
+      return `Loan ${labelForStatus(String(d.status ?? 'updated'))}`;
     case 'loan_repayments':
-      return `Repayment of ${amt('principal_paise')} received`;
+      return `${amt('principal_paise')} paid back`;
     case 'expenses':
       return `${String(d.description ?? 'Expense')} — ${amt('amount_paise')}`;
     case 'cash_ledger':
       return `Cash ${d.direction === 'in' ? 'in' : 'out'} ${amt('amount_paise')}`;
+    // A table name is not a sentence. Anything unmapped says something true
+    // and plain rather than printing 'loan_votes update' at the reader.
     default:
-      return `${r.table_name} ${r.action.toLowerCase()}`;
+      return r.action === 'INSERT' ? 'Something was added'
+        : r.action === 'DELETE' ? 'Something was removed'
+          : 'Something was changed';
   }
 }
 

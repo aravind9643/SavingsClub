@@ -95,7 +95,7 @@ export default function LoanDetail() {
       >
         <div className="hero">
           <div className="hero-label">
-            {loan.status === 'disbursed' ? 'Outstanding' : 'Loan amount'}
+            {loan.status === 'disbursed' ? 'Still to repay' : 'Loan amount'}
           </div>
           <div className="hero-amount">
             {formatPaise(

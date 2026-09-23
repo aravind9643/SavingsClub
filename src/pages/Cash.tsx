@@ -90,9 +90,9 @@ export default function Cash() {
                 : undefined
             }
           >
-            Float is over the limit by {formatPaise(balance - limit)}.
+            Cash in hand is over the limit by {formatPaise(balance - limit)}.
             {isCashier
-              ? ' Tap here to deposit the excess into the bank.'
+              ? ' Tap here to put the extra in the bank.'
               : ' Deposit the excess into the bank.'}
           </Notice>
         )}
@@ -248,8 +248,8 @@ function CashSheet({
         </Field>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
           {(direction === 'out'
-            ? ['Deposit excess to bank', 'Emergency help', 'Meeting snacks', 'Stationery']
-            : ['Withdrawn from bank', 'Contribution in cash', 'Cash refund']
+            ? ['Put extra in bank', 'Emergency help', 'Meeting snacks', 'Stationery']
+            : ['Taken from bank', 'Payment in cash', 'Money returned']
           ).map((preset) => (
             <button
               key={preset}

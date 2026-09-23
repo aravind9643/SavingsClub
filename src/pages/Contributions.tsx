@@ -248,7 +248,7 @@ export default function Contributions() {
                 pending={closePeriod.pending}
                 onClick={() => {
                   if (confirm(
-                    'Close this month? Contributions can no longer be recorded '
+                    'Close this month? Payments can no longer be recorded '
                     + 'against it, and this cannot be undone.',
                   )) void closePeriod.run(period.id);
                 }}

@@ -68,7 +68,7 @@ export default function Settings() {
       const floatLimit = rupeesToPaise(form.float_limit);
       const reportHours = Number(form.report_hours);
 
-      if (monthly <= 0) throw new Error('Monthly contribution must be greater than zero');
+      if (monthly <= 0) throw new Error('The monthly amount must be more than zero');
       if (isNaN(due) || due < 1 || due > 28) throw new Error('Due day must be between 1 and 28');
       if (isNaN(grace) || grace < 1 || grace > 28) throw new Error('Grace day must be between 1 and 28');
       if (grace < due) throw new Error('Grace day cannot be earlier than due day');
@@ -334,7 +334,7 @@ function InvitePanel() {
 
 function ReadOnly({ config }: { config: NonNullable<ReturnType<typeof useSession>['config']> }) {
   const rows: [string, string][] = [
-    ['Monthly contribution', `₹${paiseToRupees(config.monthly_contribution_paise)}`],
+    ['Amount each month', `₹${paiseToRupees(config.monthly_contribution_paise)}`],
     ['Pay by', `${config.due_day}th, late after the ${config.grace_day}th`],
     ['Late fee', `₹${paiseToRupees(config.late_fee_paise)}`],
     ['Interest on loans', `${config.loan_rate_bp / 100}% per month`],
