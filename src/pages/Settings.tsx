@@ -225,11 +225,19 @@ export default function Settings() {
  * reaches for when a code has spread further than they meant.
  */
 function InvitePanel() {
+  const { currentGroupId } = useSession();
+
   const inviteQ = useQuery<GroupInvite | null>('invite', async () => {
-    const { data, error } = await supabase
+    // The group filter matters more here than elsewhere: this takes the FIRST
+    // row of an ordered set, so without it the panel could display — and
+    // "revoke" — whichever group's code happened to sort first.
+    let q = supabase
       .from('group_invites').select('*')
       .is('revoked_at', null)
-      .gt('expires_at', new Date().toISOString())
+      .gt('expires_at', new Date().toISOString());
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+
+    const { data, error } = await q
       .order('created_at', { ascending: false })
       .limit(1).maybeSingle();
     if (error) throw error;

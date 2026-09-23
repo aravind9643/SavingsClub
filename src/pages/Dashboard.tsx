@@ -7,6 +7,7 @@ import { useQuery } from '../hooks/useQuery';
 import { supabase } from '../lib/supabase';
 import { formatPaise, formatPaiseShort } from '../lib/money';
 import { haptic } from '../lib/haptics';
+import { toDateString } from '../lib/dates';
 import {
   Hero, Chip, Notice, Panel, Stat, List, Row, Empty,
   initials, ago, fmtDate, SkeletonList, Sheet,
@@ -504,7 +505,7 @@ _Generated via Sanchay Ledger_`;
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${groupName.toLowerCase().replace(/\s+/g, '-')}-statement-${now.toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `${groupName.toLowerCase().replace(/\s+/g, '-')}-statement-${toDateString(now)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

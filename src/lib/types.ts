@@ -120,6 +120,8 @@ export interface LoanRow {
   rejections: number;
   can_i_vote: boolean;
   my_vote: Vote | null;
+  /** True when the borrower withdrew, rather than the group refusing. */
+  withdrawn_by_requester: boolean;
 }
 
 export interface ExpenseRow {
@@ -140,6 +142,9 @@ export interface ExpenseRow {
   rejections: number;
   can_i_vote: boolean;
   my_vote: Vote | null;
+  /** True when the proposer withdrew, rather than the group refusing. */
+  withdrawn_by_requester: boolean;
+  is_loan_write_off: boolean;
 }
 
 export interface ContributionPeriod {

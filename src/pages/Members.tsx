@@ -11,6 +11,7 @@ import {
 } from '../components/ui';
 import { IconPlus } from '../components/icons';
 import type { MemberPosition, Member, Role, PendingMember } from '../lib/types';
+import { today } from '../lib/dates';
 
 interface RoleRow {
   id: string; member_id: string; role: string;
@@ -408,7 +409,7 @@ function MemberDetailSheet({
     async () => {
       const { error } = await supabase.rpc('remove_member', {
         p_member_id: position.member_id,
-        p_left_on: new Date().toISOString().slice(0, 10),
+        p_left_on: today(),
       });
       if (error) throw error;
     },

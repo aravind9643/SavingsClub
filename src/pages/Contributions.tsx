@@ -13,6 +13,7 @@ import {
 } from '../components/ui';
 import { IconContributions, IconCheck, IconShare } from '../components/icons';
 import type { Member, ContributionPeriod, Contribution } from '../lib/types';
+import { today } from '../lib/dates';
 
 type MemberFilter = 'all' | 'unpaid' | 'paid';
 
@@ -86,6 +87,19 @@ export default function Contributions() {
       if (error) throw error;
     },
     { invalidates: ['periods', 'fund', 'periods:latest'] },
+  );
+
+  // Closing a month is what freezes it: record_contribution refuses a closed
+  // period, so this is the control that stops a settled month being reopened
+  // by a late entry. The RPC has existed since 0004 with no way to call it.
+  const closePeriod = useMutation(
+    async (periodIdToClose: string) => {
+      const { error } = await supabase.rpc('close_period', {
+        p_period_id: periodIdToClose,
+      });
+      if (error) throw error;
+    },
+    { invalidates: ['periods', 'fund', 'periods:latest', 'contributions'] },
   );
 
   const periods = periodsQ.data ?? [];
@@ -217,6 +231,32 @@ export default function Contributions() {
 
         {period?.closed_at && (
           <Notice tone="warn">This month is closed — entries can no longer be changed.</Notice>
+        )}
+
+        <ErrorNote error={closePeriod.error} />
+
+        {/* Offered only once the grace date has passed: close_period refuses
+            earlier, so showing it sooner would just produce an error. */}
+        {isMoneyHandler && period && !period.closed_at
+          && period.grace_date < today() && (
+          <Notice tone="good">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ flex: 1, minWidth: 180 }}>
+                The grace date has passed. Closing this month locks its entries.
+              </span>
+              <Busy
+                pending={closePeriod.pending}
+                onClick={() => {
+                  if (confirm(
+                    'Close this month? Contributions can no longer be recorded '
+                    + 'against it, and this cannot be undone.',
+                  )) void closePeriod.run(period.id);
+                }}
+              >
+                Close month
+              </Busy>
+            </div>
+          </Notice>
         )}
 
         <div style={{ margin: '14px 0 8px' }}>
@@ -369,7 +409,7 @@ function RecordSheet({
 }) {
   const { config } = useSession();
   const [amount, setAmount] = useState(String(paiseToRupees(defaultPaise)));
-  const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paidOn, setPaidOn] = useState(() => today());
   const [method, setMethod] = useState<'bank' | 'cash'>('bank');
 
   const late = new Date(paidOn) > new Date(period.grace_date);

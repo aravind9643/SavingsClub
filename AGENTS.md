@@ -69,7 +69,7 @@ src/
     supabase.ts        client + friendlyError
   pages/               14 screens
 supabase/
-  migrations/          0001-0019, applied in numerical order
+  migrations/          0001-0022, applied in numerical order
   tests/
     assertions.sql     protections still in force (RLS on, RPC-only writes, …)
     isolation.sql      two real groups, proves neither can see the other
@@ -102,6 +102,14 @@ which is why `toPaise()` accepts both.
 Accrued-but-unpaid interest is a **separate memo line**
 (`accrued_receivable_paise`), never folded into the fund. That is what lets
 reconciliation reach exactly zero instead of "close enough".
+
+**A write-off must reduce the fund.** `write_off_loan()` books an expense row
+for the unrecovered principal, flagged `is_loan_write_off`. Without it the lost
+money stayed counted as an asset: `outstanding` fell, `fund` did not, and
+reconciliation carried a permanent gap exactly equal to the loss — while the
+group kept lending against a cap computed from the inflated total. The flag
+keeps that loss out of `fn_expenses_ytd_paise()`, so one default cannot consume
+the group's discretionary spending budget for the year.
 
 ### Interest
 
@@ -382,6 +390,9 @@ no-op on a fresh database.
 | `0017` | `allow_officers_open_period.sql` | Allows President (alongside Cashier & Accountant) to open periods |
 | `0018` | `critical_fixes.sql` | Lock in `open_period`, 10x cap, auto-closing repaid loans, negative amount guards |
 | `0019` | `logic_fixes.sql` | Grace date guard in `close_period`, `cancel_loan_request`, `write_off_loan`, `cancel_expense`, `update_config` validation |
+| `0020` | `fund_integrity.sql` | Write-offs book an expense so reconciliation holds; yearly cap enforced on auto-approved expenses; loans no longer auto-close with interest owed |
+| `0021` | `date_guards.sql` | Future-date and ordering guards on every date-taking RPC; closed periods refuse new entries |
+| `0022` | `governance_fixes.sql` | Guarantor cannot vote; withdrawal distinguished from rejection; vote deadlock broken when members leave |
 
 ---
 
@@ -409,11 +420,19 @@ no-op on a fresh database.
 - **Pending requests can be withdrawn.** Borrowers can withdraw un-voted loans with
   `cancel_loan_request()`, and proposers can withdraw un-voted expenses with
   `cancel_expense()`.
-- **Local calendar dates over UTC strings.** Never generate monthly periods or dates
-  using `new Date().toISOString().slice(0, 10)` — in UTC+ offsets (such as India Standard
-  Time, UTC+5:30), late night execution shifts backward a day (e.g. producing August 31st
-  instead of September 1st). Always format calendar months as `${year}-${month}-01`
-  from local date accessors (`getFullYear()`, `getMonth()`).
+- **Local calendar dates over UTC strings.** Never build a calendar date with
+  `new Date().toISOString().slice(0, 10)`. It converts to UTC first, so in IST
+  (UTC+5:30) everything between 00:00 and 05:29 reports YESTERDAY — about a
+  quarter of every day. A contribution recorded at 02:00 on the 11th lands on
+  the 10th, and if the grace date was the 10th the late fee is silently
+  skipped. Use `today()`, `toDateString()`, `monthStart()` and `parseDate()`
+  from `src/lib/dates.ts`; they read local fields. The same trap applies when
+  READING: `new Date('2026-09-24')` is UTC midnight, which renders as the 23rd
+  west of Greenwich — `fmtDate()` handles that.
+- **Every date-taking RPC refuses the future** and, where a natural floor
+  exists, refuses to predate it (a repayment cannot precede its disbursal, a
+  payment cannot precede the expense). A ledger may record the past — an entry
+  written up late is normal bookkeeping — but never the future.
 
 ---
 

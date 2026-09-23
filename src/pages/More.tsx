@@ -164,14 +164,18 @@ function EditProfileSheet({ onClose }: { onClose: () => void }) {
   const save = useMutation(
     async () => {
       if (!member) return;
-      const { error } = await supabase
-        .from('members')
-        .update({
-          phone: phone.trim() || null,
-          nominee_name: nomineeName.trim() || null,
-          nominee_phone: nomineePhone.trim() || null,
-        })
-        .eq('id', member.id);
+      // Goes through update_member() rather than a direct table UPDATE. The
+      // direct write only worked because of the narrow column grant on
+      // members, so it was one grant change away from breaking, and it
+      // skipped the RPC's own ownership check. Writes are RPC-only here.
+      const { error } = await supabase.rpc('update_member', {
+        p_member_id: member.id,
+        p_full_name: null,
+        p_email: null,
+        p_phone: phone.trim() || null,
+        p_nominee_name: nomineeName.trim() || null,
+        p_nominee_phone: nomineePhone.trim() || null,
+      });
       if (error) throw error;
     },
     {
@@ -187,6 +191,7 @@ function EditProfileSheet({ onClose }: { onClose: () => void }) {
     <Sheet open title="Your details" onClose={onClose}>
       <p className="dim" style={{ marginTop: -4, marginBottom: 14 }}>
         Update your contact and nominee information for {member?.full_name}.
+        Leaving a field blank keeps what is already recorded.
       </p>
       <ErrorNote error={save.error} />
       <Field label="Phone number">

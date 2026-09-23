@@ -6,7 +6,7 @@ import { useQuery } from '../hooks/useQuery';
 import { formatPaiseShort } from '../lib/money';
 import { useSession } from '../context/SessionContext';
 import {
-  List, Row, Empty, SkeletonList, Segments, initials, fmtDate, toneForStatus,
+  List, Row, Empty, SkeletonList, Segments, initials, fmtDate, toneForStatus, labelForStatus,
 } from '../components/ui';
 import { IconPlus, IconLoans } from '../components/icons';
 import type { LoanRow } from '../lib/types';
@@ -64,7 +64,8 @@ export default function Loans() {
               <Row
                 key={l.id}
                 icon={initials(l.borrower_name)}
-                iconTone={l.is_overdue ? 'coral' : toneForStatus(l.status)}
+                iconTone={l.is_overdue ? 'coral'
+                  : toneForStatus(l.status, l.withdrawn_by_requester)}
                 title={l.borrower_name}
                 sub={
                   l.status === 'requested'
@@ -73,7 +74,7 @@ export default function Loans() {
                       ? `Overdue by ${l.days_overdue} days`
                       : l.status === 'disbursed'
                         ? `Due ${fmtDate(l.due_on)}`
-                        : l.status
+                        : labelForStatus(l.status, l.withdrawn_by_requester)
                 }
                 amount={formatPaiseShort(
                   l.status === 'disbursed' ? l.outstanding_principal_paise : l.principal_paise,

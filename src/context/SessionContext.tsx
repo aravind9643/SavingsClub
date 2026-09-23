@@ -6,6 +6,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase, friendlyError } from '../lib/supabase';
 import { setQueryGroup } from '../hooks/useQuery';
 import type { Member, Role, AppConfig, MyGroup } from '../lib/types';
+import { today } from '../lib/dates';
 
 interface SessionValue {
   session: Session | null;
@@ -192,7 +193,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         phone: null,
         nominee_name: null,
         nominee_phone: null,
-        joined_on: new Date().toISOString().slice(0, 10),
+        joined_on: today(),
         status: active.status,
         is_active: active.status === 'active',
         left_on: null,

@@ -8,10 +8,11 @@ import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees } from '../
 import { haptic } from '../lib/haptics';
 import {
   Panel, Stat, List, Row, Sheet, Field, AmountField, Busy, ErrorNote,
-  Tag, Notice, Loading, fmtDate, ago, toneForStatus,
+  Tag, Notice, Loading, fmtDate, ago, toneForStatus, labelForStatus,
 } from '../components/ui';
 import { IconCheck, IconClose, IconArrowDown } from '../components/icons';
 import type { LoanRow, Vote, PaymentMethod } from '../lib/types';
+import { today } from '../lib/dates';
 
 interface VoteRow {
   id: string; voter_id: string; vote: Vote; note: string | null; voted_at: string;
@@ -104,8 +105,10 @@ export default function LoanDetail() {
             )}
           </div>
           <div className="hero-meta">
-            <Tag tone={loan.is_overdue ? 'coral' : toneForStatus(loan.status)}>
-              {loan.is_overdue ? `${loan.days_overdue} days overdue` : loan.status}
+            <Tag tone={loan.is_overdue ? 'coral'
+              : toneForStatus(loan.status, loan.withdrawn_by_requester)}>
+              {loan.is_overdue ? `${loan.days_overdue} days overdue`
+                : labelForStatus(loan.status, loan.withdrawn_by_requester)}
             </Tag>
             <Tag>{(loan.rate_bp / 100).toFixed(0)}% / month</Tag>
             <Tag>{loan.term_months} months</Tag>
@@ -350,7 +353,7 @@ function RepaySheet({
   const [principal, setPrincipal] = useState('');
   const [interest, setInterest] = useState('');
   const [penalty, setPenalty] = useState('');
-  const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paidOn, setPaidOn] = useState(() => today());
   const [method, setMethod] = useState<PaymentMethod>('bank');
 
   const save = useMutation(
@@ -433,7 +436,7 @@ function RepaySheet({
 }
 
 function DisburseSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }) {
-  const [on, setOn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [on, setOn] = useState(() => today());
   const [method, setMethod] = useState<PaymentMethod>('bank');
 
   const go = useMutation(

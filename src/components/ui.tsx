@@ -379,7 +379,11 @@ export function initials(name: string | undefined | null): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export function toneForStatus(status: string): Tone {
+export function toneForStatus(status: string, withdrawn = false): Tone {
+  // A withdrawal is not a refusal: the requester changed their mind. Showing
+  // it in the same alarming red as a rejection misreports what happened, and
+  // it is the member's own record that carries the impression.
+  if (withdrawn) return 'violet';
   switch (status) {
     case 'closed': case 'approved': case 'paid': return 'mint';
     case 'disbursed': case 'requested': case 'proposed': return 'amber';
@@ -388,9 +392,22 @@ export function toneForStatus(status: string): Tone {
   }
 }
 
+/** Display label for a status, distinguishing a withdrawal from a rejection. */
+export function labelForStatus(status: string, withdrawn = false): string {
+  if (withdrawn && status === 'rejected') return 'withdrawn';
+  return status.replace(/_/g, ' ');
+}
+
 export function fmtDate(d: string | null | undefined): string {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+  // A bare YYYY-MM-DD is parsed as UTC midnight by spec, which renders as the
+  // previous day for anyone behind Greenwich. Split the parts and build a
+  // local date instead.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  const date = m
+    ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+    : new Date(d);
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
 }
 
 export function fmtDateTime(d: string | null | undefined): string {

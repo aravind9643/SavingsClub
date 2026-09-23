@@ -11,6 +11,7 @@ import {
 } from '../components/ui';
 import { IconPlus, IconBank, IconCheck } from '../components/icons';
 import type { BankStatement } from '../lib/types';
+import { today } from '../lib/dates';
 
 export default function Bank() {
   const isOfficer = useIsOfficer();
@@ -116,7 +117,7 @@ export default function Bank() {
 }
 
 function StatementSheet({ expected, onClose }: { expected: number; onClose: () => void }) {
-  const [asOf, setAsOf] = useState(() => new Date().toISOString().slice(0, 10));
+  const [asOf, setAsOf] = useState(() => today());
   const [balance, setBalance] = useState('');
   const [note, setNote] = useState('');
 

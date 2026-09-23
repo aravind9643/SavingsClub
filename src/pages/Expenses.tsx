@@ -6,10 +6,11 @@ import { useSession, useIsOfficer } from '../context/SessionContext';
 import { formatPaise, formatPaiseShort, rupeesToPaise } from '../lib/money';
 import {
   Panel, List, Row, Empty, SkeletonList, Sheet, Field, AmountField, Busy,
-  ErrorNote, Segments, fmtDate, toneForStatus,
+  ErrorNote, Segments, fmtDate, toneForStatus, labelForStatus,
 } from '../components/ui';
 import { IconPlus, IconExpenses } from '../components/icons';
 import type { ExpenseRow, ExpenseCategory, PaymentMethod, Vote } from '../lib/types';
+import { today } from '../lib/dates';
 
 const CATEGORIES: { value: ExpenseCategory; label: string }[] = [
   { value: 'trip', label: 'Trip' },
@@ -100,7 +101,7 @@ function ExpenseRowItem({ expense }: { expense: ExpenseRow }) {
   return (
     <Row
       icon={<IconExpenses width={17} height={17} />}
-      iconTone={toneForStatus(expense.status)}
+      iconTone={toneForStatus(expense.status, expense.withdrawn_by_requester)}
       title={expense.description}
       sub={`${expense.category} · ${fmtDate(expense.incurred_on)}`}
       amount={formatPaiseShort(expense.amount_paise)}
@@ -115,7 +116,7 @@ function ExpenseRowItem({ expense }: { expense: ExpenseRow }) {
             Mark paid
           </button>
         ) : (
-          expense.status
+          labelForStatus(expense.status, expense.withdrawn_by_requester)
         )
       }
     />
@@ -210,7 +211,7 @@ function ProposeSheet({ onClose }: { onClose: () => void }) {
   const [category, setCategory] = useState<ExpenseCategory>('trip');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [incurredOn, setIncurredOn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [incurredOn, setIncurredOn] = useState(() => today());
   const [method, setMethod] = useState<PaymentMethod>('bank');
 
   const save = useMutation(
