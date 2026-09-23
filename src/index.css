@@ -690,13 +690,15 @@ button.notice {
 
 /* The phone-sized group switcher: a chip in the app bar. */
 .group-chip {
-  display: inline-flex; align-items: center; gap: 7px;
-  max-width: 44vw;
+  display: inline-flex; align-items: center; gap: 6px;
+  /* Bounded so a long group name cannot squeeze the greeting out of the bar;
+     the name ellipsises instead. */
+  max-width: 38vw;
   flex: none;
-  height: 34px; padding: 0 10px 0 6px;
+  height: 32px; padding: 0 9px 0 4px;
   border: 1px solid var(--hairline); border-radius: var(--r-full);
   background: var(--surface-2); color: var(--text-2);
-  font: inherit; font-size: 0.8rem; font-weight: 600;
+  font: inherit; font-size: 0.78rem; font-weight: 600;
   cursor: pointer;
   transition: background 0.18s var(--ease), border-color 0.18s var(--ease), color 0.18s var(--ease);
 }
@@ -704,6 +706,17 @@ button.notice {
   background: var(--surface-3);
   border-color: color-mix(in srgb, var(--violet) 40%, var(--hairline));
   color: var(--text);
+}
+/* The monogram: a soft tint rather than a hard block, so the chip reads as one
+   object instead of a coloured square with text stuck beside it. */
+.group-chip-ico {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--violet) 16%, transparent);
+  color: var(--violet);
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.02em;
 }
 .group-chip span.nm {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -713,9 +726,11 @@ button.notice {
   flex: none;
   transition: transform 0.18s var(--ease), color 0.18s var(--ease);
 }
-.group-chip:hover .chip-caret {
-  color: var(--text);
-}
+.group-chip:hover .chip-caret { color: var(--text); }
+/* One group: the chip is a label, so the caret goes and the hover lift with
+   it. It still opens the sheet — that is where "start another group" lives. */
+.group-chip.static .chip-caret { display: none; }
+.group-chip.static { padding-right: 11px; }
 @media (min-width: 1000px) { .group-chip { display: none; } }
 
 /* ------------------------------------------------------------------ fab -- */

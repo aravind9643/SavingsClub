@@ -14,6 +14,7 @@ import {
 } from '../components/ui';
 import {
   IconPlus, IconArrowUp, IconArrowDown, IconBank, IconInbox, IconCheck, IconShare,
+  IconWallet,
 } from '../components/icons';
 import type {
   MemberPosition, BankStatement, LoanRow, AuditRow, UnpaidRow, FundSummary,
@@ -23,7 +24,7 @@ import type {
 export default function Dashboard() {
   const nav = useNavigate();
   const { fund, alerts, loading } = useFund();
-  const { member, config, group, currentGroupId } = useSession();
+  const { member, config, group, currentGroupId, role } = useSession();
   const [reportOpen, setReportOpen] = useState(false);
 
   const positions = useQuery<MemberPosition[]>('positions', async () => {
@@ -151,6 +152,17 @@ export default function Dashboard() {
   const hour = new Date().getHours();
   const greetingTitle = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
 
+  // Who may actually do each thing, matching the RPCs exactly. Offering an
+  // action the database will refuse is worse than not offering it: the person
+  // fills in a form, presses save, and gets a permission error for something
+  // they were invited to do.
+  //
+  // record_contribution / record_repayment / record_bank_statement:
+  //   cashier or accountant only -- the president is deliberately NOT a money
+  //   handler, which is the whole point of separating the offices.
+  const isMoneyHandler = role === 'cashier' || role === 'accountant';
+  const isCashier = role === 'cashier';
+
   return (
     <>
       <Screen
@@ -163,8 +175,10 @@ export default function Dashboard() {
       }
     >
       {fund && (
+        // The group name is already in the header chip a few pixels above, so
+        // the hero's one label goes to what the number actually is.
         <Hero
-          label={`${group?.name ?? 'Group'} · total fund`}
+          label="Total fund"
           paise={fund.total_fund_paise}
           meta={
             <>
@@ -233,11 +247,16 @@ export default function Dashboard() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <Panel title="Quick actions" flush>
             <List>
+              {/* Recording money is the cashier's and accountant's job. For
+                  everyone else this row becomes "see who has paid", which is
+                  what the same screen offers them. */}
               <Row
                 icon={<IconArrowDown width={18} height={18} />}
                 iconTone="mint"
-                title="Record a contribution"
-                sub="Monthly chanda received"
+                title={isMoneyHandler ? 'Record a contribution' : 'This month\'s chanda'}
+                sub={isMoneyHandler
+                  ? 'Monthly chanda received'
+                  : 'See who has paid so far'}
                 onClick={() => nav('/contributions')}
                 chevron
               />
@@ -257,20 +276,32 @@ export default function Dashboard() {
                 onClick={() => nav('/expenses')}
                 chevron
               />
-              <Row
-                icon={<IconBank width={18} height={18} />}
-                iconTone="coral"
-                title="Reconcile the bank"
-                sub={
-                  diff === undefined
-                    ? 'No statement recorded yet'
-                    : diff === 0
-                      ? `Balanced on ${fmtDate(lastStatement.data?.as_of)}`
-                      : `Off by ${formatPaise(Math.abs(diff))}`
-                }
-                onClick={() => nav('/bank')}
-                chevron
-              />
+              {isCashier && (
+                <Row
+                  icon={<IconWallet width={18} height={18} />}
+                  iconTone="violet"
+                  title="Record cash movement"
+                  sub="Cash in or out of the float"
+                  onClick={() => nav('/cash')}
+                  chevron
+                />
+              )}
+              {isMoneyHandler && (
+                <Row
+                  icon={<IconBank width={18} height={18} />}
+                  iconTone="coral"
+                  title="Reconcile the bank"
+                  sub={
+                    diff === undefined
+                      ? 'No statement recorded yet'
+                      : diff === 0
+                        ? `Balanced on ${fmtDate(lastStatement.data?.as_of)}`
+                        : `Off by ${formatPaise(Math.abs(diff))}`
+                  }
+                  onClick={() => nav('/bank')}
+                  chevron
+                />
+              )}
             </List>
           </Panel>
 
