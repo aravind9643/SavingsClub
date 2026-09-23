@@ -1,0 +1,14 @@
+-- seed.sql
+--
+-- Deliberately empty.
+--
+-- The group is created from inside the app, not from here: the first person to
+-- sign in gets the setup screen, names the group, and adds everyone else by
+-- email on the Members page. Seeding members here would claim the group before
+-- anyone signs in, and that setup screen would then never appear.
+--
+-- `supabase db reset` runs this file, so leaving it empty keeps a local reset
+-- and a fresh cloud project behaving the same way.
+--
+-- If you ever want demo data for development, put it in a separate file and
+-- run it by hand rather than adding it here.
