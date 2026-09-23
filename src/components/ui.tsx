@@ -383,16 +383,21 @@ export function initials(name: string | undefined | null): string {
  * A role, written the way it is spoken.
  *
  * `role` arrives from the database as a lowercase enum -- 'cashier',
- * 'president'. Four separate places were printing that value straight onto the
+ * 'president'. Six separate places were printing that value straight onto the
  * screen, so a member's own profile tag read "president" in lower case while
  * the Members page listed "President" a few rows away. One helper means the
  * spelling cannot drift apart again.
+ *
+ * The 'president' enum shows as "Admin". The stored value deliberately keeps
+ * the older name so the database still matches the group's signed agreement --
+ * this is a display change, not a change to what the role IS. Anything reading
+ * the enum (policies, RPC role checks, the audit log) is untouched.
  */
 export function roleLabel(role: string | null | undefined): string {
   switch (role) {
     case 'cashier': return 'Cashier';
     case 'accountant': return 'Accountant';
-    case 'president': return 'President';
+    case 'president': return 'Admin';
     case 'member': return 'Member';
     default: return role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Member';
   }

@@ -83,7 +83,7 @@ function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => vo
     <>
       <h1>Start your group</h1>
       <p className="muted" style={{ marginTop: 8, marginBottom: 20 }}>
-        You become the president, which lets you invite everyone else and set the
+        You become the admin, which lets you invite everyone else and set the
         rules.
       </p>
 
@@ -287,7 +287,7 @@ export function AwaitingApproval() {
         <p className="muted" style={{ marginTop: 10 }}>
           You asked to join <strong>{group?.name}</strong> as{' '}
           <strong>{session?.user.email}</strong>. The cashier, accountant or
-          president will let you in. You will see the money once they do.
+          admin will let you in. You will see the money once they do.
         </p>
 
         <ErrorNote error={error} />

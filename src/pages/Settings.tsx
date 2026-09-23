@@ -117,7 +117,7 @@ export default function Settings() {
   if (!isOfficer) {
     return (
       <Screen title="Group rules">
-        <Notice tone="warn">Only the cashier, accountant or president can change these.</Notice>
+        <Notice tone="warn">Only the cashier, accountant or admin can change these.</Notice>
         <Panel title="Rules right now">
           <ReadOnly config={config} />
         </Panel>

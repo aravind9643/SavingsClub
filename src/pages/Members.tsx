@@ -25,7 +25,7 @@ interface RoleRow {
 const OFFICES: { role: Role; label: string; note: string }[] = [
   { role: 'cashier', label: 'Cashier', note: 'Takes money in and holds the cash' },
   { role: 'accountant', label: 'Accountant', note: 'Keeps the records and checks the bank' },
-  { role: 'president', label: 'President', note: 'Settles disagreements, does not handle money' },
+  { role: 'president', label: 'Admin', note: 'Settles disagreements, does not handle money' },
 ];
 
 export default function Members() {
@@ -487,7 +487,7 @@ function MemberDetailSheet({
         <div style={{ marginTop: 20 }}>
           {isPresident ? (
             <Notice tone="warn">
-              Give the president role to someone else first, then remove them.
+              Make someone else the admin first, then remove them.
             </Notice>
           ) : hasDebt ? (
             <Notice tone="warn">
