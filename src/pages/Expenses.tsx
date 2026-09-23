@@ -53,7 +53,7 @@ export default function Expenses() {
 
         {voting.length > 0 && filter !== 'paid' && (
           <Panel title="Waiting for votes">
-            {voting.map((e) => <VoteCard key={e.id} expense={e} />)}
+            {voting.map((e, idx) => <VoteCard key={e.id} expense={e} isLast={idx === voting.length - 1} />)}
           </Panel>
         )}
 
@@ -119,7 +119,7 @@ function ExpenseRowItem({ expense }: { expense: ExpenseRow }) {
   );
 }
 
-function VoteCard({ expense }: { expense: ExpenseRow }) {
+function VoteCard({ expense, isLast }: { expense: ExpenseRow; isLast?: boolean }) {
   const vote = useMutation(
     async (v: Vote) => {
       const { error } = await supabase.rpc('cast_expense_vote', {
@@ -133,7 +133,11 @@ function VoteCard({ expense }: { expense: ExpenseRow }) {
   const pct = (expense.approvals / Math.max(1, expense.required_approvals)) * 100;
 
   return (
-    <div style={{ paddingBottom: 14, marginBottom: 14, borderBottom: '1px solid var(--hairline)' }}>
+    <div style={{
+      paddingBottom: isLast ? 0 : 14,
+      marginBottom: isLast ? 0 : 14,
+      borderBottom: isLast ? 'none' : '1px solid var(--hairline)',
+    }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <strong style={{ flex: 1, minWidth: 0 }}>{expense.description}</strong>
         <span style={{ fontFamily: 'var(--display)', fontWeight: 650 }}>
@@ -232,7 +236,9 @@ function ProposeSheet({ onClose }: { onClose: () => void }) {
 
       <p className="dim" style={{ marginTop: 14 }}>
         {needsVote
-          ? `${config?.expense_required_approvals ?? 5} members must approve. Group expenses are capped at ${(config?.expense_annual_pct_bp ?? 2000) / 100}% of the fund per year.`
+          ? `${(config?.expense_required_approvals && config.expense_required_approvals > 0)
+              ? `${config.expense_required_approvals} members`
+              : 'Two-thirds majority'} must approve. Group expenses are capped at ${(config?.expense_annual_pct_bp ?? 2000) / 100}% of the fund per year.`
           : 'Admin costs do not need a vote.'}
       </p>
 

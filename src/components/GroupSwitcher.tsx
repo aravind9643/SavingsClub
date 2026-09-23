@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useSession } from '../context/SessionContext';
-import { Sheet, List, Row, Notice, ErrorNote, initials } from './ui';
-import { IconPlus } from './icons';
+import { Sheet, List, Row, Notice, ErrorNote, initials, Tag } from './ui';
+import { IconPlus, IconCheck } from './icons';
 
 /**
- * The group switcher, opened from the brand mark in the tab bar.
+ * The group switcher, opened from the brand mark in the tab bar or the app bar chip.
  *
  * Switching is a server round trip (set_active_group, then a token refresh), so
  * it can fail -- the sheet stays open and says so rather than closing on a
@@ -33,30 +33,52 @@ export default function GroupSwitcher({
     }
   }
 
+  const title = groups.length > 0 ? `Your groups (${groups.length})` : 'Your groups';
+
   return (
-    <Sheet open title="Your groups" onClose={onClose}>
+    <Sheet open title={title} onClose={onClose}>
       <ErrorNote error={error} />
 
       <List>
-        {groups.map((g) => (
-          <Row
-            key={g.id}
-            icon={initials(g.name)}
-            iconTone={g.id === currentGroupId ? 'mint' : 'violet'}
-            title={g.name}
-            sub={
-              g.status === 'pending'
-                ? 'waiting for approval'
-                : g.role !== 'member' ? g.role : 'member'
-            }
-            note={
-              busy === g.id ? 'switching…'
-                : g.id === currentGroupId ? 'open' : undefined
-            }
-            onClick={() => void pick(g.id)}
-            chevron={g.id !== currentGroupId}
-          />
-        ))}
+        {groups.map((g) => {
+          const isCurrent = g.id === currentGroupId;
+          const isDuplicate = groups.filter(
+            (x) => x.name.trim().toLowerCase() === g.name.trim().toLowerCase(),
+          ).length > 1;
+
+          const roleText = g.status === 'pending'
+            ? 'waiting for approval'
+            : g.role !== 'member' ? g.role : 'member';
+
+          const subParts = [roleText];
+          if (!g.setup_complete && g.status !== 'pending') {
+            subParts.push('setup incomplete');
+          }
+          if (isDuplicate) {
+            subParts.push(`#${g.id.slice(0, 4)}`);
+          }
+
+          return (
+            <Row
+              key={g.id}
+              icon={isCurrent ? <IconCheck width={17} height={17} /> : initials(g.name)}
+              iconTone={isCurrent ? 'mint' : 'violet'}
+              title={g.name}
+              sub={subParts.join(' · ')}
+              note={
+                busy === g.id ? (
+                  <span className="dim"><span className="spinner" />switching…</span>
+                ) : isCurrent ? (
+                  <Tag tone="mint">Active</Tag>
+                ) : g.status === 'pending' ? (
+                  <Tag tone="amber">Pending</Tag>
+                ) : undefined
+              }
+              onClick={() => void pick(g.id)}
+              chevron={!isCurrent}
+            />
+          );
+        })}
       </List>
 
       {groups.some((g) => g.status === 'pending') && (
@@ -68,10 +90,14 @@ export default function GroupSwitcher({
         </div>
       )}
 
-      <div className="btn-row stack">
-        <button className="lg" onClick={() => { onClose(); onAddGroup(); }}>
+      <div className="btn-row stack" style={{ marginTop: 16 }}>
+        <button
+          type="button"
+          className="primary lg"
+          onClick={() => { onClose(); onAddGroup(); }}
+        >
           <IconPlus width={16} height={16} />
-          Start or join another group
+          <span>Start or join another group</span>
         </button>
       </div>
     </Sheet>

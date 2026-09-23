@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
@@ -23,6 +24,7 @@ const OFFICES: { role: Role; label: string; note: string }[] = [
 ];
 
 export default function Members() {
+  const nav = useNavigate();
   const { member: me, isOfficer } = useSession();
   const [sheet, setSheet] = useState<'add' | 'roles' | null>(null);
 
@@ -79,9 +81,9 @@ export default function Members() {
           </Notice>
         )}
         {unlinked.length > 0 && (
-          <Notice tone="warn">
+          <Notice tone="warn" onClick={() => nav('/settings')}>
             {unlinked.length} member{unlinked.length > 1 ? 's have' : ' has'} not signed in
-            yet. They join with the email recorded against their name.
+            yet. Share an invite code from Rules so they can join.
           </Notice>
         )}
 
@@ -293,7 +295,7 @@ function AddSheet({ onClose }: { onClose: () => void }) {
       <Field label="Full name">
         <input value={fullName} onChange={(e) => setFullName(e.target.value)} autoFocus />
       </Field>
-      <Field label="Email" hint="They sign in with this and are linked automatically">
+      <Field label="Email" hint="When they join with an invite code using this email, their profile will be linked">
         <input
           type="email" inputMode="email" value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -349,7 +351,7 @@ function RolesSheet({
             disabled={assign.pending}
             onChange={(e) => void assign.run({ memberId: e.target.value, role: o.role })}
           >
-            <option value="">Nobody</option>
+            {o.role !== 'president' && <option value="">Nobody</option>}
             {members.map((m) => (
               <option key={m.id} value={m.id}>{m.full_name}</option>
             ))}

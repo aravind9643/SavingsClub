@@ -77,6 +77,7 @@ export default function Loans() {
                 amountTone={l.is_overdue ? 'coral' : undefined}
                 note={l.status === 'disbursed' ? 'outstanding' : l.status}
                 onClick={() => nav(`/loans/${l.id}`)}
+                chevron
               />
             ))}
           </List>

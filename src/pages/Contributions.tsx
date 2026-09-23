@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
@@ -12,7 +13,8 @@ import { IconContributions, IconCheck } from '../components/icons';
 import type { Member, ContributionPeriod, Contribution } from '../lib/types';
 
 export default function Contributions() {
-  const { config } = useSession();
+  const nav = useNavigate();
+  const { config, role } = useSession();
   const isOfficer = useIsOfficer();
   const [periodId, setPeriodId] = useState<string>('');
   const [paying, setPaying] = useState<{ period: ContributionPeriod; member: Member } | null>(null);
@@ -88,7 +90,22 @@ export default function Contributions() {
                 Open this month
               </Busy>
             </div>
-          ) : null}
+          ) : role === 'president' ? (
+            <>
+              <p className="dim" style={{ marginTop: 8, maxWidth: 360, marginInline: 'auto' }}>
+                A cashier or accountant must be assigned before contributions can be opened and recorded.
+              </p>
+              <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
+                <button type="button" className="primary lg" onClick={() => nav('/members')}>
+                  Assign roles in Members
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="dim" style={{ marginTop: 8 }}>
+              The group officers will open this month once contributions begin.
+            </p>
+          )}
         </Empty>
       </Screen>
     );
@@ -219,7 +236,7 @@ function RecordSheet({
       });
       if (error) throw error;
     },
-    { invalidates: ['contributions', 'fund', 'cash', 'feed'], onSuccess: onClose },
+    { invalidates: ['contributions', 'positions', 'fund', 'cash', 'feed'], onSuccess: onClose },
   );
 
   const late = new Date(paidOn) > new Date(period.grace_date);

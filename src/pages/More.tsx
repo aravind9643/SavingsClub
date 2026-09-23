@@ -1,10 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { Screen, useAppTheme } from '../App';
+import { Screen, useAppTheme, useGroupSwitcher } from '../App';
 import { useSession } from '../context/SessionContext';
 import { List, Row, Panel, initials, Tag } from '../components/ui';
 import {
   IconExpenses, IconBank, IconMembers, IconSettings, IconAudit,
-  IconSun, IconMoon, IconLogout,
+  IconSun, IconMoon, IconLogout, IconPlus, IconChevronDown,
 } from '../components/icons';
 
 /**
@@ -13,8 +13,9 @@ import {
  */
 export default function More() {
   const nav = useNavigate();
-  const { member, role, group, signOut, isOfficer } = useSession();
+  const { member, role, group, groups, signOut, isOfficer } = useSession();
   const { theme, setTheme } = useAppTheme();
+  const openSwitcher = useGroupSwitcher();
 
   return (
     <Screen title="More">
@@ -32,12 +33,21 @@ export default function More() {
           <div className="dim" style={{ marginTop: 2 }}>
             {member?.email}
           </div>
-          <div style={{ marginTop: 7 }}>
+          <div style={{ marginTop: 7, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {role === 'member'
               ? <Tag>member</Tag>
               : <Tag tone="mint">{role}</Tag>}
-            {' '}
-            <Tag tone="violet">{group?.name}</Tag>
+            {openSwitcher && group ? (
+              <button
+                type="button"
+                className="tag violet"
+                onClick={openSwitcher}
+                title="Switch or manage groups"
+              >
+                <span>{group.name}</span>
+                <IconChevronDown width={9} height={9} style={{ opacity: 0.75, flex: 'none' }} />
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -65,6 +75,14 @@ export default function More() {
 
       <Panel title="Group" flush>
         <List>
+          <Row
+            icon={<IconPlus width={18} height={18} />}
+            iconTone="violet"
+            title="Switch or create group"
+            sub={groups.length > 1 ? `${groups.length} groups · Current: ${group?.name}` : 'Start or join another group'}
+            onClick={openSwitcher ?? undefined}
+            chevron
+          />
           <Row
             icon={<IconMembers width={18} height={18} />}
             iconTone="violet"

@@ -150,7 +150,7 @@ export function Notice({
   const body = (
     <>
       <span className="dot" />
-      <span style={{ minWidth: 0 }}>{children}</span>
+      <span style={{ minWidth: 0, flex: 1 }}>{children}</span>
       {onClick ? <IconChevron width={16} height={16} className="chev" /> : null}
     </>
   );
@@ -160,7 +160,6 @@ export function Notice({
       type="button"
       className={`notice ${tone}`}
       onClick={onClick}
-      style={{ border: 0, font: 'inherit', textAlign: 'left', cursor: 'pointer', width: '100%' }}
     >
       {body}
     </button>

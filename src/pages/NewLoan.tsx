@@ -98,7 +98,7 @@ export default function NewLoan() {
       <Panel title="How much">
         <AmountField value={amount} onChange={setAmount} autoFocus />
 
-        <div className="scroller" style={{ marginTop: 14 }}>
+        <div className="seg-grid" style={{ marginTop: 14 }}>
           {[25, 50, 75, 100].map((p) => (
             <button
               key={p}
@@ -164,8 +164,10 @@ export default function NewLoan() {
       </Panel>
 
       <p className="dim">
-        {config?.loan_required_approvals ?? 4} members must approve. You cannot vote on
-        your own request.
+        {(config?.loan_required_approvals && config.loan_required_approvals > 0)
+          ? `${config.loan_required_approvals} members must approve.`
+          : `Majority of members (${Math.max(2, Math.floor(((membersQ.data ?? []).length / 2) + 1))}) must approve.`}{' '}
+        You cannot vote on your own request.
       </p>
 
       <div className="btn-row stack" style={{ paddingBottom: 12 }}>

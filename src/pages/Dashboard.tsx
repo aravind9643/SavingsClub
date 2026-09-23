@@ -61,12 +61,12 @@ export default function Dashboard() {
 
   const myVoteNeeded = (pending.data ?? []).filter((l) => l.can_i_vote);
   const diff = lastStatement.data?.difference_paise;
-  const greeting = new Date().getHours() < 12
-    ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
+  const hour = new Date().getHours();
+  const greetingTitle = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
 
   return (
     <Screen
-      title={greeting.split(' ')[1] === 'morning' ? 'Morning' : greeting.replace('Good ', '')}
+      title={greetingTitle}
       sub={member?.full_name}
       action={
         <button className="icon-btn avatar" onClick={() => nav('/more')} aria-label="Profile">
@@ -91,10 +91,11 @@ export default function Dashboard() {
               </Chip>
             </>
           }
-          meter={{
-            value: fund.outstanding_paise,
-            limit: Math.max(1, fund.lendable_paise),
-          }}
+          meter={
+            fund.lendable_paise > 0
+              ? { value: fund.outstanding_paise, limit: fund.lendable_paise }
+              : undefined
+          }
         />
       )}
 

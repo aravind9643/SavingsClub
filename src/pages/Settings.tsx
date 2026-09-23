@@ -118,7 +118,7 @@ export default function Settings() {
           <Field label="Max term (months)">
             <input inputMode="numeric" value={form.max_months} onChange={set('max_months')} />
           </Field>
-          <Field label="Approvals needed" >
+          <Field label="Approvals needed" hint="0 for automatic majority">
             <input inputMode="numeric" value={form.loan_approvals} onChange={set('loan_approvals')} />
           </Field>
         </div>
@@ -134,7 +134,7 @@ export default function Settings() {
 
       <Panel title="Expenses & cash">
         <div className="field-row">
-          <Field label="Expense approvals">
+          <Field label="Expense approvals" hint="0 for automatic 2/3 majority">
             <input inputMode="numeric" value={form.expense_approvals} onChange={set('expense_approvals')} />
           </Field>
           <Field label="Yearly cap (%)">
@@ -282,8 +282,8 @@ function ReadOnly({ config }: { config: NonNullable<ReturnType<typeof useSession
     ['Max term', `${config.max_loan_months} months`],
     ['Max per member', `${config.max_loan_pct_bp / 100}% of fund`],
     ['Reserve', `${config.reserve_pct_bp / 100}% of fund`],
-    ['Loan approvals', `${config.loan_required_approvals} members`],
-    ['Expense approvals', `${config.expense_required_approvals} members`],
+    ['Loan approvals', config.loan_required_approvals > 0 ? `${config.loan_required_approvals} members` : 'Majority (auto)'],
+    ['Expense approvals', config.expense_required_approvals > 0 ? `${config.expense_required_approvals} members` : 'Two-thirds majority (auto)'],
     ['Cash float limit', `₹${paiseToRupees(config.cash_float_limit_paise)}`],
   ];
   return (

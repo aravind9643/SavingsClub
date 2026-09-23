@@ -21,7 +21,7 @@ import More from './pages/More';
 import GroupSwitcher from './components/GroupSwitcher';
 import { Loading, initials } from './components/ui';
 import {
-  IconHome, IconContributions, IconLoans, IconWallet, IconMore,
+  IconHome, IconContributions, IconLoans, IconWallet, IconMore, IconChevronDown,
 } from './components/icons';
 
 /** Five destinations, the most anyone can hit accurately on a phone. */
@@ -62,18 +62,17 @@ export function useAppTheme() {
  */
 const SwitcherCtx = createContext<(() => void) | null>(null);
 
+export function useGroupSwitcher() {
+  return useContext(SwitcherCtx);
+}
+
 function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
   const { alerts } = useFund();
-  const { group, groups } = useSession();
+  const { group } = useSession();
 
   // A dot on the tab that owns the most urgent thing needing attention.
   const blipFor = (to: string) =>
     alerts.some((a) => a.severity === 'danger' && a.to === to);
-
-  // With one group the brand is just a label; with several it is the control
-  // that swaps between them, so it only becomes a button when there is
-  // somewhere to go.
-  const canSwitch = groups.length > 1;
 
   return (
     <nav className="tabbar" aria-label="Main">
@@ -81,7 +80,7 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
         type="button"
         className="rail-brand"
         onClick={onSwitchGroup}
-        aria-label={canSwitch ? 'Switch group' : 'Groups'}
+        aria-label="Switch or create group"
       >
         <span
           className="row-ico violet"
@@ -92,7 +91,7 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
         <strong style={{ fontFamily: 'var(--display)', fontSize: '0.98rem' }}>
           {group?.name ?? 'Sanchay'}
         </strong>
-        {canSwitch ? <span className="brand-caret" aria-hidden>⌄</span> : null}
+        <IconChevronDown width={12} height={12} className="brand-caret" />
       </button>
 
       {TABS.map(({ to, label, Icon, end }) => (
@@ -166,8 +165,8 @@ function Gate() {
   // state -- open sheets, half-typed amounts, scroll position -- which would
   // otherwise carry over from one group's screen to another's.
   return (
-    <FundProvider>
-      <Shell key={currentGroupId ?? 'none'} />
+    <FundProvider key={currentGroupId ?? 'none'}>
+      <Shell />
     </FundProvider>
   );
 }
@@ -187,33 +186,35 @@ export function Screen({
   title, sub, action, children,
 }: { title: string; sub?: ReactNode; action?: ReactNode; children: ReactNode }) {
   const openSwitcher = useContext(SwitcherCtx);
-  const { group, groups } = useSession();
+  const { group } = useSession();
 
-  // Only worth the space once there is somewhere to switch to.
-  const chip = openSwitcher && groups.length > 1 ? (
+  // Always show group chip so user can see active group and open switcher to switch or add groups.
+  const chip = openSwitcher && group ? (
     <button
       type="button"
       className="group-chip"
       onClick={openSwitcher}
-      aria-label={`Current group ${group?.name ?? ''}. Switch group`}
+      aria-label={`Current group ${group.name}. Switch or add group`}
     >
       <span className="row-ico violet" style={{ width: 24, height: 24, borderRadius: 8, fontSize: '0.6rem' }}>
-        {initials(group?.name)}
+        {initials(group.name)}
       </span>
-      <span className="nm">{group?.name}</span>
-      <span aria-hidden>⌄</span>
+      <span className="nm">{group.name}</span>
+      <IconChevronDown width={10} height={10} className="chip-caret" />
     </button>
   ) : null;
 
   return (
     <>
       <header className="appbar">
-        <span className="appbar-title">
-          {title}
-          {sub ? <span className="appbar-sub">{sub}</span> : null}
-        </span>
-        {chip}
-        {action}
+        <div className="appbar-inner">
+          <span className="appbar-title">
+            {title}
+            {sub ? <span className="appbar-sub">{sub}</span> : null}
+          </span>
+          {chip}
+          {action}
+        </div>
       </header>
       <div className="screen stagger">{children}</div>
     </>

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useQuery } from '../hooks/useQuery';
 import { formatPaise } from '../lib/money';
 import {
-  Panel, List, Row, Empty, SkeletonList, Segments, ago, fmtDateTime,
+  Panel, List, Row, Empty, SkeletonList, Segments, Sheet, ago, fmtDateTime,
 } from '../components/ui';
 import { IconAudit, IconCheck, IconClose, IconMore } from '../components/icons';
 import type { AuditRow } from '../lib/types';
@@ -16,7 +16,7 @@ const GROUPS: Record<Filter, string[] | null> = {
   money: ['contributions', 'loan_repayments', 'expenses', 'cash_ledger', 'bank_statements'],
   loans: ['loans', 'loan_votes'],
   // 'groups' carries the rule settings that used to live in app_config.
-  people: ['members', 'role_assignments', 'groups'],
+  people: ['members', 'role_assignments', 'groups', 'group_invites'],
 };
 
 export default function Audit() {
@@ -82,6 +82,7 @@ export default function Audit() {
                   </>
                 }
                 onClick={() => setOpen(open === r.id ? null : r.id)}
+                chevron
               />
             ))}
           </List>
@@ -89,9 +90,9 @@ export default function Audit() {
       </Panel>
 
       {open !== null && (
-        <Panel title="Detail">
+        <Sheet open title="Audit detail" onClose={() => setOpen(null)}>
           <Detail row={(q.data ?? []).find((r) => r.id === open)} />
-        </Panel>
+        </Sheet>
       )}
 
       <p className="dim" style={{ textAlign: 'center' }}>
@@ -103,21 +104,36 @@ export default function Audit() {
 
 function Detail({ row }: { row: AuditRow | undefined }) {
   if (!row) return null;
-  const keys = row.changed_keys ?? Object.keys(row.new_data ?? {});
+  const keys = (row.changed_keys && row.changed_keys.length > 0)
+    ? row.changed_keys
+    : Object.keys(row.new_data ?? row.old_data ?? {});
   return (
     <>
-      <p className="dim" style={{ marginTop: 0 }}>
+      <p className="dim" style={{ marginTop: 0, marginBottom: 14 }}>
         {row.table_name} · {row.action.toLowerCase()} · {fmtDateTime(row.occurred_at)}
       </p>
       <div style={{ display: 'grid', gap: 8 }}>
-        {keys.filter((k) => k !== 'id' && k !== 'created_at').slice(0, 12).map((k) => (
-          <div key={k} style={{ display: 'flex', gap: 10, fontSize: '0.85rem' }}>
-            <span className="dim" style={{ minWidth: 120 }}>{k}</span>
-            <span style={{ minWidth: 0, wordBreak: 'break-word' }}>
+        {keys.filter((k) => k !== 'id' && k !== 'created_at').slice(0, 16).map((k) => (
+          <div
+            key={k}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 3,
+              padding: '10px 12px',
+              borderRadius: 'var(--r-sm)',
+              background: 'var(--surface-2)',
+              fontSize: '0.85rem',
+            }}
+          >
+            <span className="dim" style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+              {k.replace(/_/g, ' ')}
+            </span>
+            <span style={{ minWidth: 0, wordBreak: 'break-word', fontWeight: 550 }}>
               {row.action === 'UPDATE' && row.old_data ? (
                 <>
-                  <s style={{ color: 'var(--text-3)' }}>{fmt(k, row.old_data[k])}</s>
-                  {' → '}
+                  <s style={{ color: 'var(--text-3)', marginRight: 6 }}>{fmt(k, row.old_data[k])}</s>
+                  <span style={{ color: 'var(--mint)', marginRight: 6 }}>→</span>
                 </>
               ) : null}
               {fmt(k, row.new_data?.[k])}
@@ -160,6 +176,10 @@ function describe(r: AuditRow): string {
     case 'members': return `Member ${String(d.full_name ?? '')}`;
     case 'role_assignments': return `Role ${String(d.role ?? '')}`;
     case 'groups': return 'Group rules changed';
+    case 'group_invites':
+      return r.action === 'INSERT'
+        ? `Invite code created (${r.row_id})`
+        : `Invite code ${r.action.toLowerCase()}`;
     default: return `${r.table_name} ${r.action.toLowerCase()}`;
   }
 }

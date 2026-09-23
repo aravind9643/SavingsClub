@@ -11,7 +11,7 @@ import { config, type IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
   faHouse, faCalendarCheck, faIndianRupeeSign, faReceipt, faWallet,
   faBuildingColumns, faUserGroup, faGear, faClipboardList, faSun, faMoon,
-  faRightFromBracket, faChevronRight, faXmark, faPlus, faEllipsis, faCheck,
+  faRightFromBracket, faChevronRight, faChevronDown, faXmark, faPlus, faEllipsis, faCheck,
   faArrowUp, faArrowDown, faInbox, faTableColumns, faHandHoldingDollar,
 } from '@fortawesome/free-solid-svg-icons';
 
@@ -57,6 +57,7 @@ export const IconSun = make(faSun);
 export const IconMoon = make(faMoon);
 export const IconLogout = make(faRightFromBracket);
 export const IconChevron = make(faChevronRight);
+export const IconChevronDown = make(faChevronDown);
 export const IconClose = make(faXmark);
 export const IconPlus = make(faPlus);
 export const IconCheck = make(faCheck);

@@ -166,7 +166,7 @@ function CashSheet({ onClose }: { onClose: () => void }) {
     <Sheet open title="Record cash" onClose={onClose}>
       <ErrorNote error={save.error} />
 
-      <div className="scroller" style={{ marginBottom: 14 }}>
+      <div className="seg-row" style={{ marginBottom: 14 }}>
         <button className={`seg${direction === 'out' ? ' on' : ''}`} onClick={() => setDirection('out')}>
           Paid out
         </button>

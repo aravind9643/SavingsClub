@@ -327,7 +327,7 @@ function RepaySheet({
       });
       if (error) throw error;
     },
-    { invalidates: [`loan:${loan.id}`, 'loans', 'fund', 'cash', 'feed'], onSuccess: onClose },
+    { invalidates: [`loan:${loan.id}`, 'loans', 'positions', 'fund', 'cash', 'feed'], onSuccess: onClose },
   );
 
   return (
@@ -390,7 +390,7 @@ function DisburseSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }
       });
       if (error) throw error;
     },
-    { invalidates: [`loan:${loan.id}`, 'loans', 'fund', 'cash', 'feed'], onSuccess: onClose },
+    { invalidates: [`loan:${loan.id}`, 'loans', 'positions', 'fund', 'cash', 'feed'], onSuccess: onClose },
   );
 
   return (
