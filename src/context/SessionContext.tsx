@@ -242,7 +242,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     noGroups: Boolean(session) && !loading && groups.length === 0,
     awaitingApproval:
       Boolean(session) && !loading && groups.length > 0 && (group?.status === 'pending' || groups.every((g) => g.status === 'pending')),
-    isOfficer: role === 'cashier' || role === 'accountant' || role === 'president',
+    isOfficer: role === 'cashier' || role === 'accountant' || role === 'admin',
     networkError,
     retry: () => setTick((n) => n + 1),
     switchGroup,

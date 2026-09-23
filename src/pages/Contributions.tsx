@@ -74,7 +74,7 @@ export default function Contributions() {
   const hasMoneyOfficer = (rolesQ.data ?? []).some(
     (r) => r.role === 'cashier' || r.role === 'accountant',
   );
-  const canOpen = role === 'president' || role === 'cashier' || role === 'accountant';
+  const canOpen = role === 'admin' || role === 'cashier' || role === 'accountant';
   const isMoneyHandler = role === 'cashier' || role === 'accountant';
 
   const openPeriod = useMutation(
@@ -163,7 +163,7 @@ export default function Contributions() {
         <Empty icon={<IconContributions width={22} height={22} />}>
           This month has not been started yet.
           {!hasMoneyOfficer ? (
-            role === 'president' ? (
+            role === 'admin' ? (
               <>
                 <p className="dim" style={{ marginTop: 8, maxWidth: 360, marginInline: 'auto' }}>
                   Pick a cashier and an accountant first. Until then nobody can take money in.

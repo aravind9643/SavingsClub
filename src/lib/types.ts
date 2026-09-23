@@ -1,6 +1,6 @@
 /** Shapes returned by the database views and RPCs. */
 
-export type Role = 'member' | 'cashier' | 'accountant' | 'president';
+export type Role = 'member' | 'cashier' | 'accountant' | 'admin';
 export type Vote = 'approve' | 'reject' | 'abstain';
 export type PaymentMethod = 'cash' | 'bank';
 export type LoanStatus =

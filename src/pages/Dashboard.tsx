@@ -169,7 +169,7 @@ export default function Dashboard() {
   // they were invited to do.
   //
   // record_contribution / record_repayment / record_bank_statement:
-  //   cashier or accountant only -- the president is deliberately NOT a money
+  //   cashier or accountant only -- the admin is deliberately NOT a money
   //   handler, which is the whole point of separating the offices.
   const isMoneyHandler = role === 'cashier' || role === 'accountant';
   const isCashier = role === 'cashier';

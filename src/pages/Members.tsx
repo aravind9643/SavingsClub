@@ -25,7 +25,7 @@ interface RoleRow {
 const OFFICES: { role: Role; label: string; note: string }[] = [
   { role: 'cashier', label: 'Cashier', note: 'Takes money in and holds the cash' },
   { role: 'accountant', label: 'Accountant', note: 'Keeps the records and checks the bank' },
-  { role: 'president', label: 'Admin', note: 'Settles disagreements, does not handle money' },
+  { role: 'admin', label: 'Admin', note: 'Settles disagreements, does not handle money' },
 ];
 
 export default function Members() {
@@ -385,7 +385,7 @@ function RolesSheet({
             disabled={assign.pending}
             onChange={(e) => void assign.run({ memberId: e.target.value, role: o.role })}
           >
-            {o.role !== 'president' && <option value="">Nobody</option>}
+            {o.role !== 'admin' && <option value="">Nobody</option>}
             {distinctMembers.map((m) => (
               <option key={m.id} value={m.id}>{m.full_name}</option>
             ))}
@@ -424,7 +424,7 @@ function MemberDetailSheet({
   );
 
   const hasDebt = position.outstanding_paise > 0;
-  const isPresident = position.role === 'president';
+  const isAdmin = position.role === 'admin';
 
   return (
     <Sheet open title={position.full_name} onClose={onClose}>
@@ -485,7 +485,7 @@ function MemberDetailSheet({
 
       {isOfficer && position.is_active && (
         <div style={{ marginTop: 20 }}>
-          {isPresident ? (
+          {isAdmin ? (
             <Notice tone="warn">
               Make someone else the admin first, then remove them.
             </Notice>

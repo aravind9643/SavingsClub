@@ -36,7 +36,7 @@ npm run dev                   # http://localhost:5173
 ```
 
 In the app: **First time here** → create an account → **Start a new group**.
-You become president. Invite others from **Settings → Invite people**, approve
+You become the admin. Invite others from **Settings → Invite people**, approve
 them on **Members**. Nothing needs to be seeded by hand.
 
 Migrations are applied with `npx supabase db push` (or
@@ -69,7 +69,7 @@ src/
     supabase.ts        client + friendlyError
   pages/               14 screens
 supabase/
-  migrations/          0001-0022, applied in numerical order
+  migrations/          0001-0024, applied in numerical order
   tests/
     assertions.sql     protections still in force (RLS on, RPC-only writes, …)
     isolation.sql      two real groups, proves neither can see the other
@@ -225,7 +225,7 @@ the extra call is dropped rather than firing duplicate RPCs.
 
 ## Onboarding model
 
-Anyone may create a group and becomes its **president**. Others join with an
+Anyone may create a group and becomes its **admin**. Others join with an
 invite code (`ABCD-EFGH-JKLM`, 7-day expiry, one live code per group — issuing a
 new one retires the old).
 
@@ -242,7 +242,7 @@ Approval thresholds are majority-based when config is `0`:
 `greatest(2, active/2 + 1)`. A fixed `4` would lock a 3-person group out of
 lending on its first day.
 
-`release_role('president')` and `remove_member()` on a president both **raise** —
+`release_role('admin')` and `remove_member()` on an admin both **raise** —
 the office must be handed over, never left empty. `remove_member()` also refuses
 anyone with an outstanding loan: settle the debt first, or the money leaves with
 them and the books never balance again.
@@ -251,21 +251,21 @@ them and the books never balance again.
 
 ## Roles
 
-`member | cashier | accountant | president`. Cashier and accountant **must be
+`member | cashier | accountant | admin`. Cashier and accountant **must be
 different people** — a constraint trigger enforces it, and `DEFERRABLE` does not
 change that (deferring moves the check to commit; it never permits the end
 state). One holder per office per group, enforced by a GiST exclusion
 constraint over `daterange`.
 
 Role responsibilities and RPC permissions:
-- **President**: Group administrator. Configures rules (`update_config`), invites
+- **Admin**: Group administrator. Configures rules (`update_config`), invites
   and approves members (`approve_pending_member`), and can open the monthly
   period (`open_period`) once money offices are assigned.
 - **Cashier**: Holds the cash float, records cash movements (`record_cash_movement`),
   records cash/bank contributions and repayments, opens/closes periods, and disburses loans.
 - **Accountant**: Performs bank reconciliation (`record_bank_statement`), records
   contributions and repayments, opens/closes periods, and disburses loans.
-- **Officers** (`president | cashier | accountant`): Can propose auto-approved
+- **Officers** (`admin | cashier | accountant`): Can propose auto-approved
   `admin` and `bank_charge` expenses without voting, write off uncollectable
   disbursed loans (`write_off_loan`), and cancel pending loan or expense requests.
 - **Members**: Democratic participation. Can propose loans (`request_loan`), cancel
@@ -336,7 +336,7 @@ Numbered `NNNN_name.sql`, applied in order, each wrapped in a transaction by
 the Supabase CLI — so a mid-file failure rolls the whole file back and leaves
 the database untouched.
 
-Five rules, every one of which was learned by breaking a real push:
+Six rules, every one of which was learned by breaking a real push:
 
 1. **`CREATE OR REPLACE VIEW` can only APPEND columns.** Adding a column at the
    front fails with `cannot change name of view column X to Y`, which reads
@@ -358,6 +358,16 @@ Five rules, every one of which was learned by breaking a real push:
 
 4. **`drop … if exists`** on every drop. It costs nothing and removes a whole
    class of failure.
+
+6. **Renaming an enum label is two jobs, not one.** `ALTER TYPE ... RENAME
+   VALUE` moves the label in place — stored rows, indexes and constraints all
+   stay valid, and unlike `ADD VALUE` it has no same-transaction restriction.
+   But it does NOT touch string literals inside function bodies, which are
+   plpgsql source compared against the enum at run time. Every function and
+   policy naming the old label must be redefined in the SAME migration, or the
+   app raises `invalid input value for enum` the moment the rename lands.
+   Generate those redefinitions from the installed sources rather than
+   retyping them (see `0024`).
 
 5. **Order matters more than syntax.** `pglast` parsing proves a file is valid
    SQL; it proves nothing about whether each statement is legal against the
@@ -387,12 +397,14 @@ no-op on a fresh database.
 | `0014` | `fix_audit_row_id.sql` | Corrects casting of audit log row UUIDs |
 | `0015` | `fix_member_access_and_profiles.sql` | Self-member read policy & profile fallback |
 | `0016` | `fix_members_read_policy.sql` | Restores strict multi-tenant RLS on `members` |
-| `0017` | `allow_officers_open_period.sql` | Allows President (alongside Cashier & Accountant) to open periods |
+| `0017` | `allow_officers_open_period.sql` | Allows the admin (alongside Cashier & Accountant) to open periods |
 | `0018` | `critical_fixes.sql` | Lock in `open_period`, 10x cap, auto-closing repaid loans, negative amount guards |
 | `0019` | `logic_fixes.sql` | Grace date guard in `close_period`, `cancel_loan_request`, `write_off_loan`, `cancel_expense`, `update_config` validation |
 | `0020` | `fund_integrity.sql` | Write-offs book an expense so reconciliation holds; yearly cap enforced on auto-approved expenses; loans no longer auto-close with interest owed |
 | `0021` | `date_guards.sql` | Future-date and ordering guards on every date-taking RPC; closed periods refuse new entries |
 | `0022` | `governance_fixes.sql` | Guarantor cannot vote; withdrawal distinguished from rejection; vote deadlock broken when members leave |
+| `0023` | `plain_error_messages.sql` | Database error text rewritten in plain words — these strings are UI |
+| `0024` | `rename_president_to_admin.sql` | `role_enum` label renamed in place; all 17 functions and 1 policy redefined in the same transaction |
 
 ---
 
