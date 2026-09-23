@@ -149,8 +149,19 @@ export default function Dashboard() {
 
   const myVoteNeeded = (pending.data ?? []).filter((l) => l.can_i_vote);
   const diff = lastStatement.data?.difference_paise;
-  const hour = new Date().getHours();
-  const greetingTitle = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
+
+  // The subtitle carries the one thing worth knowing before you scroll: what
+  // you owe this month, or that you are clear. A greeting went here before --
+  // "Morning, Aravind" -- which told the reader the time of day and their own
+  // name, then pushed the fund total off the top of the screen. It also made
+  // the header the only part of the app that changes for no reason, which is
+  // how a region trains people to stop looking at it.
+  const dueThisMonth = myUnpaid?.expected_paise ?? 0;
+  const homeSub = dueThisMonth > 0
+    ? `${formatPaiseShort(dueThisMonth)} ${myUnpaid?.is_overdue ? 'overdue' : 'due this month'}`
+    : myPosition
+      ? `${formatPaiseShort(myPosition.contributed_paise)} saved · you are up to date`
+      : undefined;
 
   // Who may actually do each thing, matching the RPCs exactly. Offering an
   // action the database will refuse is worse than not offering it: the person
@@ -166,10 +177,16 @@ export default function Dashboard() {
   return (
     <>
       <Screen
-      title={greetingTitle}
-      sub={member?.full_name}
+      title="Home"
+      sub={homeSub}
       action={
-        <button className="icon-btn avatar" onClick={() => nav('/more')} aria-label="Profile">
+        // The initials are decorative; the label is what a screen reader
+        // announces, so it carries the name the header no longer prints.
+        <button
+          className="icon-btn avatar"
+          onClick={() => nav('/more')}
+          aria-label={member?.full_name ? `${member.full_name} — profile and settings` : 'Profile'}
+        >
           {initials(member?.full_name)}
         </button>
       }

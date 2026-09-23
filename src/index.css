@@ -691,8 +691,8 @@ button.notice {
 /* The phone-sized group switcher: a chip in the app bar. */
 .group-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  /* Bounded so a long group name cannot squeeze the greeting out of the bar;
-     the name ellipsises instead. */
+  /* Bounded so a long group name cannot squeeze the screen title out of the
+     bar; the group name ellipsises instead. */
   max-width: 38vw;
   flex: none;
   height: 32px; padding: 0 9px 0 4px;
