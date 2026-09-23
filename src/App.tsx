@@ -1,5 +1,6 @@
 import {
-  createContext, useContext, useEffect, useState, lazy, Suspense, type ReactNode,
+  createContext, useContext, useEffect, useRef, useState, lazy, Suspense,
+  type ReactNode,
 } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import { SessionProvider, useSession } from './context/SessionContext';
@@ -226,12 +227,38 @@ export default function App() {
   );
 }
 
-/** Shared page frame: sticky translucent app bar over a stacked screen. */
+/**
+ * Shared page frame: a scroll-aware app bar over a stacked screen.
+ *
+ * The bar starts large and flush with the page, then condenses once anything
+ * scrolls under it — the subtitle folds away, the title shrinks to fit one
+ * line beside the controls, and a hairline appears to separate the layers.
+ * That collapse is what makes a header read as native rather than as a div
+ * pinned to the top.
+ *
+ * Detection is an IntersectionObserver on a zero-height sentinel rather than a
+ * scroll listener: it fires twice (crossing in, crossing out) instead of on
+ * every frame, and it needs no scroll maths that would have to know which
+ * element is actually scrolling.
+ */
 export function Screen({
   title, sub, action, children,
 }: { title: string; sub?: ReactNode; action?: ReactNode; children: ReactNode }) {
   const openSwitcher = useContext(SwitcherCtx);
   const { group, groups } = useSession();
+  const sentinel = useRef<HTMLDivElement | null>(null);
+  const [condensed, setCondensed] = useState(false);
+
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      ([entry]) => setCondensed(!entry.isIntersecting),
+      { threshold: 0 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   // The chip carries the group name and, when there is more than one group,
   // doubles as the switcher. With a single group there is nothing to switch
@@ -254,16 +281,20 @@ export function Screen({
 
   return (
     <>
-      <header className="appbar">
+      <header className={`appbar${condensed ? ' condensed' : ''}`}>
         <div className="appbar-inner">
           <span className="appbar-title">
-            {title}
+            <span className="appbar-name">{title}</span>
             {sub ? <span className="appbar-sub">{sub}</span> : null}
           </span>
-          {chip}
-          {action}
+          <div className="appbar-actions">
+            {chip}
+            {action}
+          </div>
         </div>
       </header>
+      {/* Zero-height marker: once it leaves the viewport the bar condenses. */}
+      <div ref={sentinel} aria-hidden className="appbar-sentinel" />
       <div className="screen stagger">{children}</div>
     </>
   );

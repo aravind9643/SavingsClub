@@ -250,11 +250,28 @@ a { color: var(--accent); text-decoration: none; }
   position: sticky;
   top: 0;
   z-index: 30;
-  padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px 14px;
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
+  /* Transparent until it condenses, so the hairline appears rather than
+     sliding in -- and the box keeps the same geometry either way. */
+  border-bottom: 1px solid transparent;
+  transition:
+    padding 0.26s var(--ease),
+    background 0.26s var(--ease),
+    border-color 0.26s var(--ease);
 }
+/* Once content is underneath, the bar earns an edge. Without it the blurred
+   panel and the page read as one surface and the header looks unanchored. */
+.appbar.condensed {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  padding-bottom: 10px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  border-bottom-color: var(--hairline);
+}
+.appbar-sentinel { height: 0; }
+
 .appbar-inner {
   display: flex;
   align-items: center;
@@ -263,32 +280,67 @@ a { color: var(--accent); text-decoration: none; }
   max-width: 560px;
   margin: 0 auto;
 }
+/* The controls travel together, so they stay a single cluster at the end of
+   the bar instead of drifting apart as the title resizes. */
+.appbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
 @media (min-width: 1000px) {
   .appbar { padding: 18px 28px 14px; }
   .appbar-inner { max-width: 1040px; }
 }
 .appbar-title {
-  font-family: var(--display);
-  font-size: 1.35rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
   margin-right: auto;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.appbar-name {
+  font-family: var(--display);
+  font-size: 1.45rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: font-size 0.26s var(--ease);
 }
+.appbar.condensed .appbar-name { font-size: 1.12rem; }
+
 .appbar-sub {
   display: block;
   font-family: var(--body);
-  font-size: 0.75rem;
-  font-weight: 400;
+  font-size: 0.78rem;
+  font-weight: 450;
   color: var(--text-3);
   letter-spacing: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Collapses by max-height rather than display:none so it animates; the row
+     it occupied is reclaimed instead of leaving a gap. */
+  max-height: 1.4em;
+  opacity: 1;
+  transition:
+    max-height 0.26s var(--ease),
+    opacity 0.18s var(--ease),
+    margin 0.26s var(--ease);
 }
+.appbar.condensed .appbar-sub {
+  max-height: 0;
+  opacity: 0;
+  margin-top: -2px;
+}
+
+/* No reduced-motion override needed here: the global rule near the top of this
+   file already forces transition-duration on every element with !important, so
+   the collapse snaps instead of animating while the hairline and the colour
+   change -- which carry the meaning -- still apply. */
 
 /* Round control holding either a glyph or initials. Both need the circle to
    stay bigger than its contents: the glyph is capped at 40% of the circle and
@@ -693,18 +745,25 @@ button.notice {
   display: inline-flex; align-items: center; gap: 6px;
   /* Bounded so a long group name cannot squeeze the screen title out of the
      bar; the group name ellipsises instead. */
-  max-width: 38vw;
+  max-width: 34vw;
   flex: none;
-  height: 32px; padding: 0 9px 0 4px;
-  border: 1px solid var(--hairline); border-radius: var(--r-full);
+  height: 34px; padding: 0 10px 0 4px;
+  /* No border: the chip and the avatar sat side by side as two outlined pills
+     of equal weight, reading as a pair of equals. The avatar is the fixed
+     anchor, so the chip becomes a soft fill that recedes behind it. */
+  border: 0; border-radius: var(--r-full);
   background: var(--surface-2); color: var(--text-2);
-  font: inherit; font-size: 0.78rem; font-weight: 600;
+  font: inherit; font-size: 0.8rem; font-weight: 600;
   cursor: pointer;
-  transition: background 0.18s var(--ease), border-color 0.18s var(--ease), color 0.18s var(--ease);
+  transition: background 0.18s var(--ease), color 0.18s var(--ease),
+              transform 0.12s var(--ease);
+  -webkit-tap-highlight-color: transparent;
 }
+/* Native controls answer the finger immediately; a hover state alone leaves a
+   touch feeling dead until the sheet opens. */
+.group-chip:active { transform: scale(0.96); }
 .group-chip:hover {
   background: var(--surface-3);
-  border-color: color-mix(in srgb, var(--violet) 40%, var(--hairline));
   color: var(--text);
 }
 /* The monogram: a soft tint rather than a hard block, so the chip reads as one
