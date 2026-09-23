@@ -225,7 +225,7 @@ export default function Dashboard() {
             <Stat
               k="You have saved"
               v={formatPaiseShort(myPosition.contributed_paise)}
-              s={`${Number(myPosition.share_pct).toFixed(0)}% fund share`}
+              s={`${Number(myPosition.share_pct).toFixed(0)}% of the fund`}
               tone="mint"
             />
             <Stat
@@ -479,24 +479,26 @@ function MonthlyReportSheet({
   const dateStr = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
   const totalContributed = positions.reduce((s, p) => s + p.contributed_paise, 0);
 
-  const text = `📊 *${groupName} — Monthly Group Statement*
-📅 *Period:* ${dateStr}
+  // This is the text people paste into the group's WhatsApp, so it is the most
+  // widely read copy in the app. It used to be the least plain -- "Statutory
+  // Reserve", "Lending Capacity", "Members & Equity".
+  const text = `📊 *${groupName} — ${dateStr}*
 
-💰 *Fund Overview:*
-• Total Fund: ${formatPaise(fund.total_fund_paise)}
-• In Bank (Expected): ${formatPaise(fund.expected_bank_balance_paise)}
-• Cash Float: ${formatPaise(fund.cash_float_paise)}
-• 25% Statutory Reserve: ${formatPaise(fund.reserve_paise)}
+💰 *Our money*
+• Total fund: ${formatPaise(fund.total_fund_paise)}
+• Should be in the bank: ${formatPaise(fund.expected_bank_balance_paise)}
+• Cash in hand: ${formatPaise(fund.cash_float_paise)}
+• Kept back as safety: ${formatPaise(fund.reserve_paise)}
 
-📈 *Lending Status:*
-• Outstanding Loans: ${formatPaise(fund.outstanding_paise)}
-• Lending Capacity Left: ${formatPaise(fund.still_lendable_paise)}
+📈 *Loans*
+• Money on loan: ${formatPaise(fund.outstanding_paise)}
+• Can lend now: ${formatPaise(fund.still_lendable_paise)}
 
-👥 *Members & Equity:*
-• Total Members: ${positions.length}
-• Total Savings Contributed: ${formatPaise(totalContributed)}
+👥 *Members*
+• Members: ${positions.length}
+• Collected so far: ${formatPaise(totalContributed)}
 
-_Generated via Sanchay Ledger_`;
+_Sent from Sanchay_`;
 
   async function share() {
     haptic(12);

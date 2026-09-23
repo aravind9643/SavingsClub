@@ -154,12 +154,12 @@ export default function Contributions() {
   const expected = (period?.amount_paise ?? 0) * members.length;
 
   if ((periodsQ.loading && !periodsQ.data) || (rolesQ.loading && !rolesQ.data)) {
-    return <Screen title="Savings"><SkeletonList rows={5} /></Screen>;
+    return <Screen title="Collection"><SkeletonList rows={5} /></Screen>;
   }
 
   if (periods.length === 0) {
     return (
-      <Screen title="Savings">
+      <Screen title="Collection">
         <Empty icon={<IconContributions width={22} height={22} />}>
           This month has not been started yet.
           {!hasMoneyOfficer ? (
@@ -199,7 +199,7 @@ export default function Contributions() {
   return (
     <>
       <Screen
-        title="Savings"
+        title="Collection"
         sub={period ? monthLabel(period.period_month) : undefined}
       >
         <Segments
@@ -498,13 +498,12 @@ function ReceiptSheet({
 }) {
   const [copied, setCopied] = useState(false);
 
-  const text = `🧾 *Sanchay Contribution Receipt*
-*Group:* ${groupName}
-*Member:* ${receipt.memberName}
-*Period:* ${receipt.month}
-*Amount Paid:* ${formatPaise(receipt.amountPaise)} (${receipt.method.toUpperCase()})
-${receipt.lateFeePaise > 0 ? `*Late Fee:* ${formatPaise(receipt.lateFeePaise)}\n` : ''}*Date:* ${fmtDate(receipt.paidOn)}
-${fundTotalPaise !== undefined ? `*Group Fund Total:* ${formatPaise(fundTotalPaise)}\n` : ''}
+  const text = `🧾 *Receipt — ${groupName}*
+*Name:* ${receipt.memberName}
+*Month:* ${receipt.month}
+*Paid:* ${formatPaise(receipt.amountPaise)} (${receipt.method.toUpperCase()})
+${receipt.lateFeePaise > 0 ? `*Late fee:* ${formatPaise(receipt.lateFeePaise)}\n` : ''}*On:* ${fmtDate(receipt.paidOn)}
+${fundTotalPaise !== undefined ? `*Total fund now:* ${formatPaise(fundTotalPaise)}\n` : ''}
 _Recorded on Sanchay_`;
 
   async function share() {
@@ -547,7 +546,7 @@ _Recorded on Sanchay_`;
         <List>
           <Row title="Payment date" note={fmtDate(receipt.paidOn)} />
           <Row title="Method" note={receipt.method.toUpperCase()} />
-          <Row title="Savings" amount={formatPaise(receipt.amountPaise)} />
+          <Row title="Amount paid" amount={formatPaise(receipt.amountPaise)} />
           {receipt.lateFeePaise > 0 && (
             <Row title="Late fee" amount={`+${formatPaise(receipt.lateFeePaise)}`} amountTone="coral" />
           )}
@@ -624,15 +623,14 @@ function ReminderSheet({
 }) {
   const [copied, setCopied] = useState(false);
 
-  const text = `📢 *Contribution Reminder*
-*Group:* ${groupName}
-*Member:* ${member.full_name}
-*Period:* ${monthLabel(period.period_month)}
-*Amount Due:* ${formatPaise(period.amount_paise)}
-*Due Date:* ${fmtDate(period.due_date)} (grace until ${fmtDate(period.grace_date)})
+  const text = `📢 *${groupName}*
+Hi ${member.full_name}, this is a reminder for ${monthLabel(period.period_month)}.
 
-Please send your monthly contribution via UPI or direct bank transfer.
-_Sent via Sanchay_`;
+*To pay:* ${formatPaise(period.amount_paise)}
+*By:* ${fmtDate(period.due_date)} (a late fee applies after ${fmtDate(period.grace_date)})
+
+You can send it by UPI or bank transfer. Thank you!
+_Sent from Sanchay_`;
 
   async function share() {
     haptic(12);

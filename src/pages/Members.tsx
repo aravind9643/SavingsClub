@@ -449,7 +449,7 @@ function MemberDetailSheet({
           v={formatPaiseShort(position.outstanding_paise)}
           tone={hasDebt ? 'coral' : undefined}
         />
-        <Stat k="Share" v={`${Number(position.share_pct).toFixed(0)}%`} />
+        <Stat k="Share of fund" v={`${Number(position.share_pct).toFixed(0)}%`} />
       </div>
 
       <Panel title="Contact details" flush>
