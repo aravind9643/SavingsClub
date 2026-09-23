@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
-import { useIsOfficer } from '../context/SessionContext';
+import { useIsOfficer, useSession } from '../context/SessionContext';
 import { useFund } from '../context/FundContext';
 import { formatPaise, formatPaiseShort, rupeesToPaise } from '../lib/money';
 import {
@@ -14,12 +14,15 @@ import type { BankStatement } from '../lib/types';
 
 export default function Bank() {
   const isOfficer = useIsOfficer();
+  const { currentGroupId } = useSession();
   const { fund } = useFund();
   const [sheet, setSheet] = useState(false);
 
   const q = useQuery<BankStatement[]>('bank', async () => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('bank_statements').select('*').order('as_of', { ascending: false });
+    if (currentGroupId) query = query.eq('group_id', currentGroupId);
+    const { data, error } = await query;
     if (error) throw error;
     return (data ?? []) as BankStatement[];
   });

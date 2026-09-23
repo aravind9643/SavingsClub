@@ -26,29 +26,35 @@ interface RepaymentRow {
 export default function LoanDetail() {
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
-  const { member } = useSession();
+  const { member, currentGroupId } = useSession();
   const isOfficer = useIsOfficer();
-  const [sheet, setSheet] = useState<'repay' | 'disburse' | null>(null);
+  const [sheet, setSheet] = useState<'repay' | 'disburse' | 'cancel' | 'writeoff' | null>(null);
 
   const loanQ = useQuery<LoanRow | null>(id ? `loan:${id}` : null, async () => {
-    const { data, error } = await supabase
-      .from('v_loan_status').select('*').eq('id', id).maybeSingle();
+    let q = supabase
+      .from('v_loan_status').select('*').eq('id', id);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q.maybeSingle();
     if (error) throw error;
     return (data as LoanRow) ?? null;
   });
 
   const votesQ = useQuery<VoteRow[]>(id ? `loan:${id}:votes` : null, async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('loan_votes')
       .select('id, voter_id, vote, note, voted_at, members!loan_votes_voter_id_fkey(full_name)')
-      .eq('loan_id', id).order('voted_at');
+      .eq('loan_id', id);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q.order('voted_at');
     if (error) throw error;
     return (data ?? []) as unknown as VoteRow[];
   });
 
   const repaysQ = useQuery<RepaymentRow[]>(id ? `loan:${id}:repay` : null, async () => {
-    const { data, error } = await supabase
-      .from('loan_repayments').select('*').eq('loan_id', id).order('paid_on');
+    let q = supabase
+      .from('loan_repayments').select('*').eq('loan_id', id);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q.order('paid_on');
     if (error) throw error;
     return (data ?? []) as RepaymentRow[];
   });
@@ -107,7 +113,20 @@ export default function LoanDetail() {
         </div>
 
         {loan.status === 'requested' && (
-          <VotePanel loan={loan} isBorrower={isBorrower} votes={votesQ.data ?? []} />
+          <>
+            <VotePanel loan={loan} isBorrower={isBorrower} votes={votesQ.data ?? []} />
+            {(isBorrower || isOfficer) && (
+              <div className="btn-row stack">
+                <button
+                  className="subtle"
+                  style={{ color: 'var(--coral)' }}
+                  onClick={() => setSheet('cancel')}
+                >
+                  Cancel this request
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         <Panel title="Details">
@@ -138,7 +157,7 @@ export default function LoanDetail() {
           </Panel>
         )}
 
-        {(loan.status === 'disbursed' || loan.status === 'closed') && (
+        {(loan.status === 'disbursed' || loan.status === 'closed' || loan.status === 'written_off') && (
           <Panel
             title="Repayments"
             action={
@@ -171,6 +190,18 @@ export default function LoanDetail() {
           </Panel>
         )}
 
+        {loan.status === 'disbursed' && isOfficer && (
+          <div style={{ marginTop: 12 }}>
+            <button
+              className="subtle"
+              style={{ color: 'var(--coral)', width: '100%', fontSize: '0.85rem' }}
+              onClick={() => setSheet('writeoff')}
+            >
+              Write off this loan
+            </button>
+          </div>
+        )}
+
         {loan.status === 'approved' && isOfficer && !isBorrower && (
           <div className="btn-row stack">
             <button className="primary lg" onClick={() => setSheet('disburse')}>
@@ -190,6 +221,12 @@ export default function LoanDetail() {
       )}
       {sheet === 'disburse' && (
         <DisburseSheet loan={loan} onClose={() => setSheet(null)} />
+      )}
+      {sheet === 'cancel' && (
+        <CancelLoanSheet loan={loan} onClose={() => setSheet(null)} />
+      )}
+      {sheet === 'writeoff' && (
+        <WriteOffSheet loan={loan} onClose={() => setSheet(null)} />
       )}
     </>
   );
@@ -240,7 +277,7 @@ function VotePanel({
         <div style={{ marginTop: 14 }}>
           <Notice tone="warn">This is your own loan — you cannot vote on it.</Notice>
         </div>
-      ) : (
+      ) : loan.can_i_vote || loan.my_vote ? (
         <>
           {loan.my_vote && (
             <div style={{ marginTop: 14 }}>
@@ -277,7 +314,7 @@ function VotePanel({
             </Busy>
           </div>
         </>
-      )}
+      ) : null}
 
       {votes.length > 0 && (
         <div style={{ marginTop: 16 }}>
@@ -430,6 +467,71 @@ function DisburseSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }
         <Busy className="primary lg" pending={go.pending} onClick={() => void go.run()}>
           Confirm payout
         </Busy>
+      </div>
+    </Sheet>
+  );
+}
+
+function CancelLoanSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }) {
+  const cancel = useMutation(
+    async () => {
+      const { error } = await supabase.rpc('cancel_loan_request', {
+        p_loan_id: loan.id,
+      });
+      if (error) throw error;
+    },
+    { invalidates: [`loan:${loan.id}`, 'loans', 'fund', 'feed'], onSuccess: onClose },
+  );
+
+  return (
+    <Sheet open title="Cancel loan request" onClose={onClose}>
+      <Notice tone="danger">
+        This will permanently cancel {loan.borrower_name}&apos;s loan request
+        for {formatPaise(loan.principal_paise)}. This cannot be undone.
+      </Notice>
+      <ErrorNote error={cancel.error} />
+      <div className="btn-row stack">
+        <Busy className="danger lg" pending={cancel.pending} onClick={() => void cancel.run()}>
+          Cancel this request
+        </Busy>
+        <button type="button" onClick={onClose}>Keep it</button>
+      </div>
+    </Sheet>
+  );
+}
+
+function WriteOffSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }) {
+  const [reason, setReason] = useState('');
+  const writeOff = useMutation(
+    async () => {
+      const { error } = await supabase.rpc('write_off_loan', {
+        p_loan_id: loan.id,
+        p_reason: reason || null,
+      });
+      if (error) throw error;
+    },
+    { invalidates: [`loan:${loan.id}`, 'loans', 'positions', 'fund', 'feed'], onSuccess: onClose },
+  );
+
+  return (
+    <Sheet open title="Write off loan" onClose={onClose}>
+      <Notice tone="danger">
+        Writing off means the group accepts this {formatPaise(loan.outstanding_principal_paise)} will
+        never be repaid. The fund total stays the same, but the outstanding balance drops to zero.
+      </Notice>
+      <ErrorNote error={writeOff.error} />
+      <Field label="Reason">
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Borrower unreachable, etc."
+        />
+      </Field>
+      <div className="btn-row stack">
+        <Busy className="danger lg" pending={writeOff.pending} onClick={() => void writeOff.run()}>
+          Write off {formatPaise(loan.outstanding_principal_paise)}
+        </Busy>
+        <button type="button" onClick={onClose}>Keep pursuing</button>
       </div>
     </Sheet>
   );

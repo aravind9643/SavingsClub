@@ -53,22 +53,53 @@ export default function Settings() {
   const save = useMutation(
     async () => {
       if (!form) return;
+      const due = Number(form.due_day);
+      const grace = Number(form.grace_day);
+      const monthly = rupeesToPaise(form.monthly);
+      const lateFee = rupeesToPaise(form.late_fee);
+      const loanRate = Math.round(Number(form.loan_rate) * 100);
+      const overdueRate = Math.round(Number(form.overdue_rate) * 100);
+      const maxMonths = Number(form.max_months);
+      const maxLoanPct = Math.round(Number(form.max_loan_pct) * 100);
+      const reservePct = Math.round(Number(form.reserve_pct) * 100);
+      const loanApprovals = Number(form.loan_approvals);
+      const expenseApprovals = Number(form.expense_approvals);
+      const expensePct = Math.round(Number(form.expense_pct) * 100);
+      const floatLimit = rupeesToPaise(form.float_limit);
+      const reportHours = Number(form.report_hours);
+
+      if (monthly <= 0) throw new Error('Monthly contribution must be greater than zero');
+      if (isNaN(due) || due < 1 || due > 28) throw new Error('Due day must be between 1 and 28');
+      if (isNaN(grace) || grace < 1 || grace > 28) throw new Error('Grace day must be between 1 and 28');
+      if (grace < due) throw new Error('Grace day cannot be earlier than due day');
+      if (lateFee < 0) throw new Error('Late fee cannot be negative');
+      if (isNaN(loanRate) || loanRate < 0) throw new Error('Loan rate cannot be negative');
+      if (isNaN(overdueRate) || overdueRate < 0) throw new Error('Overdue rate cannot be negative');
+      if (isNaN(maxMonths) || maxMonths < 1) throw new Error('Max loan duration must be at least 1 month');
+      if (isNaN(maxLoanPct) || maxLoanPct < 0 || maxLoanPct > 10000) throw new Error('Max loan % must be between 0 and 100%');
+      if (isNaN(reservePct) || reservePct < 0 || reservePct > 10000) throw new Error('Reserve % must be between 0 and 100%');
+      if (isNaN(loanApprovals) || loanApprovals < 0) throw new Error('Loan approvals cannot be negative');
+      if (isNaN(expenseApprovals) || expenseApprovals < 0) throw new Error('Expense approvals cannot be negative');
+      if (isNaN(expensePct) || expensePct < 0 || expensePct > 10000) throw new Error('Expense limit % must be between 0 and 100%');
+      if (floatLimit < 0) throw new Error('Cash float limit cannot be negative');
+      if (isNaN(reportHours) || reportHours < 1) throw new Error('Cash reporting window must be at least 1 hour');
+
       const { error } = await supabase.rpc('update_config', {
-        p_group_name: form.group_name,
-        p_monthly_contribution_paise: rupeesToPaise(form.monthly),
-        p_due_day: Number(form.due_day),
-        p_grace_day: Number(form.grace_day),
-        p_late_fee_paise: rupeesToPaise(form.late_fee),
-        p_loan_rate_bp: Math.round(Number(form.loan_rate) * 100),
-        p_overdue_rate_bp: Math.round(Number(form.overdue_rate) * 100),
-        p_max_loan_months: Number(form.max_months),
-        p_max_loan_pct_bp: Math.round(Number(form.max_loan_pct) * 100),
-        p_reserve_pct_bp: Math.round(Number(form.reserve_pct) * 100),
-        p_loan_required_approvals: Number(form.loan_approvals),
-        p_expense_required_approvals: Number(form.expense_approvals),
-        p_expense_annual_pct_bp: Math.round(Number(form.expense_pct) * 100),
-        p_cash_float_limit_paise: rupeesToPaise(form.float_limit),
-        p_cash_report_hours: Number(form.report_hours),
+        p_group_name: form.group_name.trim() || undefined,
+        p_monthly_contribution_paise: monthly,
+        p_due_day: due,
+        p_grace_day: grace,
+        p_late_fee_paise: lateFee,
+        p_loan_rate_bp: loanRate,
+        p_overdue_rate_bp: overdueRate,
+        p_max_loan_months: maxMonths,
+        p_max_loan_pct_bp: maxLoanPct,
+        p_reserve_pct_bp: reservePct,
+        p_loan_required_approvals: loanApprovals,
+        p_expense_required_approvals: expenseApprovals,
+        p_expense_annual_pct_bp: expensePct,
+        p_cash_float_limit_paise: floatLimit,
+        p_cash_report_hours: reportHours,
         p_setup_complete: true,
       });
       if (error) throw error;

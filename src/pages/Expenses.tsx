@@ -23,12 +23,15 @@ const CATEGORIES: { value: ExpenseCategory; label: string }[] = [
 type Filter = 'all' | 'voting' | 'paid';
 
 export default function Expenses() {
+  const { currentGroupId } = useSession();
   const [sheet, setSheet] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
 
   const q = useQuery<ExpenseRow[]>('expenses', async () => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('v_expense_status').select('*').order('incurred_on', { ascending: false });
+    if (currentGroupId) query = query.eq('group_id', currentGroupId);
+    const { data, error } = await query;
     if (error) throw error;
     return (data ?? []) as ExpenseRow[];
   });
@@ -120,10 +123,23 @@ function ExpenseRowItem({ expense }: { expense: ExpenseRow }) {
 }
 
 function VoteCard({ expense, isLast }: { expense: ExpenseRow; isLast?: boolean }) {
+  const { member } = useSession();
+  const isOfficer = useIsOfficer();
+  const isProposer = member?.id === expense.created_by;
   const vote = useMutation(
     async (v: Vote) => {
       const { error } = await supabase.rpc('cast_expense_vote', {
         p_expense_id: expense.id, p_vote: v, p_note: null,
+      });
+      if (error) throw error;
+    },
+    { invalidates: ['expenses', 'fund', 'feed'] },
+  );
+
+  const cancelM = useMutation(
+    async () => {
+      const { error } = await supabase.rpc('cancel_expense', {
+        p_expense_id: expense.id,
       });
       if (error) throw error;
     },
@@ -156,6 +172,8 @@ function VoteCard({ expense, isLast }: { expense: ExpenseRow; isLast?: boolean }
 
       {expense.my_vote ? (
         <p className="dim" style={{ marginTop: 8 }}>You voted to {expense.my_vote}.</p>
+      ) : isProposer ? (
+        <p className="dim" style={{ marginTop: 8 }}>You proposed this — you cannot vote on it.</p>
       ) : expense.can_i_vote ? (
         <div className="btn-row">
           <Busy className="primary" style={{ flex: 1 }} pending={vote.pending}
@@ -168,12 +186,27 @@ function VoteCard({ expense, isLast }: { expense: ExpenseRow; isLast?: boolean }
           </Busy>
         </div>
       ) : null}
+
+      {(isProposer || isOfficer) && (
+        <>
+          <ErrorNote error={cancelM.error} />
+          <Busy
+            className="subtle"
+            style={{ color: 'var(--coral)', marginTop: 8, fontSize: '0.82rem', padding: '4px 0' }}
+            pending={cancelM.pending}
+            onClick={() => void cancelM.run()}
+          >
+            Cancel this expense
+          </Busy>
+        </>
+      )}
     </div>
   );
 }
 
 function ProposeSheet({ onClose }: { onClose: () => void }) {
   const { config } = useSession();
+  const isOfficer = useIsOfficer();
   const [category, setCategory] = useState<ExpenseCategory>('trip');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -203,7 +236,9 @@ function ProposeSheet({ onClose }: { onClose: () => void }) {
       <AmountField value={amount} onChange={setAmount} autoFocus />
 
       <div className="scroller" style={{ marginBlock: 14 }}>
-        {CATEGORIES.map((c) => (
+        {CATEGORIES
+          .filter((c) => isOfficer || !['bank_charge', 'admin'].includes(c.value))
+          .map((c) => (
           <button
             key={c.value}
             className={`seg${category === c.value ? ' on' : ''}`}

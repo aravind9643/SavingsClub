@@ -26,39 +26,49 @@ export default function Dashboard() {
   const [reportOpen, setReportOpen] = useState(false);
 
   const positions = useQuery<MemberPosition[]>('positions', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('v_member_positions').select('*').order('contributed_paise', { ascending: false });
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as MemberPosition[];
   });
 
   const unpaidQ = useQuery<UnpaidRow[]>('unpaid:mine', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('v_unpaid_contributions').select('*');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as UnpaidRow[];
   });
 
   const lastStatement = useQuery<BankStatement | null>('bank:last', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('bank_statements').select('*')
-      .order('as_of', { ascending: false }).limit(1).maybeSingle();
+      .order('as_of', { ascending: false }).limit(1);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q.maybeSingle();
     if (error) throw error;
     return (data as BankStatement) ?? null;
   });
 
   const pending = useQuery<LoanRow[]>('loans:pending', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('v_loan_status').select('*').eq('status', 'requested');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as LoanRow[];
   });
 
   const feed = useQuery<AuditRow[]>('feed', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('audit_log').select('*')
       .in('table_name', ['contributions', 'loans', 'loan_repayments', 'expenses', 'cash_ledger'])
       .order('occurred_at', { ascending: false }).limit(6);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as AuditRow[];
   });

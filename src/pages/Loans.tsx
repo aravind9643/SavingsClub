@@ -4,6 +4,7 @@ import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery } from '../hooks/useQuery';
 import { formatPaiseShort } from '../lib/money';
+import { useSession } from '../context/SessionContext';
 import {
   List, Row, Empty, SkeletonList, Segments, initials, fmtDate, toneForStatus,
 } from '../components/ui';
@@ -14,11 +15,14 @@ type Filter = 'all' | 'voting' | 'active' | 'done';
 
 export default function Loans() {
   const nav = useNavigate();
+  const { currentGroupId } = useSession();
   const [filter, setFilter] = useState<Filter>('all');
 
   const q = useQuery<LoanRow[]>('loans', async () => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('v_loan_status').select('*').order('requested_at', { ascending: false });
+    if (currentGroupId) query = query.eq('group_id', currentGroupId);
+    const { data, error } = await query;
     if (error) throw error;
     return (data ?? []) as LoanRow[];
   });

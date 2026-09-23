@@ -30,8 +30,10 @@ export default function Members() {
   const [inspectId, setInspectId] = useState<string | null>(null);
 
   const positions = useQuery<MemberPosition[]>('positions', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('v_member_positions').select('*').order('full_name');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as MemberPosition[];
   });
@@ -47,8 +49,10 @@ export default function Members() {
   });
 
   const rolesQ = useQuery<RoleRow[]>('roles', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('role_assignments').select('*').is('end_date', null);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as RoleRow[];
   });

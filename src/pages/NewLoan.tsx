@@ -23,7 +23,7 @@ export default function NewLoan() {
   const [purpose, setPurpose] = useState('');
 
   const membersQ = useQuery<Member[]>('members', async () => {
-    let q = supabase.from('members').select('*').is('left_on', null).order('full_name');
+    let q = supabase.from('members').select('*').eq('status', 'active').is('left_on', null).order('full_name');
     if (currentGroupId) {
       q = q.eq('group_id', currentGroupId);
     }
@@ -169,7 +169,7 @@ export default function NewLoan() {
       <p className="dim">
         {(config?.loan_required_approvals && config.loan_required_approvals > 0)
           ? `${config.loan_required_approvals} members must approve.`
-          : `Majority of members (${Math.max(2, Math.floor(((membersQ.data ?? []).length / 2) + 1))}) must approve.`}{' '}
+          : `Majority of members (${Math.max(2, Math.floor((((membersQ.data ?? []).filter(m => m.id !== member?.id).length) / 2) + 1))}) must approve.`}{' '}
         You cannot vote on your own request.
       </p>
 

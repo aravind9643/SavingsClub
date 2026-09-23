@@ -60,29 +60,37 @@ export function FundProvider({ children }: { children: ReactNode }) {
   }, [currentGroupId]);
 
   const fundQ = useQuery<FundSummary>(enabled ? FUND_KEY : null, async () => {
-    const { data, error } = await supabase
-      .from('v_fund_summary').select('*').single();
+    let q = supabase
+      .from('v_fund_summary').select('*');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q.single();
     if (error) throw error;
     return data as FundSummary;
   });
 
   const overdueQ = useQuery<LoanRow[]>(enabled ? `${FUND_KEY}:overdue` : null, async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('v_loan_status').select('*').eq('is_overdue', true);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as LoanRow[];
   });
 
   const cashQ = useQuery<CashAlert[]>(enabled ? `${FUND_KEY}:cash` : null, async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('v_cash_alerts').select('*').eq('reporting_breached', true);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as CashAlert[];
   });
 
   const unpaidQ = useQuery<UnpaidRow[]>(enabled ? `${FUND_KEY}:unpaid` : null, async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('v_unpaid_contributions').select('*').eq('is_overdue', true);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as UnpaidRow[];
   });

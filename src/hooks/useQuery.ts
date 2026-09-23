@@ -230,7 +230,14 @@ export function useMutation<A extends unknown[], R>(
   const fnRef = useRef(fn);
   fnRef.current = fn;
 
+  // Re-entry guard: if a second click arrives before React batches the
+  // pending-state update that disables the button, drop it rather than
+  // firing a duplicate RPC.
+  const inflightRef = useRef(false);
+
   const run = useCallback(async (...args: A): Promise<R | undefined> => {
+    if (inflightRef.current) return undefined;
+    inflightRef.current = true;
     setPending(true);
     setError(null);
     try {
@@ -243,6 +250,7 @@ export function useMutation<A extends unknown[], R>(
       setError(friendlyError(e));
       return undefined;
     } finally {
+      inflightRef.current = false;
       setPending(false);
     }
   }, []);

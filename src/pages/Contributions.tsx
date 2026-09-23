@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
-import { useSession, useIsOfficer } from '../context/SessionContext';
+import { useSession } from '../context/SessionContext';
 import { useFund } from '../context/FundContext';
 import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees } from '../lib/money';
 import { haptic } from '../lib/haptics';
@@ -20,7 +20,6 @@ export default function Contributions() {
   const nav = useNavigate();
   const { config, role, currentGroupId, group } = useSession();
   const { fund } = useFund();
-  const isOfficer = useIsOfficer();
   const [periodId, setPeriodId] = useState<string>('');
   const [memberFilter, setMemberFilter] = useState<MemberFilter>('all');
   const [paying, setPaying] = useState<{ period: ContributionPeriod; member: Member } | null>(null);
@@ -42,27 +41,51 @@ export default function Contributions() {
   });
 
   const periodsQ = useQuery<ContributionPeriod[]>('periods', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('contribution_periods').select('*').order('period_month', { ascending: false });
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as ContributionPeriod[];
   });
 
   const contribsQ = useQuery<Contribution[]>('contributions', async () => {
-    const { data, error } = await supabase.from('contributions').select('*');
+    let q = supabase.from('contributions').select('*');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as Contribution[];
   });
 
+  const rolesQ = useQuery<{ role: string }[]>('roles:active', async () => {
+    let q = supabase
+      .from('role_assignments')
+      .select('role')
+      .is('end_date', null);
+    if (currentGroupId) {
+      q = q.eq('group_id', currentGroupId);
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as { role: string }[];
+  });
+
+  const hasMoneyOfficer = (rolesQ.data ?? []).some(
+    (r) => r.role === 'cashier' || r.role === 'accountant',
+  );
+  const canOpen = role === 'president' || role === 'cashier' || role === 'accountant';
+  const isMoneyHandler = role === 'cashier' || role === 'accountant';
+
   const openPeriod = useMutation(
     async () => {
-      const now = new Date(); now.setDate(1);
-      const { error } = await supabase.rpc('open_period', {
-        p_month: now.toISOString().slice(0, 10),
-      });
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const p_month = `${year}-${month}-01`;
+      const { error } = await supabase.rpc('open_period', { p_month });
       if (error) throw error;
     },
-    { invalidates: ['periods', 'fund'] },
+    { invalidates: ['periods', 'fund', 'periods:latest'] },
   );
 
   const periods = periodsQ.data ?? [];
@@ -73,13 +96,25 @@ export default function Contributions() {
   }, [periods, periodId]);
 
   const period = periods.find((p) => p.id === periodId) ?? periods[0];
-  const members = useMemo(() => {
+  const allActiveMembers = useMemo(() => {
     const map = new Map<string, Member>();
     for (const mem of (membersQ.data ?? []).filter((x) => x.is_active)) {
       if (!map.has(mem.id)) map.set(mem.id, mem);
     }
     return Array.from(map.values());
   }, [membersQ.data]);
+
+  const members = useMemo(() => {
+    if (!period) return allActiveMembers;
+    const parts = period.period_month.slice(0, 10).split('-').map(Number);
+    const endOfMonth = new Date(parts[0], parts[1], 0, 23, 59, 59, 999);
+    return allActiveMembers.filter((m) => {
+      if (!m.joined_on) return true;
+      const jParts = m.joined_on.slice(0, 10).split('-').map(Number);
+      const joined = new Date(jParts[0], jParts[1] - 1, jParts[2] || 1);
+      return joined <= endOfMonth;
+    });
+  }, [allActiveMembers, period]);
 
   const paidMap = useMemo(() => {
     const map = new Map<string, Contribution>();
@@ -104,7 +139,7 @@ export default function Contributions() {
   }, 0);
   const expected = (period?.amount_paise ?? 0) * members.length;
 
-  if (periodsQ.loading && !periodsQ.data) {
+  if ((periodsQ.loading && !periodsQ.data) || (rolesQ.loading && !rolesQ.data)) {
     return <Screen title="Chanda"><SkeletonList rows={5} /></Screen>;
   }
 
@@ -113,24 +148,30 @@ export default function Contributions() {
       <Screen title="Chanda">
         <Empty icon={<IconContributions width={22} height={22} />}>
           No months opened yet.
-          {isOfficer ? (
-            <div className="btn-row stack" style={{ marginTop: 18 }}>
+          {!hasMoneyOfficer ? (
+            role === 'president' ? (
+              <>
+                <p className="dim" style={{ marginTop: 8, maxWidth: 360, marginInline: 'auto' }}>
+                  A cashier or accountant must be assigned before contributions can be opened and recorded.
+                </p>
+                <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
+                  <button type="button" className="primary lg" onClick={() => nav('/members')}>
+                    Assign roles in Members
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="dim" style={{ marginTop: 8 }}>
+                The group officers will open this month once contributions begin.
+              </p>
+            )
+          ) : canOpen ? (
+            <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
               <Busy className="primary lg" pending={openPeriod.pending}
                 onClick={() => void openPeriod.run()}>
                 Open this month
               </Busy>
             </div>
-          ) : role === 'president' ? (
-            <>
-              <p className="dim" style={{ marginTop: 8, maxWidth: 360, marginInline: 'auto' }}>
-                A cashier or accountant must be assigned before contributions can be opened and recorded.
-              </p>
-              <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
-                <button type="button" className="primary lg" onClick={() => nav('/members')}>
-                  Assign roles in Members
-                </button>
-              </div>
-            </>
           ) : (
             <p className="dim" style={{ marginTop: 8 }}>
               The group officers will open this month once contributions begin.
@@ -196,7 +237,7 @@ export default function Contributions() {
         <Panel
           title="Members"
           action={
-            isOfficer && !periods.some((p) => isThisMonth(p.period_month)) ? (
+            canOpen && !periods.some((p) => isThisMonth(p.period_month)) ? (
               <button className="sec-link" onClick={() => void openPeriod.run()}>
                 Open this month
               </button>
@@ -240,7 +281,7 @@ export default function Contributions() {
                           paidOn: c.paid_on,
                           method: c.method,
                         });
-                      } else if (isOfficer && period && !period.closed_at) {
+                      } else if (isMoneyHandler && period && !period.closed_at) {
                         setUnpaidAction({ period, member: m });
                       } else if (period) {
                         setReminding({ period, member: m });
@@ -259,7 +300,7 @@ export default function Contributions() {
         <UnpaidActionSheet
           member={unpaidAction.member}
           period={unpaidAction.period}
-          isOfficer={isOfficer}
+          isOfficer={isMoneyHandler}
           onRecord={() => setPaying({ period: unpaidAction.period, member: unpaidAction.member })}
           onRemind={() => setReminding({ period: unpaidAction.period, member: unpaidAction.member })}
           onClose={() => setUnpaidAction(null)}
@@ -297,16 +338,24 @@ export default function Contributions() {
   );
 }
 
+function parseISODateParts(iso: string) {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  return { year: y, month: (m || 1) - 1, day: d || 1 };
+}
+
 function monthLabel(iso: string, short = false): string {
-  return new Date(iso).toLocaleDateString('en-IN', {
+  const { year, month } = parseISODateParts(iso);
+  const d = new Date(year, month, 1);
+  return d.toLocaleDateString('en-IN', {
     month: short ? 'short' : 'long',
     year: short ? '2-digit' : 'numeric',
   });
 }
 
 function isThisMonth(iso: string): boolean {
-  const d = new Date(iso); const n = new Date();
-  return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear();
+  const parts = parseISODateParts(iso);
+  const n = new Date();
+  return parts.month === n.getMonth() && parts.year === n.getFullYear();
 }
 
 function RecordSheet({

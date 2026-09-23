@@ -16,7 +16,7 @@ import {
 import type { CashEntry, CashAlert } from '../lib/types';
 
 export default function Cash() {
-  const { role, config } = useSession();
+  const { role, config, currentGroupId } = useSession();
   const { fund } = useFund();
   const isCashier = role === 'cashier';
   const [sheet, setSheet] = useState(false);
@@ -27,15 +27,19 @@ export default function Cash() {
   } | undefined>();
 
   const entriesQ = useQuery<CashEntry[]>('cash', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('cash_ledger').select('*').order('occurred_at', { ascending: false });
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as CashEntry[];
   });
 
   const alertsQ = useQuery<CashAlert[]>('cash:alerts', async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('v_cash_alerts').select('*').eq('unreported', true);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as CashAlert[];
   });
