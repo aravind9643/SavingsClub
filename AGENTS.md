@@ -69,7 +69,7 @@ src/
     supabase.ts        client + friendlyError
   pages/               14 screens
 supabase/
-  migrations/          0001-0012, applied in numerical order
+  migrations/          0001-0019, applied in numerical order
   tests/
     assertions.sql     protections still in force (RLS on, RPC-only writes, …)
     isolation.sql      two real groups, proves neither can see the other
@@ -168,10 +168,11 @@ cross **group B's** approval threshold.
 
 ### Concurrency
 
-Lock order is **`groups` → `loans`**, always. RPCs do
+Lock order is **`groups` → `loans`** (or `expenses`), always. RPCs do
 `select * into v_cfg from groups where id = v_group for no key update` first.
-That serialises concurrent votes so two approvals cannot jointly breach the
-reserve. Keep the order; reversing it deadlocks.
+That serialises concurrent mutations — votes, loan disbursements, expense approvals,
+and period openings (`open_period`) — so concurrent operations cannot jointly
+breach reserves or diverge config state. Keep the order; reversing it deadlocks.
 
 ### Snapshots beat live lookups for votes
 
@@ -187,14 +188,30 @@ Query keys at call sites are bare nouns: `'fund'`, `'members'`, `'loans'`.
 `useQuery` prefixes every key with the active group id **centrally**, in
 `setQueryGroup()`.
 
-This is deliberate. The alternative — adding `currentGroupId` to ~30 call sites
-— fails silently the first time someone forgets one: switch group and the new
-group's name renders above the previous group's balance. Keep the namespacing
-in the hook. Do not add the group id at call sites, and do not read the cache
+This is deliberate. The alternative — adding `currentGroupId` to ~30 cache key
+strings — fails silently the first time someone forgets one: switch group and the
+new group's name renders above the previous group's balance. Keep the namespacing
+in the hook. Do not add the group id to cache keys, and do not read the cache
 directly.
 
 `invalidate('fund')` scopes to the active group too, so it can never disturb
 another tenant's rows.
+
+### Defense-in-depth: query filters vs cache keys
+
+Distinguish between **cache keys** and the **underlying Supabase query**:
+- **Cache key**: Always a bare noun (`useQuery('members', ...)`).
+- **Query body**: Explicitly filter `.eq('group_id', currentGroupId)` when `currentGroupId`
+  is available.
+While RLS already guarantees multi-tenant isolation, explicit query scoping is
+load-bearing defense-in-depth: if an RLS policy ever regresses, cross-tenant data
+cannot leak, and Postgres can use tenant indices directly without broad scans.
+
+### Double-submit mutation guard
+
+`useMutation` maintains an internal `inflightRef` re-entry lock. If a second tap
+arrives before React batches the state update that disables the submit button,
+the extra call is dropped rather than firing duplicate RPCs.
 
 ---
 
@@ -232,9 +249,27 @@ change that (deferring moves the check to commit; it never permits the end
 state). One holder per office per group, enforced by a GiST exclusion
 constraint over `daterange`.
 
-Until both money offices are filled, contributions/loans/cash cannot be
-recorded at all — the RPCs require one of those roles. The dashboard says so
-rather than letting people discover it as a failed save.
+Role responsibilities and RPC permissions:
+- **President**: Group administrator. Configures rules (`update_config`), invites
+  and approves members (`approve_pending_member`), and can open the monthly
+  period (`open_period`) once money offices are assigned.
+- **Cashier**: Holds the cash float, records cash movements (`record_cash_movement`),
+  records cash/bank contributions and repayments, opens/closes periods, and disburses loans.
+- **Accountant**: Performs bank reconciliation (`record_bank_statement`), records
+  contributions and repayments, opens/closes periods, and disburses loans.
+- **Officers** (`president | cashier | accountant`): Can propose auto-approved
+  `admin` and `bank_charge` expenses without voting, write off uncollectable
+  disbursed loans (`write_off_loan`), and cancel pending loan or expense requests.
+- **Members**: Democratic participation. Can propose loans (`request_loan`), cancel
+  their own pending requests (`cancel_loan_request`), vote on others' loans,
+  propose regular expenses (`propose_expense`), cancel their own pending expenses
+  (`cancel_expense`), and vote on others' expenses. Neither borrowers nor expense
+  proposers may vote on their own requests.
+
+Until both money offices (cashier and accountant) are filled, contributions,
+repayments, and loans cannot be recorded — the RPCs strictly require one of those
+roles. The dashboard and Chanda screen alert users to assign roles rather than
+failing at record-time.
 
 ---
 
@@ -324,6 +359,30 @@ Five rules, every one of which was learned by breaking a real push:
 The backfill block in `0012` returns early when `members` is empty, so it is a
 no-op on a fresh database.
 
+### Applied & Prepared Migrations (0001–0019)
+
+| Migration | Name | Description |
+|---|---|---|
+| `0001` | `identity.sql` | Users, groups, base member tables & auth triggers |
+| `0002` | `audit.sql` | Immutable append-only audit trigger mechanism |
+| `0003` | `cash.sql` | Cash float ledger & reporting tracking |
+| `0004` | `contributions.sql` | Periods & contribution recording |
+| `0005` | `loans.sql` | Loan definitions, status views & repayments |
+| `0006` | `expenses_tables.sql` | Group expense tables & categories |
+| `0007` | `fund_math.sql` | Integer paise aggregations & fund total mathematics |
+| `0008` | `expense_rpcs_bank.sql` | Expense proposals, approvals & bank reconciliation |
+| `0009` | `loan_voting.sql` | Democratic loan approval quorum & vote transitions |
+| `0010` | `onboarding.sql` | Group invite codes, pending members & onboarding RPCs |
+| `0011` | `fix_claim_roles.sql` | JWT claim synchronization fixes |
+| `0012` | `multi_group.sql` | Full multi-tenant schema refactor, group_id backfills & composite FKs |
+| `0013` | `fix_v_my_groups.sql` | Resolves multi-group listing across active memberships |
+| `0014` | `fix_audit_row_id.sql` | Corrects casting of audit log row UUIDs |
+| `0015` | `fix_member_access_and_profiles.sql` | Self-member read policy & profile fallback |
+| `0016` | `fix_members_read_policy.sql` | Restores strict multi-tenant RLS on `members` |
+| `0017` | `allow_officers_open_period.sql` | Allows President (alongside Cashier & Accountant) to open periods |
+| `0018` | `critical_fixes.sql` | Lock in `open_period`, 10x cap, auto-closing repaid loans, negative amount guards |
+| `0019` | `logic_fixes.sql` | Grace date guard in `close_period`, `cancel_loan_request`, `write_off_loan`, `cancel_expense`, `update_config` validation |
+
 ---
 
 ## Deliberate decisions that look like omissions
@@ -340,6 +399,21 @@ no-op on a fresh database.
   `v_my_groups`.
 - **`app_config` is gone.** Its settings are columns on `groups`. Audit rows
   now name `groups`.
+- **Loans auto-close upon full principal repayment.** `record_repayment` checks
+  `loan_outstanding_principal_paise(p_loan_id) = 0` and sets `status = 'closed'`
+  automatically. Without this, zero-balance loans stay `disbursed` forever,
+  polluting overdue queries and blocking member removal.
+- **`write_off_loan` marks uncollectable debt.** Disbursed loans that will never be
+  repaid transition to `written_off` via an officer RPC with an audit reason,
+  reducing active debt to zero while preserving ledger truth.
+- **Pending requests can be withdrawn.** Borrowers can withdraw un-voted loans with
+  `cancel_loan_request()`, and proposers can withdraw un-voted expenses with
+  `cancel_expense()`.
+- **Local calendar dates over UTC strings.** Never generate monthly periods or dates
+  using `new Date().toISOString().slice(0, 10)` — in UTC+ offsets (such as India Standard
+  Time, UTC+5:30), late night execution shifts backward a day (e.g. producing August 31st
+  instead of September 1st). Always format calendar months as `${year}-${month}-01`
+  from local date accessors (`getFullYear()`, `getMonth()`).
 
 ---
 
