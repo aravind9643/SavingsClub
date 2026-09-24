@@ -13,26 +13,24 @@ import Onboard, { AwaitingApproval } from './pages/Onboard';
 import GroupSwitcher from './components/GroupSwitcher';
 import { Loading, initials, resetScrollLock } from './components/ui';
 import {
-  IconHome, IconContributions, IconLoans, IconWallet, IconMore, IconChevronDown,
+  IconHome, IconContributions, IconLoans, IconWallet, IconMembers, IconChevronDown,
 } from './components/icons';
 
 const LoanDetail = lazy(() => import('./pages/LoanDetail'));
 const NewLoan = lazy(() => import('./pages/NewLoan'));
-const Expenses = lazy(() => import('./pages/Expenses'));
-const Cash = lazy(() => import('./pages/Cash'));
-const Bank = lazy(() => import('./pages/Bank'));
 const Members = lazy(() => import('./pages/Members'));
 const Audit = lazy(() => import('./pages/Audit'));
 const Settings = lazy(() => import('./pages/Settings'));
-const More = lazy(() => import('./pages/More'));
+const MoneyHub = lazy(() => import('./pages/MoneyHub'));
+const Community = lazy(() => import('./pages/Community'));
 
-/** Five destinations, the most anyone can hit accurately on a phone. */
+/** Five intuitive destinations for community savings groups */
 const TABS = [
   { to: '/', label: 'Home', Icon: IconHome, end: true },
-  { to: '/contributions', label: 'Collection', Icon: IconContributions },
+  { to: '/contributions', label: 'Chanda', Icon: IconContributions },
   { to: '/loans', label: 'Loans', Icon: IconLoans },
-  { to: '/cash', label: 'Cash', Icon: IconWallet },
-  { to: '/more', label: 'More', Icon: IconMore },
+  { to: '/treasury', label: 'Treasury', Icon: IconWallet },
+  { to: '/community', label: 'Community', Icon: IconMembers },
 ];
 
 type Theme = 'dark' | 'light';
@@ -73,8 +71,15 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
   const { group } = useSession();
 
   // A dot on the tab that owns the most urgent thing needing attention.
-  const blipFor = (to: string) =>
-    alerts.some((a) => a.severity === 'danger' && a.to === to);
+  const blipFor = (to: string) => {
+    if (to === '/treasury') {
+      return alerts.some((a) => a.severity === 'danger' && (a.to === '/cash' || a.to === '/bank' || a.to === '/treasury'));
+    }
+    if (to === '/community') {
+      return alerts.some((a) => a.severity === 'danger' && (a.to === '/members' || a.to === '/community'));
+    }
+    return alerts.some((a) => a.severity === 'danger' && a.to === to);
+  };
 
   return (
     <nav className="tabbar" aria-label="Main">
@@ -170,13 +175,15 @@ function Shell() {
           <Route path="/loans" element={<Loans />} />
           <Route path="/loans/new" element={<NewLoan />} />
           <Route path="/loans/:id" element={<LoanDetail />} />
-          <Route path="/expenses" element={<Expenses />} />
-          <Route path="/cash" element={<Cash />} />
-          <Route path="/bank" element={<Bank />} />
+          <Route path="/treasury" element={<MoneyHub />} />
+          <Route path="/community" element={<Community />} />
+          <Route path="/expenses" element={<MoneyHub defaultTab="expenses" />} />
+          <Route path="/cash" element={<MoneyHub defaultTab="cash" />} />
+          <Route path="/bank" element={<MoneyHub defaultTab="bank" />} />
           <Route path="/members" element={<Members />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit" element={<Audit />} />
-          <Route path="/more" element={<More />} />
+          <Route path="/more" element={<Community />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

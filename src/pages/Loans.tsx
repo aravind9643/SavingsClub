@@ -6,7 +6,7 @@ import { useQuery } from '../hooks/useQuery';
 import { formatPaiseShort } from '../lib/money';
 import { useSession } from '../context/SessionContext';
 import {
-  List, Row, Empty, SkeletonList, Segments, initials, fmtDate, toneForStatus, labelForStatus,
+  List, Row, Empty, SkeletonList, Segments, Notice, initials, fmtDate, toneForStatus, labelForStatus,
 } from '../components/ui';
 import { IconPlus, IconLoans } from '../components/icons';
 import type { LoanRow } from '../lib/types';
@@ -49,6 +49,14 @@ export default function Loans() {
             { value: 'done', label: 'Finished', count: done.length },
           ]}
         />
+
+        {voting.some((l) => l.can_i_vote) && filter !== 'done' && (
+          <div style={{ marginTop: 12 }}>
+            <Notice tone="warn" onClick={() => nav(`/loans/${voting.find((l) => l.can_i_vote)!.id}`)}>
+              <strong>Action needed:</strong> You have {voting.filter((l) => l.can_i_vote).length} loan request waiting for your vote.
+            </Notice>
+          </div>
+        )}
 
         {q.loading && !q.data ? (
           <SkeletonList rows={5} />

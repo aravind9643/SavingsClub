@@ -13,11 +13,11 @@ import {
   initials, ago, fmtDate, SkeletonList, Sheet, roleLabel, labelForStatus,
 } from '../components/ui';
 import {
-  IconPlus, IconArrowUp, IconArrowDown, IconBank, IconInbox, IconCheck, IconShare,
+  IconPlus, IconArrowUp, IconArrowDown, IconInbox, IconCheck, IconShare,
   IconWallet,
 } from '../components/icons';
 import type {
-  MemberPosition, BankStatement, LoanRow, AuditRow, UnpaidRow, FundSummary,
+  MemberPosition, LoanRow, AuditRow, UnpaidRow, FundSummary,
   ContributionPeriod, Contribution,
 } from '../lib/types';
 
@@ -43,16 +43,6 @@ export default function Dashboard() {
     const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as UnpaidRow[];
-  });
-
-  const lastStatement = useQuery<BankStatement | null>('bank:last', async () => {
-    let q = supabase
-      .from('bank_statements').select('*')
-      .order('as_of', { ascending: false }).limit(1);
-    if (currentGroupId) q = q.eq('group_id', currentGroupId);
-    const { data, error } = await q.maybeSingle();
-    if (error) throw error;
-    return (data as BankStatement) ?? null;
   });
 
   const pending = useQuery<LoanRow[]>('loans:pending', async () => {
@@ -148,7 +138,6 @@ export default function Dashboard() {
   }
 
   const myVoteNeeded = (pending.data ?? []).filter((l) => l.can_i_vote);
-  const diff = lastStatement.data?.difference_paise;
 
   // The subtitle carries the one thing worth knowing before you scroll: what
   // you owe this month, or that you are clear. A greeting went here before --
@@ -165,271 +154,263 @@ export default function Dashboard() {
       ? `${formatPaiseShort(myPosition.contributed_paise)} saved · nothing to pay`
       : undefined;
 
-  // Who may actually do each thing, matching the RPCs exactly. Offering an
-  // action the database will refuse is worse than not offering it: the person
-  // fills in a form, presses save, and gets a permission error for something
-  // they were invited to do.
-  //
-  // record_contribution / record_repayment / record_bank_statement:
-  //   cashier or accountant only -- the admin is deliberately NOT a money
-  //   handler, which is the whole point of separating the offices.
-  const isMoneyHandler = role === 'cashier' || role === 'accountant';
-  const isCashier = role === 'cashier';
-
   return (
     <>
       <Screen
-      title="Home"
-      sub={homeSub}
-      action={
-        // The initials are decorative; the label is what a screen reader
-        // announces, so it carries the name the header no longer prints.
-        <button
-          className="icon-btn avatar"
-          onClick={() => nav('/more')}
-          aria-label={member?.full_name ? `${member.full_name} — profile and settings` : 'Profile'}
-        >
-          {initials(member?.full_name)}
-        </button>
-      }
-    >
-      {fund && (
-        // The group name is already in the header chip a few pixels above, so
-        // the hero's one label goes to what the number actually is.
-        <Hero
-          label="Total fund"
-          paise={fund.total_fund_paise}
-          meta={
-            <>
-              <Chip tone="mint">
-                Can lend <b>{formatPaiseShort(fund.still_lendable_paise)}</b>
-              </Chip>
-              <Chip tone="violet">
-                On loan <b>{formatPaiseShort(fund.outstanding_paise)}</b>
-              </Chip>
-              <Chip>
-                Kept back <b>{formatPaiseShort(fund.reserve_paise)}</b>
-              </Chip>
-            </>
-          }
-          meter={
-            fund.lendable_paise > 0
-              ? { value: fund.outstanding_paise, limit: fund.lendable_paise }
-              : undefined
-          }
-        />
-      )}
+        title="Overview"
+        sub={homeSub}
+        action={
+          <button
+            className="icon-btn avatar"
+            onClick={() => nav('/community')}
+            aria-label={member?.full_name ? `${member.full_name} — profile and group` : 'Profile'}
+            title="Profile & Community"
+          >
+            {initials(member?.full_name)}
+          </button>
+        }
+      >
+        {/* ======================================= 1. PERSONAL STANDING CARD */}
+        {myPosition && (
+          <div
+            className="panel"
+            style={{
+              background: 'linear-gradient(145deg, var(--surface), var(--surface-2))',
+              border: '1px solid var(--hairline)',
+              borderRadius: 'var(--r-lg)',
+              padding: 18,
+              boxShadow: 'var(--shadow-1)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="dim" style={{ fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 650 }}>
+                  Your Account
+                </span>
+                <span className="tag mint" style={{ fontSize: '0.72rem' }}>
+                  {roleLabel(role)}
+                </span>
+              </div>
+              <span className="dim" style={{ fontSize: '0.82rem' }}>
+                {Number(myPosition.share_pct).toFixed(1)}% group share
+              </span>
+            </div>
 
-      {/* Personal standing for the logged-in member */}
-      {myPosition && (
-        <Panel title="Where you stand">
-          <div className="stats three">
-            <Stat
-              k="You have saved"
-              v={formatPaiseShort(myPosition.contributed_paise)}
-              s={`${Number(myPosition.share_pct).toFixed(0)}% of the fund`}
-              tone="mint"
-            />
-            <Stat
-              k="This month"
-              v={monthStat.v}
-              s={monthStat.s}
-              tone={monthStat.tone}
-            />
-            <Stat
-              k="Active loan"
-              v={myPosition.outstanding_paise > 0 ? formatPaiseShort(myPosition.outstanding_paise) : 'None'}
-              s={myPosition.outstanding_paise > 0 ? 'still to repay' : 'nothing to repay'}
-              tone={myPosition.outstanding_paise > 0 ? 'coral' : undefined}
-            />
+            <div className="stats three" style={{ margin: 0 }}>
+              <Stat
+                k="You have saved"
+                v={formatPaiseShort(myPosition.contributed_paise)}
+                s="total accumulated"
+                tone="mint"
+              />
+              <Stat
+                k="This month"
+                v={monthStat.v}
+                s={monthStat.s}
+                tone={monthStat.tone}
+              />
+              <Stat
+                k="Active loan"
+                v={myPosition.outstanding_paise > 0 ? formatPaiseShort(myPosition.outstanding_paise) : 'None'}
+                s={myPosition.outstanding_paise > 0 ? 'to repay' : `can borrow up to ${formatPaiseShort(fund?.per_member_cap_paise ?? 0)}`}
+                tone={myPosition.outstanding_paise > 0 ? 'coral' : undefined}
+              />
+            </div>
+
+            {/* Quick contextual CTA */}
+            {dueThisMonth > 0 && (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--hairline)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.86rem', color: myUnpaid?.is_overdue ? 'var(--coral)' : 'var(--amber)' }}>
+                  {myUnpaid?.is_overdue ? '⚠️ Payment overdue' : 'Payment due this month'}
+                </span>
+                <button
+                  type="button"
+                  className="sec-link"
+                  style={{
+                    background: 'var(--mint-ghost)',
+                    color: 'var(--mint)',
+                    padding: '5px 12px',
+                    borderRadius: 'var(--r-sm)',
+                    fontWeight: 600,
+                    fontSize: '0.82rem',
+                  }}
+                  onClick={() => {
+                    haptic(10);
+                    nav('/contributions');
+                  }}
+                >
+                  View Chanda →
+                </button>
+              </div>
+            )}
           </div>
-        </Panel>
-      )}
+        )}
 
-      {/* Anything that needs a human, first. */}
-      {myVoteNeeded.length > 0 && (
-        <Notice tone="warn" onClick={() => nav('/loans')}>
-          <strong>{myVoteNeeded.length} loan request{myVoteNeeded.length > 1 ? 's' : ''}</strong>
-          {' '}waiting for your vote
-        </Notice>
-      )}
-      {alerts.map((a) => (
-        <Notice key={a.id} tone={a.severity === 'danger' ? 'danger' : 'warn'} onClick={() => nav(a.to)}>
-          {a.message}
-        </Notice>
-      ))}
-      {!loading && alerts.length === 0 && myVoteNeeded.length === 0 && (
-        <Notice tone="good">Everything is in order — nothing needs attention.</Notice>
-      )}
+        {/* ======================================= 2. ACTION CENTER */}
+        {myVoteNeeded.length > 0 && (
+          <Notice tone="warn" onClick={() => { haptic(10); nav('/loans'); }}>
+            <strong>🗳️ {myVoteNeeded.length} loan request{myVoteNeeded.length > 1 ? 's' : ''}</strong> waiting for your approval vote — tap to review
+          </Notice>
+        )}
+        {alerts.map((a) => (
+          <Notice key={a.id} tone={a.severity === 'danger' ? 'danger' : 'warn'} onClick={() => { haptic(10); nav(a.to); }}>
+            {a.message}
+          </Notice>
+        ))}
 
-      <div className="two-col">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <Panel title="Quick actions" flush>
-            <List>
-              {/* Recording money is the cashier's and accountant's job. For
-                  everyone else this row becomes "see who has paid", which is
-                  what the same screen offers them. */}
-              <Row
-                icon={<IconArrowDown width={18} height={18} />}
-                iconTone="mint"
-                title={isMoneyHandler ? 'Take a payment' : "This month's collection"}
-                sub={isMoneyHandler
-                  ? 'Record money received'
-                  : 'See who has paid so far'}
-                onClick={() => nav('/contributions')}
-                chevron
-              />
-              <Row
-                icon={<IconPlus width={18} height={18} />}
-                iconTone="violet"
-                title="Request a loan"
-                sub={`Up to ${formatPaiseShort(fund?.per_member_cap_paise ?? 0)} for you`}
-                onClick={() => nav('/loans/new')}
-                chevron
-              />
-              <Row
-                icon={<IconArrowUp width={18} height={18} />}
-                iconTone="amber"
-                title="Add an expense"
-                sub="Trip, party or running cost"
-                onClick={() => nav('/expenses')}
-                chevron
-              />
-              {isCashier && (
-                <Row
-                  icon={<IconWallet width={18} height={18} />}
-                  iconTone="violet"
-                  title="Cash in or out"
-                  sub="Money the cashier holds"
-                  onClick={() => nav('/cash')}
-                  chevron
-                />
-              )}
-              {isMoneyHandler && (
-                <Row
-                  icon={<IconBank width={18} height={18} />}
-                  iconTone="coral"
-                  title="Check the bank"
-                  sub={
-                    diff === undefined
-                      ? 'No statement recorded yet'
-                      : diff === 0
-                        ? `Balanced on ${fmtDate(lastStatement.data?.as_of)}`
-                        : `Off by ${formatPaise(Math.abs(diff))}`
-                  }
-                  onClick={() => nav('/bank')}
-                  chevron
-                />
-              )}
-            </List>
+        {/* ======================================= 3. GROUP VAULT (COMMUNITY FUND) */}
+        {fund && (
+          <Panel
+            title="Group Vault"
+            action={
+              <button
+                className="sec-link"
+                onClick={() => {
+                  haptic(10);
+                  setReportOpen(true);
+                }}
+              >
+                Statement
+              </button>
+            }
+          >
+            <Hero
+              label="Total Pooled Savings"
+              paise={fund.total_fund_paise}
+              meta={
+                <>
+                  <Chip tone="mint">
+                    Can lend <b>{formatPaiseShort(fund.still_lendable_paise)}</b>
+                  </Chip>
+                  <Chip tone="violet">
+                    On loan <b>{formatPaiseShort(fund.outstanding_paise)}</b>
+                  </Chip>
+                  <Chip>
+                    Reserve <b>{formatPaiseShort(fund.reserve_paise)}</b>
+                  </Chip>
+                </>
+              }
+              meter={
+                fund.lendable_paise > 0
+                  ? { value: fund.outstanding_paise, limit: fund.lendable_paise }
+                  : undefined
+              }
+            />
+
+            <div
+              style={{
+                marginTop: 14,
+                padding: '10px 14px',
+                background: 'var(--surface-2)',
+                borderRadius: 'var(--r-sm)',
+                fontSize: '0.84rem',
+                color: 'var(--text-2)',
+                lineHeight: 1.45,
+              }}
+            >
+              🛡️ <b>{formatPaiseShort(fund.reserve_paise)}</b> is locked as a safety reserve (never lent out).
+              {config ? ` Group earns ${(config.loan_rate_bp / 100).toFixed(1)}% monthly interest on active loans.` : ''}
+            </div>
           </Panel>
+        )}
 
-          {fund && (
+        <div className="two-col">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Recent Activity Feed */}
             <Panel
-              title="This month"
+              title="Recent Activity"
+              flush
               action={
                 <button
                   className="sec-link"
                   onClick={() => {
                     haptic(10);
-                    setReportOpen(true);
+                    nav('/audit');
                   }}
                 >
-                  Report
+                  History
                 </button>
               }
             >
-              <div className="stats three">
-                <Stat
-                  k="In bank"
-                  v={formatPaiseShort(fund.expected_bank_balance_paise)}
-                  s="expected"
-                />
-                <Stat
-                  k="Cash in hand"
-                  v={formatPaiseShort(fund.cash_float_paise)}
-                  s={`of ${formatPaiseShort(fund.cash_float_limit_paise)}`}
-                  tone={fund.cash_float_paise > fund.cash_float_limit_paise ? 'coral' : undefined}
-                />
-                <Stat
-                  k="Difference"
-                  v={diff === undefined ? '—' : formatPaiseShort(diff)}
-                  s={diff === 0 ? 'matches' : diff === undefined ? 'not checked yet' : 'does not match'}
-                  tone={diff === 0 ? 'mint' : diff === undefined ? undefined : 'coral'}
-                />
-              </div>
-              {config && (
-                <p className="dim" style={{ marginTop: 12, marginBottom: 0 }}>
-                  {formatPaise(config.monthly_contribution_paise)} due by the {config.due_day}th ·
-                  {' '}{(config.loan_rate_bp / 100).toFixed(0)}% per month on loans
-                </p>
+              {(feed.data ?? []).length === 0 ? (
+                <Empty icon={<IconInbox width={22} height={22} />}>
+                  No activity recorded yet.
+                </Empty>
+              ) : (
+                <List>
+                  {(feed.data ?? []).map((row) => (
+                    <Row
+                      key={row.id}
+                      icon={
+                        row.table_name === 'contributions' ? <IconArrowDown width={17} height={17} />
+                          : row.table_name === 'loans' ? <IconPlus width={17} height={17} />
+                            : row.table_name === 'loan_repayments' ? <IconCheck width={17} height={17} />
+                              : row.table_name === 'expenses' ? <IconArrowUp width={17} height={17} />
+                                : <IconWallet width={17} height={17} />
+                      }
+                      iconTone={
+                        row.table_name === 'contributions' ? 'mint'
+                          : row.table_name === 'loans' ? 'violet'
+                            : row.table_name === 'loan_repayments' ? 'mint'
+                              : row.table_name === 'expenses' ? 'amber'
+                                : 'coral'
+                      }
+                      title={describe(row)}
+                      sub={ago(row.occurred_at)}
+                      chevron
+                      onClick={() => {
+                        haptic(10);
+                        nav('/audit');
+                      }}
+                    />
+                  ))}
+                </List>
               )}
             </Panel>
-          )}
-        </div>
+          </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <Panel
-            title="Members"
-            action={<button className="sec-link" onClick={() => nav('/members')}>See all</button>}
-            flush
-          >
-            {positions.loading && !positions.data ? (
-              <SkeletonList rows={3} />
-            ) : (
-              <List>
-                {(positions.data ?? []).slice(0, 5).map((p) => (
-                  <Row
-                    key={p.member_id}
-                    icon={initials(p.full_name)}
-                    iconTone={p.cap_breached ? 'coral' : 'violet'}
-                    title={
-                      <>
-                        {p.full_name}
-                        {p.member_id === member?.id ? ' · you' : ''}
-                      </>
-                    }
-                    sub={p.role === 'member' ? `${Number(p.share_pct).toFixed(0)}% of the fund` : roleLabel(p.role)}
-                    amount={formatPaiseShort(p.contributed_paise)}
-                    note={
-                      p.outstanding_paise > 0
-                        ? `owes ${formatPaiseShort(p.outstanding_paise)}`
-                        : undefined
-                    }
-                  />
-                ))}
-              </List>
-            )}
-          </Panel>
-
-          <Panel
-            title="Recent activity"
-            action={<button className="sec-link" onClick={() => nav('/audit')}>History</button>}
-            flush
-          >
-            {feed.loading && !feed.data ? (
-              <SkeletonList rows={3} />
-            ) : (feed.data ?? []).length === 0 ? (
-              <Empty icon={<IconInbox width={22} height={22} />}>
-                Nothing has happened yet.
-              </Empty>
-            ) : (
-              <List>
-                {(feed.data ?? []).map((r) => (
-                  <Row
-                    key={r.id}
-                    icon={<IconCheck width={16} height={16} />}
-                    iconTone={r.action === 'INSERT' ? 'mint' : 'violet'}
-                    title={describe(r)}
-                    sub={ago(r.occurred_at)}
-                  />
-                ))}
-              </List>
-            )}
-          </Panel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Members Savings Leaderboard */}
+            <Panel
+              title="Member Savings"
+              flush
+              action={
+                <button
+                  className="sec-link"
+                  onClick={() => {
+                    haptic(10);
+                    nav('/members');
+                  }}
+                >
+                  See all
+                </button>
+              }
+            >
+              {(positions.data ?? []).length === 0 ? (
+                <Empty icon={<IconCheck width={22} height={22} />}>No members found.</Empty>
+              ) : (
+                <List>
+                  {(positions.data ?? []).slice(0, 5).map((pos) => (
+                    <Row
+                      key={pos.member_id}
+                      icon={initials(pos.full_name)}
+                      title={pos.full_name}
+                      sub={pos.role === 'member' ? `${pos.periods_paid} months paid` : `${roleLabel(pos.role)} · ${pos.periods_paid} months`}
+                      amount={formatPaiseShort(pos.contributed_paise)}
+                      note={`${Number(pos.share_pct).toFixed(0)}%`}
+                      chevron
+                      onClick={() => {
+                        haptic(10);
+                        nav('/members');
+                      }}
+                    />
+                  ))}
+                </List>
+              )}
+            </Panel>
+          </div>
         </div>
-      </div>
-    </Screen>
+      </Screen>
 
     {reportOpen && fund && (
       <MonthlyReportSheet

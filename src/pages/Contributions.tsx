@@ -169,12 +169,12 @@ export default function Contributions() {
   const expectedTotal = (period?.amount_paise ?? 0) * members.length;
 
   if ((periodsQ.loading && !periodsQ.data) || (rolesQ.loading && !rolesQ.data)) {
-    return <Screen title="Collection"><SkeletonList rows={5} /></Screen>;
+    return <Screen title="Chanda"><SkeletonList rows={5} /></Screen>;
   }
 
   if (periods.length === 0) {
     return (
-      <Screen title="Collection">
+      <Screen title="Chanda">
         <Empty icon={<IconContributions width={22} height={22} />}>
           This month has not been started yet.
           {!hasMoneyOfficer ? (
@@ -214,8 +214,8 @@ export default function Contributions() {
   return (
     <>
       <Screen
-        title="Collection"
-        sub={period ? monthLabel(period.period_month) : undefined}
+        title="Chanda"
+        sub={period ? `${monthLabel(period.period_month)} · ${paidCount} of ${members.length} paid` : undefined}
       >
         <Segments
           value={period?.id ?? ''}
