@@ -264,7 +264,11 @@ begin
     )
     values (
       v_group, r.member_id,
-      case when v_row.kind = 'final' then 'exit' else 'dividend' end,
+      -- The cast is required: a bare CASE over string literals is text, and
+      -- there is no implicit text -> enum assignment. Without it this insert
+      -- fails every time, which is how confirm_distribution could never have
+      -- run in production.
+      (case when v_row.kind = 'final' then 'exit' else 'dividend' end)::payout_kind_enum,
       r.amount_paise, v_row.as_of, 'bank',
       case when v_row.kind = 'final' then 'Final share-out'
            else 'Profit share' end,

@@ -309,7 +309,7 @@ SQL tests run in the Supabase SQL Editor or via psql — plain SQL, **no psql
 meta-commands** (`\set` etc.), because the SQL Editor rejects them:
 
 - `supabase/tests/assertions.sql` → `ALL ASSERTIONS PASSED`
-- `supabase/tests/isolation.sql` → `ISOLATION: all 43 checks passed`
+- `supabase/tests/isolation.sql` → `ISOLATION: all 50 checks passed`
 
 `isolation.sql` is the one to run after touching any policy or money function.
 It builds two real groups with **different** amounts of money, becomes an
@@ -317,8 +317,45 @@ ordinary member of the first, and asserts that not one row or rupee of the
 second is visible across every table, view and aggregate — plus that writes
 cannot cross and a pending member sees nothing. It ends in `ROLLBACK`.
 
-There is no local Postgres or Docker in this environment, so migrations cannot
-be dry-run; they are verified statically and then applied.
+**It also calls every money aggregate with the OTHER group's id, explicitly.**
+That is check 3b, and it exists because the rest of the file only ever called
+them with no argument — which proves the *default* is scoped and nothing more.
+A real leak lived in that gap for 25 migrations (see 0037).
+
+### Running migrations locally
+
+Postgres 18 is installed. The migrations can be replayed from scratch, which
+is what `supabase db reset --linked` does and what finds the class of bug that
+reading SQL does not:
+
+```bash
+export PATH="/c/Program Files/PostgreSQL/18/bin:$PATH"; export PGPASSWORD=...
+psql -h 127.0.0.1 -U postgres -c "drop database if exists sanchay_test"                                -c "create database sanchay_test"
+psql -h 127.0.0.1 -U postgres -d sanchay_test -f <shim>.sql   # see below
+for f in supabase/migrations/*.sql; do
+  psql -h 127.0.0.1 -U postgres -d sanchay_test -v ON_ERROR_STOP=1 -f "$f" || break
+done
+```
+
+The shim supplies what Supabase provides and vanilla Postgres does not: the
+`anon` / `authenticated` / `service_role` roles, `auth.users`, and
+`auth.uid()` / `auth.jwt()` / `auth.role()`. **`auth.uid()` must read `sub`
+out of `request.jwt.claims`**, exactly as the real one does — a shim that
+reads some other GUC will make `isolation.sql` fail at its own harness check.
+
+Impersonation in a test is therefore:
+
+```sql
+select set_config('request.jwt.claims', json_build_object(
+  'sub', '<auth user uuid>',
+  'app_metadata', json_build_object('group_id', '<group uuid>')
+)::text, false);
+set role authenticated;   -- without this, RLS is bypassed and proves nothing
+```
+
+Keep the migrations themselves free of anything that only works on Supabase;
+if a migration has to be edited to replay locally, the local run has stopped
+testing what ships.
 
 ### Verifying claims about this codebase
 
@@ -327,6 +364,28 @@ found real bugs here all worked by *constructing the failure*: parsing SQL with
 `pglast`, running the cache logic against two group ids and asserting the
 second cannot read the first's rows, enumerating every gate state to prove none
 is blank or traps the user. When you write a check, make it fail first.
+
+**Static analysis has a ceiling, and it is lower than it looks.** Migrations
+0025–0032 passed a replay checker, a tenancy checker, and arithmetic proofs of
+every money rule. Running them then found, in the same code:
+
+| Bug | Why no amount of reading would have caught it |
+|---|---|
+| `name[] = text[]` has no operator | A type mismatch two catalog joins deep |
+| `case … end` into an enum column | `confirm_distribution` could never have run |
+| `fmt_rupees(numeric)` did not exist | `sum()` returns numeric, not bigint |
+| `role_of()` was nondeterministic | The SQL is *correct*; the bug is what it leaves unsaid |
+| No table had a `SELECT` grant | The code is right and the platform was filling a gap |
+| 14 aggregates answered any caller | Every policy was right; these bypass policies |
+
+Three of those six are invisible in the source text by construction. Replay
+first, then assert — and write the assertion so it fails when the guard is
+removed, or it is not an assertion.
+
+**A test that prints the truth and checks nothing goes green when the truth
+changes.** Two negative controls proved exactly that here: the fixtures showed
+the correct part-payment and arrears figures on screen while asserting neither,
+so reverting both fixes left the suite passing.
 
 ---
 
@@ -377,7 +436,7 @@ Six rules, every one of which was learned by breaking a real push:
 The backfill block in `0012` returns early when `members` is empty, so it is a
 no-op on a fresh database.
 
-### Applied & Prepared Migrations (0001–0032)
+### Applied & Prepared Migrations (0001–0037)
 
 | Migration | Name | Description |
 |---|---|---|
@@ -531,6 +590,84 @@ excluded write-offs.
 - `export_group_data()` returns the whole ledger as JSON, runnable by **any
   active member**. "Can we see our own books" is not a privilege a group should
   have to be granted.
+
+## What running the migrations found (0033–0037)
+
+Postgres arrived after 0032 was written. Replaying all of it turned up six
+bugs that had survived a replay checker, a tenancy checker and arithmetic
+proofs — because none of them are visible in the source text.
+
+### 0033 — `role_of()` returned different answers for the same data
+
+    order by ra.start_date desc limit 1
+
+When a member holds two jobs that started on the **same day**, `start_date`
+does not break the tie, so the row returned is whichever the planner reaches
+first. Demonstrated: the same member and the same two rows gave `admin` one
+moment and `cashier` the next, purely because the rows were reordered.
+
+Reachable, not theoretical. `assign_role` only forbids cashier + accountant on
+one person — admin + cashier is deliberately allowed, and in a small group it
+is the normal arrangement. A group set up in one sitting gives both jobs the
+same `start_date`.
+
+`current_role_of()` gates almost every RPC, so this is a cashier being refused
+when recording a payment, or an admin being allowed to handle money — the same
+person, different answer between two requests, no error that points here.
+
+Now ordered by **authority**, then date, then id: total, and never dependent on
+physical row order.
+
+### 0034 — every read policy was unreachable
+
+`select * from v_fund_summary` failed with *permission denied for table
+groups*. Not a policy denial — a **grant** denial, checked first. All 21 RLS
+tables had a SELECT policy for `authenticated` and **not one had a SELECT
+grant**.
+
+Production works because Supabase's bootstrap runs `alter default privileges
+… grant all on tables to anon, authenticated` first. The tell was already in
+the code: this project revokes INSERT/UPDATE/DELETE 28 times and never revokes
+SELECT — you cannot revoke what was never granted.
+
+The security model is stated in the policies; if the grant that makes them
+reachable lives only in a platform default, the model is not written down here
+at all.
+
+### 0035 — money in error messages read `Rs.1050.0000000000000000`
+
+`bigint::numeric / 100` has full default scale and `::text` prints every
+trailing zero. Written 42 times — not a slip, a missing helper everyone then
+open-coded. `fmt_rupees()` now exists, with a **numeric overload** because
+`sum()` over bigint returns numeric: without it `fn_enforce_cash_float_limit`
+raised *function fmt_rupees(numeric) does not exist* instead of its over-limit
+message.
+
+### 0036 — the meeting fine could never be set
+
+0030 added `groups.meeting_absent_fee_paise`, writes to `groups` are RPC-only,
+and `update_config()` had no parameter for it. The column could only ever hold
+its default. Found because a fixture tried a direct UPDATE and was refused —
+the RPC-only rule working exactly as designed is what made the gap visible.
+
+### 0037 — any signed-in user could read any group's money
+
+The sharpest edge, and it was real. Bob, a member of Group B only, pointed his
+claim at Group A and was correctly stonewalled everywhere — zero rows, RPCs
+refused, export refused. Then:
+
+    select fn_fund_total_paise('<group A id>');   ->  505000
+
+Group A's actual balance. **14 SECURITY DEFINER aggregates**, all granted to
+`authenticated`, all taking `p_group_id`, all reachable over PostgREST with
+nothing but a valid login and a group's uuid.
+
+0012 gave them an explicit group so the figures would be *correct* under
+multi-tenancy. That fixed the arithmetic and left them open: they are SECURITY
+DEFINER, and RLS is exactly what SECURITY DEFINER turns off.
+
+`fn_assert_member_of()` is now the single home for the rule — and it checks
+**membership, not the claim**, because the attack *is* a forged claim.
 
 ## Deliberate decisions that look like omissions
 

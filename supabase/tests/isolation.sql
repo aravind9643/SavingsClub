@@ -38,6 +38,8 @@ declare
   v_uid_b     uuid := '00000000-0000-0000-0000-0000000000bb';
   v_mem_a     uuid;
   v_mem_b     uuid;
+  v_mem_a2    uuid;
+  v_mem_b2    uuid;
   v_period_a  uuid;
   v_period_b  uuid;
   v_loan_a    uuid;
@@ -94,34 +96,74 @@ begin
   values (v_b, date_trunc('month', current_date)::date, current_date, current_date, 50000)
   returning id into v_period_b;
 
-  insert into contributions (group_id, period_id, member_id, amount_paise, paid_on, method)
-  values (v_a, v_period_a, v_mem_a, 100000, current_date, 'bank'),
-         (v_b, v_period_b, v_mem_b, 900000, current_date, 'bank');
+  -- recorded_by is NOT NULL: every payment names who took it in. The seed
+  -- omitted it and the test could not run at all against a real database.
+  insert into contributions (group_id, period_id, member_id, amount_paise,
+                             paid_on, method, recorded_by)
+  values (v_a, v_period_a, v_mem_a, 100000, current_date, 'bank', v_mem_a),
+         (v_b, v_period_b, v_mem_b, 900000, current_date, 'bank', v_mem_b);
+
+  -- Group B's cash seed (Rs.9000) is over the default Rs.5000 float limit, and
+  -- fn_enforce_cash_float_limit() rightly refuses it. The limit is raised for
+  -- both groups rather than shrinking the seed, because the deliberately
+  -- LOPSIDED amounts are the point: an unscoped sum reads 1000000 and is
+  -- instantly recognisable as a leak.
+  update groups set cash_float_limit_paise = 2000000 where id in (v_a, v_b);
 
   insert into cash_ledger (group_id, direction, amount_paise, occurred_at, purpose, recorded_by)
   values (v_a, 'in', 100000, now(), 'test A', v_mem_a),
          (v_b, 'in', 900000, now(), 'test B', v_mem_b);
 
+  -- v_cash_alerts only ever shows direction = 'out' -- it exists to flag
+  -- spending that was not reported in time. With only 'in' rows seeded the
+  -- view could never return anything, so the check below was asserting
+  -- against a row that could not exist. One spend per group, unreported.
+  insert into cash_ledger (group_id, direction, amount_paise, occurred_at,
+                           purpose, recorded_by)
+  values (v_a, 'out', 5000, now() - interval '2 days', 'spend A', v_mem_a),
+         (v_b, 'out', 45000, now() - interval '2 days', 'spend B', v_mem_b);
+
+  -- A second member per group: borrower_is_not_guarantor forbids vouching for
+  -- yourself, so these seeds could not be inserted at all as written.
+  insert into members (group_id, full_name, joined_on, status)
+  values (v_a, 'Isolation A2', current_date, 'active') returning id into v_mem_a2;
+  insert into members (group_id, full_name, joined_on, status)
+  values (v_b, 'Isolation B2', current_date, 'active') returning id into v_mem_b2;
+
+  -- fund_total_at_request_paise is NOT NULL: the cap is judged against the
+  -- fund as it stood when the loan was asked for, not as it stands now.
   insert into loans (group_id, borrower_id, guarantor_id, principal_paise,
                      rate_bp, overdue_rate_bp, term_months, status,
-                     required_approvals, eligible_voter_count, borrower_role_at_request)
-  values (v_a, v_mem_a, v_mem_a, 10000, 200, 300, 6, 'requested', 2, 1, 'cashier')
+                     required_approvals, eligible_voter_count,
+                     borrower_role_at_request, fund_total_at_request_paise)
+  values (v_a, v_mem_a, v_mem_a2, 10000, 200, 300, 6, 'requested', 2, 1,
+          'cashier', 100000)
   returning id into v_loan_a;
   insert into loans (group_id, borrower_id, guarantor_id, principal_paise,
                      rate_bp, overdue_rate_bp, term_months, status,
-                     required_approvals, eligible_voter_count, borrower_role_at_request)
-  values (v_b, v_mem_b, v_mem_b, 90000, 200, 300, 6, 'requested', 2, 1, 'cashier')
+                     required_approvals, eligible_voter_count,
+                     borrower_role_at_request, fund_total_at_request_paise)
+  values (v_b, v_mem_b, v_mem_b2, 90000, 200, 300, 6, 'requested', 2, 1,
+          'cashier', 900000)
   returning id into v_loan_b;
 
+  -- Same NOT NULL snapshot column as loans, for the same reason: the yearly
+  -- cap is judged against the fund as it stood when the spend was proposed.
   insert into expenses (group_id, category, description, amount_paise,
                         incurred_on, method, status, created_by,
-                        required_approvals, eligible_voter_count)
-  values (v_a, 'trip', 'test A', 10000, current_date, 'bank', 'proposed', v_mem_a, 2, 1),
-         (v_b, 'trip', 'test B', 90000, current_date, 'bank', 'proposed', v_mem_b, 2, 1);
+                        required_approvals, eligible_voter_count,
+                        fund_total_at_request_paise)
+  values (v_a, 'trip', 'test A', 10000, current_date, 'bank', 'proposed', v_mem_a, 2, 1, 100000),
+         (v_b, 'trip', 'test B', 90000, current_date, 'bank', 'proposed', v_mem_b, 2, 1, 900000);
 
-  insert into bank_statements (group_id, as_of, closing_balance_paise, uploaded_by)
-  values (v_a, current_date, 100000, v_mem_a),
-         (v_b, current_date, 900000, v_mem_b);
+  -- expected_balance_paise and difference_paise are NOT NULL: a statement row
+  -- records what the bank said AND what the books said, because the gap
+  -- between them is the whole point of reconciliation.
+  insert into bank_statements (group_id, as_of, closing_balance_paise,
+                               expected_balance_paise, difference_paise,
+                               uploaded_by)
+  values (v_a, current_date, 100000, 100000, 0, v_mem_a),
+         (v_b, current_date, 900000, 900000, 0, v_mem_b);
 
   insert into profiles (id, last_group_id) values (v_uid_a, v_a)
   on conflict (id) do update set last_group_id = excluded.last_group_id;
@@ -179,9 +221,11 @@ begin
   -- --- 2. ...and each table does show group A's own rows --------------------
   -- Proving invisibility alone would also pass if the member could see nothing
   -- at all, which is not isolation, it is a broken app.
+  -- Two: Member A and the second member group A needs so a loan can have a
+  -- guarantor who is not the borrower.
   select count(*) into v_n from members;
-  if v_n <> 1 then
-    raise exception 'Member A should see exactly 1 member (their own group), saw %', v_n;
+  if v_n <> 2 then
+    raise exception 'Member A should see exactly 2 members (their own group), saw %', v_n;
   end if;
   select count(*) into v_n from loans;
   if v_n <> 1 then
@@ -204,13 +248,14 @@ begin
   end if;
 
   select cash_float_balance_paise() into v_money;
-  if v_money <> 100000 then
-    raise exception 'cash_float_balance_paise() = %, expected 100000 (group A only)', v_money;
+  -- 100000 in, less the 5000 spend seeded for v_cash_alerts.
+  if v_money <> 95000 then
+    raise exception 'cash_float_balance_paise() = %, expected 95000 (group A only)', v_money;
   end if;
 
   select active_member_count() into v_n;
-  if v_n <> 1 then
-    raise exception 'active_member_count() = %, expected 1 (group A only)', v_n;
+  if v_n <> 2 then
+    raise exception 'active_member_count() = %, expected 2 (group A only)', v_n;
   end if;
 
   select total_outstanding_paise() into v_money;
@@ -227,6 +272,63 @@ begin
   end if;
   v_checks := v_checks + 5;
 
+  -- --- 3b. ...and they must REFUSE an explicit foreign group id -------------
+  --
+  -- Everything above calls the aggregates with NO argument, which only proves
+  -- the DEFAULT is scoped. That was this file's blind spot, and a real leak
+  -- lived in it: these functions are SECURITY DEFINER, they are granted to
+  -- `authenticated`, and they take p_group_id. Any signed-in user could post
+  --     /rest/v1/rpc/fn_fund_total_paise {"p_group_id": "<any group>"}
+  -- and read that group's balance. Demonstrated against a live database:
+  -- 505000, another tenant's actual money, while every other path correctly
+  -- returned nothing.
+  --
+  -- Passing the id EXPLICITLY is the only way to catch it, so each aggregate
+  -- is now called that way, with group B's id, and must raise.
+  begin
+    perform fn_fund_total_paise(v_b);
+    raise exception 'TENANT LEAK -- fn_fund_total_paise(group B) answered a non-member';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform fn_contributions_received_paise(v_b);
+    raise exception 'TENANT LEAK -- fn_contributions_received_paise(group B) answered';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform total_outstanding_paise(v_b);
+    raise exception 'TENANT LEAK -- total_outstanding_paise(group B) answered';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform cash_float_balance_paise(v_b);
+    raise exception 'TENANT LEAK -- cash_float_balance_paise(group B) answered';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform fn_payouts_paid_paise(v_b);
+    raise exception 'TENANT LEAK -- fn_payouts_paid_paise(group B) answered';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform active_member_count(v_b);
+    raise exception 'TENANT LEAK -- active_member_count(group B) answered';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- The positive control: the same functions must still work for the caller's
+  -- OWN group when named explicitly. A guard that refuses everyone would pass
+  -- every check above and break the entire app.
+  if fn_fund_total_paise(v_a) <> 100000 then
+    raise exception 'GUARD TOO STRICT -- a member cannot read their own group by id';
+  end if;
+  v_checks := v_checks + 7;
+
   -- --- 4. Every view is scoped too ------------------------------------------
   select count(*) into v_n from v_fund_summary;
   if v_n <> 1 then
@@ -238,8 +340,9 @@ begin
   end if;
 
   select count(*) into v_n from v_member_positions;
-  if v_n <> 1 then
-    raise exception 'v_member_positions returned % rows, expected 1', v_n;
+  -- One row per member of group A, and group A now has two.
+  if v_n <> 2 then
+    raise exception 'v_member_positions returned % rows, expected 2', v_n;
   end if;
 
   select count(*) into v_n from v_loan_status;

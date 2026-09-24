@@ -41,11 +41,13 @@ begin
     join pg_class c on c.oid = con.conrelid
     where c.relname = 'contributions'
       and con.contype = 'u'
+      -- attname is `name`, not `text`, and there is no name[] = text[]
+      -- operator -- so the cast is required, not cosmetic.
       and (
-        select array_agg(att.attname order by att.attname)
+        select array_agg(att.attname::text order by att.attname::text)
         from unnest(con.conkey) k
         join pg_attribute att on att.attrelid = con.conrelid and att.attnum = k
-      ) = array['member_id', 'period_id']
+      ) = array['member_id', 'period_id']::text[]
   loop
     execute format('alter table contributions drop constraint %I', r.conname);
   end loop;
