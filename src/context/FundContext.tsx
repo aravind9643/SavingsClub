@@ -2,7 +2,9 @@ import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { useQuery, invalidate } from '../hooks/useQuery';
 import { useSession } from './SessionContext';
-import type { FundSummary, CashAlert, LoanRow, UnpaidRow } from '../lib/types';
+import type {
+  FundSummary, CashAlert, LoanRow, UnpaidRow, PendingMember, ExpenseRow,
+} from '../lib/types';
 
 export const FUND_KEY = 'fund';
 
@@ -23,7 +25,7 @@ interface FundValue {
 const Ctx = createContext<FundValue | null>(null);
 
 export function FundProvider({ children }: { children: ReactNode }) {
-  const { member, currentGroupId, group } = useSession();
+  const { member, currentGroupId, group, isOfficer } = useSession();
   const enabled = Boolean(member && currentGroupId);
 
   // Group-level realtime live update across devices
@@ -77,6 +79,35 @@ export function FundProvider({ children }: { children: ReactNode }) {
     return (data ?? []) as LoanRow[];
   });
 
+  // Someone who joined with an invite code sits in `status = 'pending'` and
+  // can read NOTHING until an officer approves them. Nothing told the officer,
+  // so the joiner waited on a screen that never changed while the officer had
+  // no reason to open Members. Officers only -- for everyone else the query
+  // does not run.
+  const pendingQ = useQuery<PendingMember[]>(
+    enabled && isOfficer ? `${FUND_KEY}:pending` : null,
+    async () => {
+      const { data, error } = await supabase.rpc('pending_members');
+      if (error) throw error;
+      return (data ?? []) as PendingMember[];
+    },
+  );
+
+  // Expense votes are surfaced on the expenses tab and nowhere else, while
+  // loan votes get a dashboard line. Same mechanism, same deadlock if nobody
+  // looks: an expense needs votes to pass and the voters are not told.
+  const expenseVoteQ = useQuery<ExpenseRow[]>(
+    enabled ? `${FUND_KEY}:expensevotes` : null,
+    async () => {
+      let q = supabase
+        .from('v_expense_status').select('*').eq('can_i_vote', true);
+      if (currentGroupId) q = q.eq('group_id', currentGroupId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as ExpenseRow[];
+    },
+  );
+
   const cashQ = useQuery<CashAlert[]>(enabled ? `${FUND_KEY}:cash` : null, async () => {
     let q = supabase
       .from('v_cash_alerts').select('*').eq('reporting_breached', true);
@@ -121,9 +152,23 @@ export function FundProvider({ children }: { children: ReactNode }) {
     alerts.push({
       id: 'overdue',
       severity: 'danger',
-      message: overdueQ.data.length === 1
-        ? '1 loan is past its due date'
-        : `${overdueQ.data.length} loans are past their due date`,
+      // is_overdue means "behind on the plan OR past the final date" since
+      // 0027. Saying "past its due date" is wrong for the common case: a
+      // borrower nine months into a twelve-month loan who has missed
+      // instalments is behind, not past the end.
+      message: (() => {
+        const n = overdueQ.data!.length;
+        const behind = overdueQ.data!.filter((l) => (l.arrears_paise ?? 0) > 0).length;
+        if (behind === n) {
+          return n === 1 ? '1 loan is behind on repayments'
+                         : `${n} loans are behind on repayments`;
+        }
+        if (behind === 0) {
+          return n === 1 ? '1 loan is past its final date'
+                         : `${n} loans are past their final date`;
+        }
+        return `${n} loans need chasing — ${behind} behind on repayments`;
+      })(),
       to: '/loans',
     });
   }
@@ -135,6 +180,26 @@ export function FundProvider({ children }: { children: ReactNode }) {
         ? '1 cash payment was not told to the group in time'
         : `${cashQ.data.length} cash payments were not told to the group in time`,
       to: '/cash',
+    });
+  }
+  if (pendingQ.data?.length) {
+    alerts.push({
+      id: 'pending',
+      severity: 'warn',
+      message: pendingQ.data.length === 1
+        ? '1 person is waiting to be let into the group'
+        : `${pendingQ.data.length} people are waiting to be let into the group`,
+      to: '/members',
+    });
+  }
+  if (expenseVoteQ.data?.length) {
+    alerts.push({
+      id: 'expensevote',
+      severity: 'warn',
+      message: expenseVoteQ.data.length === 1
+        ? '1 spending request is waiting for your vote'
+        : `${expenseVoteQ.data.length} spending requests are waiting for your vote`,
+      to: '/expenses',
     });
   }
   if (unpaidQ.data?.length) {
