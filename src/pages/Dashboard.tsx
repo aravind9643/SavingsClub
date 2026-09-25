@@ -159,16 +159,6 @@ export default function Dashboard() {
       <Screen
         title="Overview"
         sub={homeSub}
-        action={
-          <button
-            className="icon-btn avatar"
-            onClick={() => nav('/community')}
-            aria-label={member?.full_name ? `${member.full_name} — profile and group` : 'Profile'}
-            title="Profile & Community"
-          >
-            {initials(member?.full_name)}
-          </button>
-        }
       >
         {/* ======================================= 1. PERSONAL STANDING CARD */}
         {myPosition && (

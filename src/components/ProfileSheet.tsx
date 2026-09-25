@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
 import { useAppTheme, useGroupSwitcher } from '../App';
 import { supabase } from '../lib/supabase';
@@ -8,7 +7,7 @@ import {
   Sheet, List, Row, Field, Busy, ErrorNote, initials, Tag, roleLabel,
 } from './ui';
 import {
-  IconSun, IconMoon, IconLogout, IconSettings, IconAudit, IconMembers,
+  IconSun, IconMoon, IconLogout, IconMembers, IconWallet,
 } from './icons';
 import { haptic } from '../lib/haptics';
 
@@ -19,10 +18,9 @@ export default function ProfileSheet({
   open: boolean;
   onClose: () => void;
 }) {
-  const { member, role, group, signOut, refresh } = useSession();
+  const { member, role, group, groups, signOut, refresh } = useSession();
   const openSwitcher = useGroupSwitcher();
   const { theme, setTheme } = useAppTheme();
-  const nav = useNavigate();
 
   const [editing, setEditing] = useState(false);
   const [phone, setPhone] = useState(member?.phone ?? '');
@@ -177,10 +175,10 @@ export default function ProfileSheet({
 
         {openSwitcher && (
           <Row
-            icon={<IconMembers width={18} height={18} />}
+            icon={<IconWallet width={18} height={18} />}
             iconTone="mint"
             title="Switch group"
-            sub={group ? `Current: ${group.name}` : 'Change active group'}
+            sub={group ? `${group.name}${groups.length > 1 ? ` · ${groups.length} groups` : ''}` : 'Change active group'}
             onClick={() => {
               haptic(10);
               onClose();
@@ -189,30 +187,6 @@ export default function ProfileSheet({
             chevron
           />
         )}
-
-        <Row
-          icon={<IconSettings width={18} height={18} />}
-          title="Group settings"
-          sub="Rules, fees and interest rates"
-          onClick={() => {
-            haptic(10);
-            onClose();
-            nav('/settings');
-          }}
-          chevron
-        />
-
-        <Row
-          icon={<IconAudit width={18} height={18} />}
-          title="History & audit"
-          sub="Immutable log of all group activity"
-          onClick={() => {
-            haptic(10);
-            onClose();
-            nav('/audit');
-          }}
-          chevron
-        />
 
         <Row
           icon={theme === 'dark' ? <IconSun width={18} height={18} /> : <IconMoon width={18} height={18} />}

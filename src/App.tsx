@@ -264,8 +264,7 @@ export default function App() {
 export function Screen({
   title, sub, action, children,
 }: { title: string; sub?: ReactNode; action?: ReactNode; children: ReactNode }) {
-  const openSwitcher = useContext(SwitcherCtx);
-  const { group, groups, member } = useSession();
+  const { member } = useSession();
   const sentinel = useRef<HTMLDivElement | null>(null);
   const [condensed, setCondensed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -281,25 +280,6 @@ export function Screen({
     return () => io.disconnect();
   }, []);
 
-  // The chip carries the group name and, when there is more than one group,
-  // doubles as the switcher. With a single group there is nothing to switch
-  // to, so it stays a label rather than pretending to be a control.
-  const canSwitch = groups.length > 1;
-  const chip = openSwitcher && group ? (
-    <button
-      type="button"
-      className={`group-chip${canSwitch ? '' : ' static'}`}
-      onClick={openSwitcher}
-      aria-label={canSwitch
-        ? `Current group ${group.name}. Switch or add group`
-        : `Group ${group.name}. Add another group`}
-    >
-      <span className="group-chip-ico">{initials(group.name)}</span>
-      <span className="nm">{group.name}</span>
-      <IconChevronDown width={10} height={10} className="chip-caret" />
-    </button>
-  ) : null;
-
   return (
     <>
       <header className={`appbar${condensed ? ' condensed' : ''}`}>
@@ -309,7 +289,6 @@ export function Screen({
             {sub ? <span className="appbar-sub">{sub}</span> : null}
           </span>
           <div className="appbar-actions">
-            {chip}
             {action}
             <button
               type="button"

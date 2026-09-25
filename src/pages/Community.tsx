@@ -1,33 +1,52 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Screen, useAppTheme, useGroupSwitcher } from '../App';
+import { Screen } from '../App';
 import { useSession, useIsOfficer } from '../context/SessionContext';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
 import { haptic } from '../lib/haptics';
 import {
-  List, Row, Panel, Sheet, Field, Busy, ErrorNote, Notice, initials, Tag, roleLabel,
-  Segments, fmtDate,
+  List, Row, Panel, Sheet, Field, Busy, ErrorNote, Notice, initials, roleLabel,
+  Segments, fmtDate, SkeletonList,
 } from '../components/ui';
 import {
-  IconMembers, IconSettings, IconAudit, IconSun, IconMoon, IconLogout,
-  IconPlus, IconChevronDown, IconShare, IconContributions,
+  IconSettings, IconAudit, IconShare, IconContributions,
 } from '../components/icons';
 import type {
-  GroupInvite, PendingMember, Meeting, AttendanceSummary, Attendance, Member,
+  GroupInvite, PendingMember, Meeting, AttendanceSummary, Attendance, Member, MemberPosition,
 } from '../lib/types';
 import { today } from '../lib/dates';
 import { formatPaise, formatPaiseShort } from '../lib/money';
 
+interface RoleRow {
+  id: string; member_id: string; role: string;
+  start_date: string; end_date: string | null;
+}
+
 export default function Community() {
   const nav = useNavigate();
-  const { member, role, group, groups, signOut, currentGroupId } = useSession();
+  const { member, group, currentGroupId } = useSession();
   const isOfficer = useIsOfficer();
-  const { theme, setTheme } = useAppTheme();
-  const openSwitcher = useGroupSwitcher();
-  const [editingProfile, setEditingProfile] = useState(false);
   const [meetingSheet, setMeetingSheet] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Group roles query
+  const rolesQ = useQuery<RoleRow[]>('roles', async () => {
+    let q = supabase.from('role_assignments').select('*').is('end_date', null);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as RoleRow[];
+  });
+
+  // Member standings & positions query
+  const positionsQ = useQuery<MemberPosition[]>('positions', async () => {
+    let q = supabase.from('v_member_positions').select('*').order('full_name');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as MemberPosition[];
+  });
 
   // Meetings query
   const meetingsQ = useQuery<Meeting[]>('meetings', async () => {
@@ -62,6 +81,18 @@ export default function Community() {
   });
 
   const pendingMembers = pendingQ.data ?? [];
+  const positions = positionsQ.data ?? [];
+  const activePositions = positions.filter((p) => p.is_active);
+
+  const byId = useMemo(
+    () => new Map(positions.map((p) => [p.member_id, p.full_name])),
+    [positions],
+  );
+
+  const currentRoles = (rolesQ.data ?? []).filter((r) => r.role !== 'member');
+  const cashier = currentRoles.find((r) => r.role === 'cashier');
+  const accountant = currentRoles.find((r) => r.role === 'accountant');
+  const admin = currentRoles.find((r) => r.role === 'admin');
 
   const handleShareInvite = () => {
     haptic(10);
@@ -82,94 +113,92 @@ export default function Community() {
 
   return (
     <>
-      <Screen title="Community" sub="Members, rules & governance">
-        {/* User Profile Card */}
+      <Screen
+        title="Community"
+        sub={group ? `${group.name} · ${activePositions.length} active members` : 'Members & Group'}
+      >
+        {/* ======================================= 1. GROUP LEADERSHIP */}
         <div
           className="panel"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            background: 'var(--surface)',
+            background: 'linear-gradient(135deg, var(--surface), var(--surface-2))',
             border: '1px solid var(--hairline)',
             borderRadius: 'var(--r)',
-            padding: '14px 16px',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
           }}
         >
-          <span
-            className="row-ico violet"
-            style={{ width: 48, height: 48, borderRadius: 15, fontSize: '1.1rem', flex: 'none' }}
-          >
-            {initials(member?.full_name)}
-          </span>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div
-              style={{
-                fontFamily: 'var(--display)',
-                fontSize: '1.1rem',
-                fontWeight: 650,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontFamily: 'var(--display)', fontSize: '1.05rem', fontWeight: 650, color: 'var(--text)' }}>
+              Group Leadership
+            </span>
+            <button
+              type="button"
+              className="sec-link"
+              onClick={() => nav('/members')}
+              style={{ fontSize: '0.8rem' }}
             >
-              {member?.full_name}
+              {isOfficer ? 'Manage roles →' : 'View roles →'}
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <div style={{ background: 'var(--surface-3)', padding: '10px 8px', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
+              <span className="dim" style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block' }}>
+                Admin
+              </span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 650, color: 'var(--text)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {admin ? byId.get(admin.member_id) ?? 'Assigned' : 'Unassigned'}
+              </span>
             </div>
-            <div
-              className="dim"
-              style={{
-                marginTop: 2,
-                fontSize: '0.82rem',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {member?.email || member?.phone || 'Member'}
+
+            <div style={{ background: 'var(--surface-3)', padding: '10px 8px', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
+              <span className="dim" style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block' }}>
+                Cashier
+              </span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 650, color: 'var(--text)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {cashier ? byId.get(cashier.member_id) ?? 'Assigned' : 'Unassigned'}
+              </span>
             </div>
-            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              {role === 'member' ? (
-                <Tag>Member</Tag>
-              ) : (
-                <Tag tone="mint">{roleLabel(role)}</Tag>
-              )}
-              {openSwitcher && group ? (
-                <button
-                  type="button"
-                  className="tag violet"
-                  onClick={openSwitcher}
-                  title="Switch group"
-                  style={{ cursor: 'pointer', maxWidth: 130 }}
-                >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {group.name}
-                  </span>
-                  <IconChevronDown width={9} height={9} style={{ opacity: 0.75, flex: 'none' }} />
-                </button>
-              ) : null}
+
+            <div style={{ background: 'var(--surface-3)', padding: '10px 8px', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
+              <span className="dim" style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block' }}>
+                Accountant
+              </span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 650, color: 'var(--text)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {accountant ? byId.get(accountant.member_id) ?? 'Assigned' : 'Unassigned'}
+              </span>
             </div>
           </div>
-          <button
-            type="button"
-            className="sec-link"
-            onClick={() => {
-              haptic(10);
-              setEditingProfile(true);
-            }}
-            style={{ fontSize: '0.85rem', flex: 'none' }}
-          >
-            Edit
-          </button>
         </div>
 
-        {/* Pending Approval Alert */}
+        {/* ======================================= 2. PENDING APPROVALS */}
         {pendingMembers.length > 0 && (
-          <Notice tone="warn" onClick={() => nav('/members')}>
-            <strong>{pendingMembers.length} member{pendingMembers.length > 1 ? 's' : ''}</strong> waiting for your approval
-          </Notice>
+          <div
+            className="panel"
+            style={{
+              background: 'var(--amber-ghost)',
+              border: '1px solid var(--amber)',
+              borderRadius: 'var(--r)',
+              padding: '12px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
+            onClick={() => nav('/members')}
+          >
+            <div>
+              <strong style={{ color: 'var(--amber)' }}>{pendingMembers.length} member{pendingMembers.length > 1 ? 's' : ''}</strong>
+              <span style={{ marginLeft: 6, fontSize: '0.88rem' }}>waiting for approval</span>
+            </div>
+            <span style={{ color: 'var(--amber)', fontSize: '0.82rem', fontWeight: 600 }}>Review →</span>
+          </div>
         )}
 
-        {/* Invite Code Quick Banner */}
+        {/* ======================================= 3. ACTIVE INVITE CODE */}
         {inviteQ.data && (
           <div
             className="panel"
@@ -185,7 +214,7 @@ export default function Community() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="dim" style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>
-                Active Invite Code
+                Group Invite Code
               </span>
               <span className="dim" style={{ fontSize: '0.78rem' }}>
                 7-day access
@@ -252,38 +281,76 @@ export default function Community() {
           </div>
         )}
 
-        {/* Community Destinations */}
-        <Panel title="Group & Members" flush>
+        {/* ======================================= 4. MEMBERS DIRECTORY */}
+        <Panel
+          title={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <span>Members ({activePositions.length})</span>
+              <button
+                type="button"
+                className="sec-link"
+                onClick={() => nav('/members')}
+                style={{ fontSize: '0.8rem', fontWeight: 600 }}
+              >
+                View all & standing →
+              </button>
+            </div>
+          }
+          flush
+        >
+          {positionsQ.loading && positions.length === 0 ? (
+            <SkeletonList rows={4} />
+          ) : (
+            <List>
+              {positions.slice(0, 6).map((p) => {
+                const isMe = p.member_id === member?.id;
+                return (
+                  <Row
+                    key={p.member_id}
+                    icon={initials(p.full_name)}
+                    iconTone={p.role !== 'member' ? 'mint' : 'violet'}
+                    title={
+                      <>
+                        {p.full_name}
+                        {isMe ? ' · you' : ''}
+                      </>
+                    }
+                    sub={
+                      p.role !== 'member'
+                        ? roleLabel(p.role)
+                        : `${Number(p.share_pct).toFixed(0)}% fund share`
+                    }
+                    amount={formatPaiseShort(p.contributed_paise)}
+                    note={p.outstanding_paise > 0 ? `owes ${formatPaiseShort(p.outstanding_paise)}` : undefined}
+                    onClick={() => nav('/members')}
+                    chevron
+                  />
+                );
+              })}
+            </List>
+          )}
+        </Panel>
+
+        {/* ======================================= 5. GOVERNANCE & MEETINGS */}
+        <Panel title="Governance & Meetings" flush>
           <List>
-            <Row
-              icon={<IconMembers width={18} height={18} />}
-              iconTone="violet"
-              title="Members & Roles"
-              sub="Member list, roles & total savings"
-              onClick={() => {
-                haptic(10);
-                nav('/members');
-              }}
-              chevron
-              note={pendingMembers.length > 0 ? `${pendingMembers.length} pending` : undefined}
-            />
             <Row
               icon={<IconContributions width={18} height={18} />}
               iconTone="mint"
               title="Monthly Meetings"
-              sub={latestMeeting ? `Last held on ${fmtDate(latestMeeting.held_on)}` : 'Track who attended monthly meetings'}
+              sub={latestMeeting ? `Last held on ${fmtDate(latestMeeting.held_on)}` : 'Record attendance & view meeting records'}
               onClick={() => {
                 haptic(10);
                 setMeetingSheet(true);
               }}
               chevron
-              note={latestMeeting ? fmtDate(latestMeeting.held_on) : undefined}
+              note={latestMeeting ? fmtDate(latestMeeting.held_on) : 'Take attendance'}
             />
             <Row
               icon={<IconSettings width={18} height={18} />}
               iconTone="amber"
               title="Group Rules & Settings"
-              sub="Monthly deposits, interest & rules"
+              sub="Monthly deposits, interest rate & loan rules"
               onClick={() => {
                 haptic(10);
                 nav('/settings');
@@ -292,123 +359,23 @@ export default function Community() {
             />
             <Row
               icon={<IconAudit width={18} height={18} />}
-              iconTone="mint"
+              iconTone="violet"
               title="Activity History"
-              sub="All payments, loans & changes"
+              sub="Immutable audit log of all group changes"
               onClick={() => {
                 haptic(10);
                 nav('/audit');
               }}
               chevron
             />
-            <Row
-              icon={<IconPlus width={18} height={18} />}
-              iconTone="violet"
-              title="Switch or Start a Group"
-              sub={groups.length > 1 ? `${groups.length} groups · Current: ${group?.name}` : 'Start or join another group'}
-              onClick={openSwitcher ?? undefined}
-              chevron
-            />
-          </List>
-        </Panel>
-
-        {/* Preferences & System */}
-        <Panel title="Preferences" flush>
-          <List>
-            <Row
-              icon={theme === 'dark' ? <IconMoon width={18} height={18} /> : <IconSun width={18} height={18} />}
-              title="Appearance"
-              sub={theme === 'dark' ? 'Dark theme active' : 'Light theme active'}
-              onClick={() => {
-                haptic(10);
-                setTheme(theme === 'dark' ? 'light' : 'dark');
-              }}
-              note={theme === 'dark' ? 'Dark' : 'Light'}
-            />
-            <Row
-              icon={<IconLogout width={18} height={18} />}
-              iconTone="coral"
-              title="Sign out"
-              sub={member?.email || 'Leave this session'}
-              onClick={() => {
-                haptic(10);
-                void signOut();
-              }}
-            />
           </List>
         </Panel>
       </Screen>
 
-      {editingProfile && (
-        <EditProfileSheet onClose={() => setEditingProfile(false)} />
-      )}
       {meetingSheet && (
         <MeetingSheet onClose={() => setMeetingSheet(false)} />
       )}
     </>
-  );
-}
-
-function EditProfileSheet({ onClose }: { onClose: () => void }) {
-  const { member, refresh } = useSession();
-  const [phone, setPhone] = useState(member?.phone ?? '');
-  const [nomineeName, setNomineeName] = useState(member?.nominee_name ?? '');
-  const [nomineePhone, setNomineePhone] = useState(member?.nominee_phone ?? '');
-
-  const save = useMutation(
-    async () => {
-      if (!member) return;
-      const { error } = await supabase
-        .from('members')
-        .update({
-          phone: phone.trim() || null,
-          nominee_name: nomineeName.trim() || null,
-          nominee_phone: nomineePhone.trim() || null,
-        })
-        .eq('id', member.id);
-      if (error) throw error;
-    },
-    {
-      invalidates: ['members', 'session'],
-      onSuccess: () => {
-        refresh();
-        onClose();
-      },
-    },
-  );
-
-  return (
-    <Sheet open title="Edit profile" onClose={onClose}>
-      <Field label="Phone number">
-        <input
-          type="tel"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="+91 98765 43210"
-        />
-      </Field>
-      <Field label="Nominee name">
-        <input
-          value={nomineeName}
-          onChange={(e) => setNomineeName(e.target.value)}
-          placeholder="Contact if you cannot be reached"
-        />
-      </Field>
-      <Field label="Nominee phone">
-        <input
-          type="tel"
-          value={nomineePhone}
-          onChange={(e) => setNomineePhone(e.target.value)}
-          placeholder="+91 98765 43210"
-        />
-      </Field>
-      <ErrorNote error={save.error} />
-      <div className="btn-row stack">
-        <Busy className="primary lg" pending={save.pending} onClick={() => void save.run()}>
-          Save profile
-        </Busy>
-      </div>
-    </Sheet>
   );
 }
 
