@@ -449,9 +449,9 @@ function DataBackupPanel() {
   };
 
   return (
-    <Panel title="Ledger Data & Backup">
+    <Panel title="Download Group Backup">
       <p className="dim" style={{ fontSize: '0.88rem', margin: 0, marginBottom: 12 }}>
-        Export the group's complete financial history (all members, contributions, loans, votes, expenses, and treasury records) as a single portable JSON archive.
+        Download a complete copy of all group records (members, deposits, loans, expenses, and payments) for your own backup.
       </p>
       <Busy
         type="button"
@@ -468,7 +468,7 @@ function DataBackupPanel() {
         pending={downloading}
         onClick={() => void handleExportJSON()}
       >
-        Export Complete Ledger (.json)
+        Download Full Backup (.json)
       </Busy>
     </Panel>
   );
@@ -551,12 +551,12 @@ function OpeningBalancesSheet({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <Sheet open title="Starting Balances (Paper Ledger)" onClose={onClose}>
+    <Sheet open title="Starting Balances (Past Records)" onClose={onClose}>
       <p className="dim" style={{ fontSize: '0.85rem', marginBottom: 12 }}>
-        Enter what each member had already accumulated before the group joined Sanchay. This becomes their initial savings share.
+        Enter how much each member already saved before using this app. This will be counted as their starting savings.
       </p>
 
-      <Field label="Group Inception Date">
+      <Field label="Group start date">
         <input
           type="date"
           value={openedOn}
@@ -567,7 +567,7 @@ function OpeningBalancesSheet({ onClose }: { onClose: () => void }) {
 
       <div style={{ marginBlock: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontWeight: 650, fontSize: '0.88rem' }} className="dim">Member Balances</span>
+          <span style={{ fontWeight: 650, fontSize: '0.88rem' }} className="dim">Member savings</span>
           <span style={{ fontWeight: 700, color: 'var(--mint)', fontSize: '0.95rem' }}>
             Total: {formatPaise(totalStartingPaise)}
           </span>
@@ -607,7 +607,7 @@ function OpeningBalancesSheet({ onClose }: { onClose: () => void }) {
       </div>
 
       <Notice>
-        Starting balances can only be edited before official contributions or disbursed loans are logged.
+        Starting balances can only be changed before monthly deposits or loans are recorded.
       </Notice>
 
       <ErrorNote error={saveOpening.error || lockOpening.error} />
@@ -624,12 +624,12 @@ function OpeningBalancesSheet({ onClose }: { onClose: () => void }) {
             style={{ color: 'var(--amber)' }}
             onClick={() => setLockConfirm(true)}
           >
-            Lock Starting Balances Permanently
+            Lock Starting Balances
           </button>
         ) : (
           <div style={{ background: 'var(--surface-2)', padding: 12, borderRadius: 'var(--r-sm)' }}>
             <p style={{ margin: 0, fontSize: '0.85rem', marginBottom: 8, color: 'var(--text)' }}>
-              Are you sure? Once locked, these baseline figures cannot be edited because all future shares and payouts depend on them.
+              Are you sure? Once locked, these starting amounts cannot be changed because all future savings and payouts are calculated from them.
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <Busy
@@ -637,7 +637,7 @@ function OpeningBalancesSheet({ onClose }: { onClose: () => void }) {
                 pending={lockOpening.pending}
                 onClick={() => void lockOpening.run()}
               >
-                Yes, Lock Baseline
+                Yes, Lock Starting Balances
               </Busy>
               <button
                 type="button"

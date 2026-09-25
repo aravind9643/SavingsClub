@@ -687,34 +687,34 @@ function RecoverySheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }
   );
 
   return (
-    <Sheet open title="Record recovery on written-off loan" onClose={onClose}>
+    <Sheet open title="Record payment on defaulted loan" onClose={onClose}>
       <Notice tone="good">
-        Recovering money reverses the loss without distorting group expense limits.
+        This money goes back into the group fund and reduces the earlier loss.
       </Notice>
-      <Field label="Principal recovered">
+      <Field label="Loan amount repaid">
         <AmountField value={principal} onChange={setPrincipal} autoFocus />
       </Field>
-      <Field label="Interest recovered (if any)">
+      <Field label="Interest repaid (if any)">
         <AmountField value={interest} onChange={setInterest} />
       </Field>
       <div className="field-row">
-        <Field label="Date received">
+        <Field label="Payment date">
           <input type="date" value={paidOn} max={today()} onChange={(e) => setPaidOn(e.target.value)} />
         </Field>
-        <Field label="Method">
+        <Field label="Paid via">
           <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
             <option value="bank">Bank</option>
             <option value="cash">Cash</option>
           </select>
         </Field>
       </div>
-      <Field label="Note">
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Settlement agreement, etc." />
+      <Field label="Note (optional)">
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Cash handed over, settlement" />
       </Field>
       <ErrorNote error={recovery.error} />
       <div className="btn-row stack">
         <Busy className="primary lg" pending={recovery.pending} onClick={() => void recovery.run()}>
-          Record recovery
+          Save Payment
         </Busy>
       </div>
     </Sheet>

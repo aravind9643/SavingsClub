@@ -236,10 +236,10 @@ export default function Dashboard() {
                   }}
                   onClick={() => {
                     haptic(10);
-                    nav('/contributions');
+                    nav('/deposits');
                   }}
                 >
-                  View Chanda →
+                  View Deposits →
                 </button>
               </div>
             )}

@@ -378,6 +378,9 @@ a { color: var(--accent); text-decoration: none; }
 .icon-btn.avatar {
   background: var(--violet-ghost);
   color: var(--violet);
+  border: 1px solid color-mix(in srgb, var(--violet) 22%, transparent);
+  font-weight: 700;
+  font-size: 0.8rem;
 }
 .icon-btn.avatar:hover { background: var(--violet-ghost); filter: brightness(1.15); }
 
@@ -837,6 +840,7 @@ button.notice {
     transform: translate(-50%, -50%);
     border-radius: var(--r-lg);
     animation: pop-in 0.3s var(--swift);
+    padding-bottom: 0;
   }
 }
 .sheet-grab {
@@ -1047,24 +1051,17 @@ button.tag:active { transform: scale(0.96); }
    set vertical margins inline and a `margin` shorthand would silently wipe a
    `margin-inline` here. --gutter tracks the container (screen 16, sheet 20). */
 .scroller {
-  --gutter: 16px;
   display: flex;
   gap: 8px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
-  padding: 2px var(--gutter);
-  width: calc(100% + var(--gutter) * 2);
-  position: relative;
-  left: calc(var(--gutter) * -1);
+  padding: 2px 0;
+  width: 100%;
   scroll-snap-type: x proximity;
 }
 .scroller::-webkit-scrollbar { display: none; }
 .scroller > * { scroll-snap-align: start; flex: none; }
-.sheet-body .scroller { --gutter: 20px; }
-@media (min-width: 1000px) {
-  .scroller { --gutter: 28px; }
-}
 
 .seg {
   padding: 7px 14px; border-radius: var(--r-full);
@@ -1126,4 +1123,33 @@ button.tag:active { transform: scale(0.96); }
   background: linear-gradient(145deg, var(--mint), var(--violet));
   color: #05201a;
   font-family: var(--display); font-weight: 700; font-size: 1.15rem;
+}
+
+/* ------------------------------------------- small screen responsiveness -- */
+@media (max-width: 380px) {
+  .screen { padding-left: 12px; padding-right: 12px; }
+  .panel { padding: 14px 12px; }
+  .hero { padding: 16px 14px 14px; }
+  .row { padding: 12px 10px; gap: 10px; }
+  .row-ico { width: 34px; height: 34px; }
+  .row-title { font-size: 0.88rem; }
+  .row-sub { font-size: 0.74rem; }
+  .tab { font-size: 0.62rem; padding: 3px 1px; }
+  .tab svg { width: 19px; height: 19px; }
+  .stat .v { font-size: 1.15rem; }
+  .field-row { grid-template-columns: 1fr; }
+  .sheet-body { padding: 8px 14px 18px; }
+  .sheet-head { padding: 10px 14px 6px; }
+  .seg { padding: 6px 11px; font-size: 0.8rem; }
+  .icon-btn { width: 36px; height: 36px; font-size: 0.74rem; }
+  .btn-row { margin-top: 14px; }
+}
+
+@media (max-width: 330px) {
+  .screen { padding-left: 10px; padding-right: 10px; }
+  .appbar { padding-left: 12px; padding-right: 12px; }
+  .appbar-name { font-size: 1.25rem; }
+  .group-chip { max-width: 30vw; padding: 0 6px 0 3px; font-size: 0.75rem; }
+  .icon-btn { width: 32px; height: 32px; font-size: 0.7rem; }
+  .stat .v { font-size: 1.05rem; }
 }

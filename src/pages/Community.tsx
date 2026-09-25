@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Screen, useAppTheme, useGroupSwitcher } from '../App';
 import { useSession, useIsOfficer } from '../context/SessionContext';
@@ -89,24 +89,42 @@ export default function Community() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 14,
+            gap: 12,
             background: 'var(--surface)',
             border: '1px solid var(--hairline)',
             borderRadius: 'var(--r)',
-            padding: 16,
+            padding: '14px 16px',
           }}
         >
           <span
             className="row-ico violet"
-            style={{ width: 50, height: 50, borderRadius: 16, fontSize: '1.15rem' }}
+            style={{ width: 48, height: 48, borderRadius: 15, fontSize: '1.1rem', flex: 'none' }}
           >
             {initials(member?.full_name)}
           </span>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '1.12rem', fontWeight: 650 }}>
+            <div
+              style={{
+                fontFamily: 'var(--display)',
+                fontSize: '1.1rem',
+                fontWeight: 650,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
               {member?.full_name}
             </div>
-            <div className="dim" style={{ marginTop: 2, fontSize: '0.85rem' }}>
+            <div
+              className="dim"
+              style={{
+                marginTop: 2,
+                fontSize: '0.82rem',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
               {member?.email || member?.phone || 'Member'}
             </div>
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -121,9 +139,11 @@ export default function Community() {
                   className="tag violet"
                   onClick={openSwitcher}
                   title="Switch group"
-                  style={{ cursor: 'pointer' }}
+                  style={{ cursor: 'pointer', maxWidth: 130 }}
                 >
-                  <span>{group.name}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {group.name}
+                  </span>
                   <IconChevronDown width={9} height={9} style={{ opacity: 0.75, flex: 'none' }} />
                 </button>
               ) : null}
@@ -136,7 +156,7 @@ export default function Community() {
               haptic(10);
               setEditingProfile(true);
             }}
-            style={{ fontSize: '0.85rem' }}
+            style={{ fontSize: '0.85rem', flex: 'none' }}
           >
             Edit
           </button>
@@ -157,31 +177,53 @@ export default function Community() {
               background: 'linear-gradient(135deg, var(--surface), var(--surface-2))',
               border: '1px solid var(--hairline)',
               borderRadius: 'var(--r)',
-              padding: 16,
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span className="dim" style={{ fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="dim" style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>
                 Active Invite Code
               </span>
-              <span className="dim" style={{ fontSize: '0.8rem' }}>
+              <span className="dim" style={{ fontSize: '0.78rem' }}>
                 7-day access
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              <code style={{ fontSize: '1.25rem', fontFamily: 'monospace', letterSpacing: 1.5, fontWeight: 700 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+                flexWrap: 'wrap',
+              }}
+            >
+              <code
+                style={{
+                  fontSize: 'clamp(1.05rem, 4.4vw, 1.25rem)',
+                  fontFamily: 'monospace',
+                  letterSpacing: '1px',
+                  fontWeight: 700,
+                  color: 'var(--text)',
+                  whiteSpace: 'nowrap',
+                  userSelect: 'all',
+                }}
+              >
                 {inviteQ.data.code}
               </code>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
                 <button
                   type="button"
                   className="sec-link"
                   onClick={handleCopyCode}
                   style={{
                     background: 'var(--surface-3)',
-                    padding: '6px 12px',
+                    padding: '6px 14px',
                     borderRadius: 'var(--r-sm)',
                     fontSize: '0.82rem',
+                    fontWeight: 600,
                   }}
                 >
                   {copied ? 'Copied!' : 'Copy'}
@@ -193,9 +235,10 @@ export default function Community() {
                   style={{
                     background: 'var(--mint-ghost)',
                     color: 'var(--mint)',
-                    padding: '6px 12px',
+                    padding: '6px 14px',
                     borderRadius: 'var(--r-sm)',
                     fontSize: '0.82rem',
+                    fontWeight: 600,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
@@ -210,13 +253,13 @@ export default function Community() {
         )}
 
         {/* Community Destinations */}
-        <Panel title="Group Management" flush>
+        <Panel title="Group & Members" flush>
           <List>
             <Row
               icon={<IconMembers width={18} height={18} />}
               iconTone="violet"
               title="Members & Roles"
-              sub="Roster, officer roles & savings shares"
+              sub="Member list, roles & total savings"
               onClick={() => {
                 haptic(10);
                 nav('/members');
@@ -228,7 +271,7 @@ export default function Community() {
               icon={<IconContributions width={18} height={18} />}
               iconTone="mint"
               title="Monthly Meetings"
-              sub={latestMeeting ? `Last held on ${fmtDate(latestMeeting.held_on)}` : 'Log meetings & track attendance'}
+              sub={latestMeeting ? `Last held on ${fmtDate(latestMeeting.held_on)}` : 'Track who attended monthly meetings'}
               onClick={() => {
                 haptic(10);
                 setMeetingSheet(true);
@@ -239,8 +282,8 @@ export default function Community() {
             <Row
               icon={<IconSettings width={18} height={18} />}
               iconTone="amber"
-              title="Group Rules & Constitution"
-              sub="Monthly chanda, interest rate, reserve cap"
+              title="Group Rules & Settings"
+              sub="Monthly deposits, interest & rules"
               onClick={() => {
                 haptic(10);
                 nav('/settings');
@@ -250,8 +293,8 @@ export default function Community() {
             <Row
               icon={<IconAudit width={18} height={18} />}
               iconTone="mint"
-              title="Audit Ledger"
-              sub="Immutable history of every change made"
+              title="Activity History"
+              sub="All payments, loans & changes"
               onClick={() => {
                 haptic(10);
                 nav('/audit');
@@ -439,8 +482,21 @@ function MeetingSheet({ onClose }: { onClose: () => void }) {
 
   const absentFee = config?.meeting_absent_fee_paise ?? 0;
 
+  const counts = useMemo(() => {
+    let pres = 0;
+    let abs = 0;
+    let exc = 0;
+    for (const m of members) {
+      const st = attendance[m.id] || 'present';
+      if (st === 'present') pres++;
+      else if (st === 'absent') abs++;
+      else exc++;
+    }
+    return { pres, abs, exc };
+  }, [members, attendance]);
+
   return (
-    <Sheet open title="Group Meetings & Attendance" onClose={onClose}>
+    <Sheet open title="Meetings & Attendance" onClose={onClose}>
       <Segments<'record' | 'attendance' | 'history'>
         value={tab}
         onChange={(next) => {
@@ -448,48 +504,98 @@ function MeetingSheet({ onClose }: { onClose: () => void }) {
           setTab(next);
         }}
         options={[
-          ...(isOfficer ? [{ value: 'record' as const, label: 'Log Meeting' }] : []),
-          { value: 'attendance' as const, label: 'Member Roster' },
+          ...(isOfficer ? [{ value: 'record' as const, label: 'Attendance' }] : []),
+          { value: 'attendance' as const, label: 'Summary' },
           { value: 'history' as const, label: 'History', count: meetings.length > 0 ? meetings.length : undefined },
         ]}
       />
 
       {tab === 'record' && isOfficer && (
         <div style={{ marginTop: 14 }}>
-          <div className="field-row">
-            <Field label="Meeting Date">
-              <input
-                type="date"
-                value={heldOn}
-                max={today()}
-                onChange={(e) => setHeldOn(e.target.value)}
-              />
-            </Field>
-          </div>
-
-          <Field label="Meeting Agenda / Note (optional)">
+          <Field label="Meeting date">
             <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Monthly chanda collection & loan review"
+              type="date"
+              value={heldOn}
+              max={today()}
+              onChange={(e) => setHeldOn(e.target.value)}
             />
           </Field>
 
-          {absentFee > 0 ? (
-            <Notice tone="warn">
-              Unexcused absence incurs a fine of <strong>{formatPaise(absentFee)}</strong> as set in group rules.
-            </Notice>
-          ) : (
-            <Notice>
-              Take attendance for all active members. Excused members do not incur absence marks.
-            </Notice>
-          )}
+          <Field label="Meeting notes (optional)">
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Monthly collection and loan review"
+            />
+          </Field>
 
-          <div style={{ marginBlock: 14 }}>
-            <div style={{ fontWeight: 650, fontSize: '0.88rem', marginBottom: 10 }} className="dim">
-              Mark Attendance ({members.length} members):
+          <div style={{ marginTop: 12 }}>
+            {absentFee > 0 ? (
+              <Notice tone="warn">
+                Missing without informing has a fine of <strong>{formatPaise(absentFee)}</strong> as per group rules.
+              </Notice>
+            ) : (
+              <Notice>
+                Mark who attended today. Members who informed in advance can be marked Excused.
+              </Notice>
+            )}
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div>
+                <span style={{ fontWeight: 650, fontSize: '0.88rem', color: 'var(--text)' }}>
+                  Attendance
+                </span>
+                <span className="dim" style={{ fontSize: '0.78rem', marginLeft: 6 }}>
+                  ({members.length})
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span
+                  style={{
+                    fontSize: '0.74rem',
+                    fontWeight: 650,
+                    padding: '2px 8px',
+                    borderRadius: 'var(--r-full)',
+                    background: 'var(--mint-ghost)',
+                    color: 'var(--mint)',
+                  }}
+                >
+                  {counts.pres} Present
+                </span>
+                {counts.abs > 0 && (
+                  <span
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: 650,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--r-full)',
+                      background: 'var(--coral-ghost)',
+                      color: 'var(--coral)',
+                    }}
+                  >
+                    {counts.abs} Absent
+                  </span>
+                )}
+                {counts.exc > 0 && (
+                  <span
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: 650,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--r-full)',
+                      background: 'var(--amber-ghost)',
+                      color: 'var(--amber)',
+                    }}
+                  >
+                    {counts.exc} Excused
+                  </span>
+                )}
+              </div>
             </div>
-            <div style={{ maxHeight: 280, overflowY: 'auto', paddingRight: 4 }}>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 'min(340px, 45vh)', overflowY: 'auto', paddingRight: 2 }}>
               {members.map((m) => {
                 const cur = attendance[m.id] || 'present';
                 return (
@@ -499,32 +605,94 @@ function MeetingSheet({ onClose }: { onClose: () => void }) {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      padding: '10px 0',
-                      borderBottom: '1px solid var(--hairline)',
+                      padding: '7px 10px',
+                      background: 'var(--surface)',
+                      borderRadius: 'var(--r-sm)',
+                      border: '1px solid var(--hairline)',
+                      gap: 6,
                     }}
                   >
-                    <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{m.full_name}</div>
-                    <div style={{ display: 'flex', gap: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flex: 1, marginRight: 2 }}>
+                      <span
+                        style={{
+                          width: 26,
+                          height: 26,
+                          borderRadius: '50%',
+                          background: 'var(--surface-3)',
+                          color: 'var(--text)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 650,
+                          fontSize: '0.72rem',
+                          flex: 'none',
+                        }}
+                      >
+                        {initials(m.full_name)}
+                      </span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: '0.84rem',
+                            color: 'var(--text)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {m.full_name}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      role="group"
+                      aria-label={`Attendance for ${m.full_name}`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        background: 'var(--surface-2)',
+                        padding: 2,
+                        borderRadius: 'var(--r-full)',
+                        border: '1px solid var(--hairline)',
+                        gap: 2,
+                        flex: 'none',
+                      }}
+                    >
                       {(['present', 'absent', 'excused'] as Attendance[]).map((st) => {
                         const isSel = cur === st;
-                        const color = st === 'present' ? 'var(--mint)' : st === 'absent' ? 'var(--coral)' : 'var(--amber)';
-                        const bg = isSel
-                          ? (st === 'present' ? 'var(--mint-ghost)' : st === 'absent' ? 'var(--coral-ghost)' : 'var(--amber-ghost)')
-                          : 'var(--surface-2)';
+                        let activeBg = 'var(--mint)';
+                        let activeColor = '#041c10';
+                        let activeShadow = '0 1px 6px rgb(61 220 151 / 28%)';
+                        if (st === 'absent') {
+                          activeBg = 'var(--coral)';
+                          activeColor = '#ffffff';
+                          activeShadow = '0 1px 6px rgb(255 92 122 / 28%)';
+                        } else if (st === 'excused') {
+                          activeBg = 'var(--amber)';
+                          activeColor = '#241700';
+                          activeShadow = '0 1px 6px rgb(255 182 72 / 28%)';
+                        }
+
                         return (
                           <button
                             key={st}
                             type="button"
                             style={{
-                              background: bg,
-                              color: isSel ? color : 'var(--text-3)',
-                              border: `1px solid ${isSel ? color : 'var(--hairline)'}`,
-                              padding: '5px 10px',
-                              borderRadius: 'var(--r-sm)',
-                              fontSize: '0.78rem',
+                              background: isSel ? activeBg : 'transparent',
+                              color: isSel ? activeColor : 'var(--text-2)',
+                              border: 0,
+                              padding: '4px 8px',
+                              borderRadius: 'var(--r-full)',
+                              fontSize: '0.72rem',
                               fontWeight: isSel ? 700 : 500,
                               cursor: 'pointer',
                               textTransform: 'capitalize',
+                              boxShadow: isSel ? activeShadow : 'none',
+                              transition: 'all 0.14s ease',
+                              whiteSpace: 'nowrap',
+                              lineHeight: 1.2,
                             }}
                             onClick={() => {
                               haptic(5);
@@ -543,9 +711,9 @@ function MeetingSheet({ onClose }: { onClose: () => void }) {
           </div>
 
           <ErrorNote error={saveMeeting.error} />
-          <div className="btn-row stack" style={{ marginTop: 14 }}>
+          <div className="btn-row stack">
             <Busy className="primary lg" pending={saveMeeting.pending} onClick={() => void saveMeeting.run()}>
-              Save Meeting Record
+              Save Attendance
             </Busy>
           </div>
         </div>
@@ -554,7 +722,7 @@ function MeetingSheet({ onClose }: { onClose: () => void }) {
       {tab === 'attendance' && (
         <div style={{ marginTop: 14 }}>
           {summaries.length === 0 ? (
-            <div className="dim" style={{ textAlign: 'center', padding: 24 }}>No attendance records found.</div>
+            <div className="dim" style={{ textAlign: 'center', padding: 24 }}>No attendance recorded yet.</div>
           ) : (
             <List>
               {summaries.map((s) => (
@@ -564,7 +732,7 @@ function MeetingSheet({ onClose }: { onClose: () => void }) {
                   sub={`${s.present_count} present · ${s.absent_count} absent · ${s.excused_count} excused`}
                   amount={s.fines_paise > 0 ? formatPaise(s.fines_paise) : undefined}
                   amountTone={s.fines_paise > 0 ? 'coral' : undefined}
-                  note={s.fines_paise > 0 ? 'Fines' : 'Good'}
+                  note={s.fines_paise > 0 ? 'Fine due' : 'All clear'}
                 />
               ))}
             </List>
@@ -584,7 +752,7 @@ function MeetingSheet({ onClose }: { onClose: () => void }) {
                   icon={<IconContributions width={16} height={16} />}
                   iconTone="mint"
                   title={fmtDate(mt.held_on)}
-                  sub={mt.note || 'Regular group meeting'}
+                  sub={mt.note || 'Monthly meeting'}
                   note={mt.absent_fee_paise > 0 ? `Fine: ${formatPaiseShort(mt.absent_fee_paise)}` : undefined}
                 />
               ))}

@@ -7,14 +7,16 @@ import { SessionProvider, useSession } from './context/SessionContext';
 import { FundProvider, useFund } from './context/FundContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Contributions from './pages/Contributions';
+import Deposits from './pages/Deposits';
 import Loans from './pages/Loans';
 import Onboard, { AwaitingApproval } from './pages/Onboard';
 import GroupSwitcher from './components/GroupSwitcher';
+import ProfileSheet from './components/ProfileSheet';
 import { Loading, initials, resetScrollLock } from './components/ui';
 import {
-  IconHome, IconContributions, IconLoans, IconWallet, IconMembers, IconChevronDown,
+  IconHome, IconDeposits, IconLoans, IconWallet, IconMembers, IconChevronDown,
 } from './components/icons';
+import { haptic } from './lib/haptics';
 
 const LoanDetail = lazy(() => import('./pages/LoanDetail'));
 const NewLoan = lazy(() => import('./pages/NewLoan'));
@@ -27,7 +29,7 @@ const Community = lazy(() => import('./pages/Community'));
 /** Five intuitive destinations for community savings groups */
 const TABS = [
   { to: '/', label: 'Home', Icon: IconHome, end: true },
-  { to: '/contributions', label: 'Chanda', Icon: IconContributions },
+  { to: '/deposits', label: 'Deposits', Icon: IconDeposits },
   { to: '/loans', label: 'Loans', Icon: IconLoans },
   { to: '/treasury', label: 'Treasury', Icon: IconWallet },
   { to: '/community', label: 'Community', Icon: IconMembers },
@@ -81,6 +83,8 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
     return alerts.some((a) => a.severity === 'danger' && a.to === to);
   };
 
+  const location = useLocation();
+
   return (
     <nav className="tabbar" aria-label="Main">
       <button
@@ -107,6 +111,11 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
           to={to}
           end={end}
           className={({ isActive }) => `tab${isActive ? ' active' : ''}`}
+          onClick={() => {
+            if (location.pathname === to) {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+          }}
         >
           <Icon />
           <span>{label}</span>
@@ -125,6 +134,9 @@ function Shell() {
 
   useEffect(() => {
     resetScrollLock();
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
   }, [location.pathname]);
 
   // Adding a group takes over the screen: create/join both end in a session
@@ -171,7 +183,8 @@ function Shell() {
       <Suspense fallback={<div className="auth" style={{ minHeight: '40vh' }}><Loading /></div>}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/contributions" element={<Contributions />} />
+          <Route path="/deposits" element={<Deposits />} />
+          <Route path="/contributions" element={<Navigate to="/deposits" replace />} />
           <Route path="/loans" element={<Loans />} />
           <Route path="/loans/new" element={<NewLoan />} />
           <Route path="/loans/:id" element={<LoanDetail />} />
@@ -252,9 +265,10 @@ export function Screen({
   title, sub, action, children,
 }: { title: string; sub?: ReactNode; action?: ReactNode; children: ReactNode }) {
   const openSwitcher = useContext(SwitcherCtx);
-  const { group, groups } = useSession();
+  const { group, groups, member } = useSession();
   const sentinel = useRef<HTMLDivElement | null>(null);
   const [condensed, setCondensed] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     const el = sentinel.current;
@@ -297,12 +311,28 @@ export function Screen({
           <div className="appbar-actions">
             {chip}
             {action}
+            <button
+              type="button"
+              className="icon-btn avatar"
+              onClick={() => {
+                haptic(10);
+                setProfileOpen(true);
+              }}
+              aria-label={`Profile for ${member?.full_name ?? 'User'}`}
+              title={member?.full_name ?? 'Your Profile'}
+            >
+              {initials(member?.full_name)}
+            </button>
           </div>
         </div>
       </header>
       {/* Zero-height marker: once it leaves the viewport the bar condenses. */}
       <div ref={sentinel} aria-hidden className="appbar-sentinel" />
       <div className="screen stagger">{children}</div>
+
+      {profileOpen && (
+        <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
+      )}
     </>
   );
 }

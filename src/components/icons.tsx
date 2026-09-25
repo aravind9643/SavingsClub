@@ -41,7 +41,8 @@ function make(icon: IconDefinition) {
 /* navigation */
 export const IconHome = make(faHouse);
 export const IconDashboard = make(faTableColumns);
-export const IconContributions = make(faCalendarCheck);
+export const IconDeposits = make(faCalendarCheck);
+export const IconContributions = IconDeposits;
 export const IconLoans = make(faIndianRupeeSign);
 export const IconExpenses = make(faReceipt);
 export const IconCash = make(faWallet);

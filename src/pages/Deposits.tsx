@@ -17,7 +17,7 @@ import { today } from '../lib/dates';
 
 type MemberFilter = 'all' | 'unpaid' | 'paid';
 
-export default function Contributions() {
+export default function Deposits() {
   const nav = useNavigate();
   const { config, role, currentGroupId, group } = useSession();
   const { fund } = useFund();
@@ -169,12 +169,12 @@ export default function Contributions() {
   const expectedTotal = (period?.amount_paise ?? 0) * members.length;
 
   if ((periodsQ.loading && !periodsQ.data) || (rolesQ.loading && !rolesQ.data)) {
-    return <Screen title="Chanda"><SkeletonList rows={5} /></Screen>;
+    return <Screen title="Monthly Deposits"><SkeletonList rows={5} /></Screen>;
   }
 
   if (periods.length === 0) {
     return (
-      <Screen title="Chanda">
+      <Screen title="Monthly Deposits">
         <Empty icon={<IconContributions width={22} height={22} />}>
           This month has not been started yet.
           {!hasMoneyOfficer ? (
@@ -214,7 +214,7 @@ export default function Contributions() {
   return (
     <>
       <Screen
-        title="Chanda"
+        title="Monthly Deposits"
         sub={period ? `${monthLabel(period.period_month)} · ${paidCount} of ${members.length} paid` : undefined}
       >
         <Segments

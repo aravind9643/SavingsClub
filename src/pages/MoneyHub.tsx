@@ -1221,15 +1221,15 @@ function DistributionSheet({ onClose }: { onClose: () => void }) {
 
           {isProposer ? (
             <Notice tone="warn">
-              You proposed this share-out. A different officer (Cashier, Accountant, or Admin) must verify the figures and confirm it at your group meeting.
+              You proposed this profit share. Another group leader (Cashier, Accountant, or Admin) must review the numbers and confirm them before money is paid.
             </Notice>
           ) : isOfficer ? (
             <Notice tone="good">
-              Verify these member payouts with your bank balance. Confirming will create the official member payout entries.
+              Check that you have enough bank balance for these payouts. Confirming will record the payments to members.
             </Notice>
           ) : (
             <Notice>
-              Proposed by group officers. Awaiting final sign-off at the group meeting.
+              Proposed by group leaders. Awaiting approval at the group meeting.
             </Notice>
           )}
 
@@ -1238,7 +1238,7 @@ function DistributionSheet({ onClose }: { onClose: () => void }) {
           <div className="btn-row stack" style={{ marginTop: 14 }}>
             {!isProposer && isOfficer && (
               <Busy className="primary lg" pending={confirm.pending} onClick={() => void confirm.run()}>
-                Confirm & Distribute
+                Approve & Pay Out
               </Busy>
             )}
             {isOfficer && (
@@ -1251,30 +1251,30 @@ function DistributionSheet({ onClose }: { onClose: () => void }) {
       ) : (
         <>
           <div style={{ marginBottom: 14 }}>
-            <div className="dim" style={{ fontSize: '0.85rem' }}>Available Distributable Pool:</div>
+            <div className="dim" style={{ fontSize: '0.85rem' }}>Available profit to share:</div>
             <div style={{ fontFamily: 'var(--display)', fontSize: '1.35rem', fontWeight: 700, color: 'var(--mint)' }}>
               {formatPaise(maxDistributable)}
             </div>
             <div className="dim" style={{ fontSize: '0.8rem', marginTop: 2 }}>
-              Interest earnings minus expenses and previous profit distributions.
+              Total interest earned minus group expenses and previous profit shares.
             </div>
           </div>
 
           {isOfficer ? (
             <>
               <div className="field-row">
-                <Field label="Share-out Type">
+                <Field label="Type of payout">
                   <select
                     value={kind}
                     onChange={(e) => {
                       setKind(e.target.value as DistributionKind);
                     }}
                   >
-                    <option value="profit">Annual Profit Dividend</option>
-                    <option value="final">Final Group Wind-up</option>
+                    <option value="profit">Yearly profit share (Bonus)</option>
+                    <option value="final">Closing group (Final payout)</option>
                   </select>
                 </Field>
-                <Field label="Distribution Date">
+                <Field label="Payment date">
                   <input
                     type="date"
                     value={date}
@@ -1285,7 +1285,7 @@ function DistributionSheet({ onClose }: { onClose: () => void }) {
               </div>
 
               <Field
-                label="Amount to distribute (₹)"
+                label="Total amount to share (₹)"
                 hint={`Max today: ${formatPaiseShort(maxDistributable)}`}
               >
                 <AmountField
@@ -1294,16 +1294,16 @@ function DistributionSheet({ onClose }: { onClose: () => void }) {
                 />
               </Field>
 
-              <Field label="Note / Occasion (optional)">
+              <Field label="Note or festival (optional)">
                 <input
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="e.g. Diwali 2026 Profit Dividend"
+                  placeholder="e.g. Diwali 2026 profit share"
                 />
               </Field>
 
               <Notice>
-                Proposing calculates each member's exact pro-rata share based on their savings. A second officer must review and confirm it before money is paid.
+                Calculates each member's fair share based on how much they saved. Another leader must approve this before money is paid out.
               </Notice>
 
               <ErrorNote error={propose.error} />
@@ -1315,13 +1315,13 @@ function DistributionSheet({ onClose }: { onClose: () => void }) {
                   disabled={maxDistributable <= 0}
                   onClick={() => void propose.run()}
                 >
-                  Propose Distribution
+                  Calculate & Propose Payout
                 </Busy>
               </div>
             </>
           ) : (
             <Notice>
-              Only officers (Admin, Cashier, Accountant) can propose profit share distributions.
+              Only group leaders (Admin, Cashier, Accountant) can propose profit shares.
             </Notice>
           )}
         </>

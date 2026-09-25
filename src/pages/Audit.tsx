@@ -15,10 +15,27 @@ type Filter = 'all' | 'money' | 'loans' | 'people';
 
 const GROUPS: Record<Filter, string[] | null> = {
   all: null,
-  money: ['contributions', 'loan_repayments', 'expenses', 'cash_ledger', 'bank_statements'],
-  loans: ['loans', 'loan_votes'],
-  // 'groups' carries the rule settings that used to live in app_config.
-  people: ['members', 'role_assignments', 'groups', 'group_invites'],
+  money: [
+    'contributions',
+    'contribution_periods',
+    'loan_repayments',
+    'expenses',
+    'cash_ledger',
+    'bank_statements',
+    'member_payouts',
+    'distributions',
+    'distribution_lines',
+  ],
+  loans: ['loans', 'loan_votes', 'loan_repayments', 'loan_instalments'],
+  people: [
+    'members',
+    'role_assignments',
+    'groups',
+    'group_invites',
+    'meetings',
+    'meeting_attendance',
+    'expense_votes',
+  ],
 };
 
 const PAGE_SIZE = 50;
@@ -103,12 +120,12 @@ export default function Audit() {
                   iconTone={
                     r.action === 'INSERT' ? 'mint' : r.action === 'DELETE' ? 'coral' : 'violet'
                   }
-                  title={describe(r)}
+                  title={describe(r, names.data)}
                   sub={
                     <>
                       {r.actor_member_id
-                        ? (names.data?.[r.actor_member_id] ?? 'a member')
-                        : 'direct database'}
+                        ? (names.data?.[r.actor_member_id] ?? 'Member')
+                        : 'System'}
                       {' · '}{ago(r.occurred_at)}
                     </>
                   }
@@ -154,7 +171,7 @@ function Detail({ row }: { row: AuditRow | undefined }) {
   return (
     <>
       <p className="dim" style={{ marginTop: 0, marginBottom: 14 }}>
-        {row.table_name} · {row.action.toLowerCase()} · {fmtDateTime(row.occurred_at)}
+        {row.table_name.replace(/_/g, ' ')} · {row.action.toLowerCase()} · {fmtDateTime(row.occurred_at)}
       </p>
       <div style={{ display: 'grid', gap: 8 }}>
         {keys.filter((k) => k !== 'id' && k !== 'created_at').slice(0, 16).map((k) => (
@@ -200,33 +217,106 @@ function fmt(key: string, value: unknown): string {
   return s.length > 48 ? `${s.slice(0, 48)}…` : s;
 }
 
-function describe(r: AuditRow): string {
+function fmtMonth(d: unknown): string {
+  if (!d || typeof d !== 'string') return '';
+  const m = /^(\d{4})-(\d{2})/.exec(d);
+  if (!m) return '';
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  return date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+}
+
+function describe(r: AuditRow, memberNames?: Record<string, string>): string {
   const d = (r.new_data ?? r.old_data ?? {}) as Record<string, unknown>;
   const amt = (k: string) => {
     const v = d[k];
     return typeof v === 'number' || typeof v === 'string' ? formatPaise(v) : '';
   };
+  const memberName = (k = 'member_id') => {
+    const id = d[k];
+    return id && memberNames ? memberNames[String(id)] : undefined;
+  };
+
   switch (r.table_name) {
-    case 'contributions': return `Paid in ${amt('amount_paise')}`;
-    case 'loans':
-      return r.action === 'INSERT'
-        ? `Loan asked for ${amt('principal_paise')}`
-        : `Loan ${labelForStatus(String(d.status ?? 'changed'))}`;
-    case 'loan_votes': return `Voted ${String(d.vote ?? '')}`;
-    case 'loan_repayments': return `Paid back ${amt('principal_paise')}`;
-    case 'expenses': return `${String(d.description ?? 'Expense')} ${amt('amount_paise')}`;
-    case 'cash_ledger': return `Cash ${d.direction === 'in' ? 'in' : 'out'} ${amt('amount_paise')}`;
-    case 'bank_statements': return `Bank checked ${amt('closing_balance_paise')}`;
-    case 'members': return `Member ${String(d.full_name ?? '')}`;
-    // roleLabel, or the history would still read "Role president" after 0024.
-    case 'role_assignments': return `Job given: ${roleLabel(String(d.role ?? ''))}`;
-    case 'groups': return 'Group rules changed';
+    case 'contributions': {
+      const who = memberName();
+      const amount = amt('amount_paise');
+      return who ? `Paid in ${amount} · ${who}` : `Paid in ${amount}`;
+    }
+    case 'contribution_periods': {
+      const month = fmtMonth(d.period_month);
+      const label = month ? ` · ${month}` : '';
+      if (r.action === 'INSERT') return `Opened period${label}`;
+      if (r.action === 'DELETE') return `Removed period${label}`;
+      if (d.closed_at) return `Closed period${label}`;
+      return `Updated period${label}`;
+    }
+    case 'loans': {
+      const who = memberName();
+      if (r.action === 'INSERT') {
+        return `Loan asked for ${amt('principal_paise')}${who ? ` · ${who}` : ''}`;
+      }
+      return `Loan ${labelForStatus(String(d.status ?? 'changed'))}${who ? ` · ${who}` : ''}`;
+    }
+    case 'loan_votes':
+      return `Voted ${String(d.vote ?? '')} on loan`;
+    case 'loan_repayments': {
+      const who = memberName();
+      return `Paid back ${amt('principal_paise')}${who ? ` · ${who}` : ''}`;
+    }
+    case 'loan_instalments':
+      return 'Loan repayment schedule set';
+    case 'expenses':
+      return `${String(d.description ?? 'Expense')} ${amt('amount_paise')}`;
+    case 'expense_votes':
+      return `Voted ${String(d.vote ?? '')} on expense`;
+    case 'cash_ledger':
+      return `Cash ${d.direction === 'in' ? 'in' : 'out'} ${amt('amount_paise')}`;
+    case 'bank_statements':
+      return `Bank checked ${amt('closing_balance_paise')}`;
+    case 'members': {
+      const name = String(d.full_name ?? '').trim();
+      if (r.action === 'INSERT') return name ? `New member: ${name}` : 'New member joined';
+      if (r.action === 'DELETE') return name ? `Member removed: ${name}` : 'Member removed';
+      return name ? `Member updated: ${name}` : 'Member details updated';
+    }
+    case 'role_assignments': {
+      const who = memberName();
+      const role = roleLabel(String(d.role ?? ''));
+      if (r.action === 'DELETE') {
+        return `Role ended: ${role}${who ? ` · ${who}` : ''}`;
+      }
+      return `Role assigned: ${role}${who ? ` · ${who}` : ''}`;
+    }
+    case 'groups':
+      return 'Group rules changed';
     case 'group_invites':
       return r.action === 'INSERT' ? 'Invite code made' : 'Invite code cancelled';
-    // A table name is not a sentence.
-    default:
-      return r.action === 'INSERT' ? 'Something was added'
-        : r.action === 'DELETE' ? 'Something was removed'
-          : 'Something was changed';
+    case 'member_payouts': {
+      const who = memberName();
+      return `Member payout ${amt('amount_paise')}${who ? ` · ${who}` : ''}`;
+    }
+    case 'distributions':
+      return `Profit distribution ${amt('total_paise')}`;
+    case 'distribution_lines': {
+      const who = memberName();
+      return `Share payout ${amt('amount_paise')}${who ? ` · ${who}` : ''}`;
+    }
+    case 'meetings': {
+      if (r.action === 'DELETE') return 'Meeting deleted';
+      return `Meeting held${d.held_on ? ` · ${String(d.held_on)}` : ''}`;
+    }
+    case 'meeting_attendance': {
+      const who = memberName();
+      const st = String(d.status ?? 'recorded');
+      return `Attendance: ${st}${who ? ` · ${who}` : ''}`;
+    }
+    default: {
+      const clean = r.table_name.replace(/_/g, ' ');
+      return r.action === 'INSERT'
+        ? `Added ${clean}`
+        : r.action === 'DELETE'
+          ? `Removed ${clean}`
+          : `Updated ${clean}`;
+    }
   }
 }

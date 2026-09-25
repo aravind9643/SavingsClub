@@ -144,7 +144,7 @@ export function FundProvider({ children }: { children: ReactNode }) {
       message: unpaidQ.data.length === 1
         ? '1 member has not paid this month yet'
         : `${unpaidQ.data.length} members have not paid this month yet`,
-      to: '/contributions',
+      to: '/deposits',
     });
   }
   // Only worth saying once there IS a fund. On a brand-new group everything is
