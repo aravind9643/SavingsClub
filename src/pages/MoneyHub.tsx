@@ -750,6 +750,11 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
               </div>
             )}
 
+            {/* "Mark reported" sits inside a list row, where a notice cannot
+                go. Surfacing its failure here means a refused report is seen
+                rather than silently doing nothing. */}
+            <ErrorNote error={reportCash.error} />
+
             <Panel title="Cash Ledger" flush>
               {(cashQ.data ?? []).length === 0 ? (
                 <Empty icon={<IconWallet width={22} height={22} />}>No cash transactions logged yet.</Empty>

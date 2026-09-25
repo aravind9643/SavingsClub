@@ -215,6 +215,10 @@ export default function Deposits() {
             )
           ) : canOpen ? (
             <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
+              {/* open_period can refuse (non-officer, or both money offices
+                  unfilled). Without this the button just does nothing and the
+                  user has no idea why. */}
+              <ErrorNote error={openPeriod.error} />
               <Busy className="primary lg" pending={openPeriod.pending}
                 onClick={() => void openPeriod.run()}>
                 Start this month
