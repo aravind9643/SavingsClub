@@ -7,3 +7,7 @@ dist
 .DS_Store
 supabase/.branches
 supabase/.temp
+
+# tsc -b incremental caches. Machine-local, regenerated every build, and a
+# guaranteed merge conflict for anyone working on the same branch.
+*.tsbuildinfo
