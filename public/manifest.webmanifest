@@ -1,6 +1,6 @@
 {
-  "name": "Sanchay — Savings & Chit Fund",
-  "short_name": "Sanchay",
+  "name": "SavingsClub — Group Savings & Loans",
+  "short_name": "SavingsClub",
   "description": "Multi-tenant savings group ledger, monthly contributions, member loans, and audit log.",
   "start_url": "/",
   "display": "standalone",

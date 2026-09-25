@@ -74,7 +74,7 @@ export default function Login() {
     <div className="auth">
       <div className="auth-card">
         <div className="auth-logo">✦</div>
-        <h1>Sanchay</h1>
+        <h1>SavingsClub</h1>
         <p className="muted" style={{ marginTop: 8, marginBottom: 20 }}>
           {mode === 'signup'
             ? 'Create your sign-in. You can start a group or join one next.'

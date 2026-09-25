@@ -26,7 +26,7 @@ export default function Onboard({ onDone }: { onDone?: () => void }) {
         {mode === 'choose' && (
           <>
             <div className="auth-logo">✦</div>
-            <h1>{inApp ? 'Another group' : 'Sanchay'}</h1>
+            <h1>{inApp ? 'Another group' : 'SavingsClub'}</h1>
             <p className="muted" style={{ marginTop: 8, marginBottom: 22 }}>
               {inApp
                 ? 'You can belong to as many groups as you like. Each keeps its own money, members and rules.'

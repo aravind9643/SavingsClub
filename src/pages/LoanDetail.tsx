@@ -97,7 +97,7 @@ export default function LoanDetail() {
     const cleanPhone = borrowerPhone ? borrowerPhone.replace(/[^\d+]/g, '') : '';
     const dueAmt = loan.arrears_paise > 0 ? loan.arrears_paise : loan.total_due_paise;
     const text = `Hi ${loan.borrower_name},\n\n` +
-      `Friendly reminder from your savings group *${group?.name || 'Sanchay'}* regarding your active loan.\n` +
+      `Friendly reminder from your savings group *${group?.name || 'SavingsClub'}* regarding your active loan.\n` +
       `• Outstanding Principal: ${formatPaise(loan.outstanding_principal_paise)}\n` +
       `• ${loan.arrears_paise > 0 ? 'Arrears / Overdue' : 'Due Amount'}: ${formatPaise(dueAmt)}\n` +
       `• Due Date: ${fmtDate(loan.next_due_on ?? loan.due_on)}\n\n` +

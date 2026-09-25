@@ -553,7 +553,7 @@ function ReceiptSheet({
 *Paid:* ${formatPaise(receipt.amountPaise)} (${receipt.method.toUpperCase()})
 ${receipt.lateFeePaise > 0 ? `*Late fee:* ${formatPaise(receipt.lateFeePaise)}\n` : ''}*On:* ${fmtDate(receipt.paidOn)}
 ${fundTotalPaise !== undefined ? `*Total fund now:* ${formatPaise(fundTotalPaise)}\n` : ''}
-_Recorded on Sanchay_`;
+_Recorded on SavingsClub_`;
 
   async function share() {
     if (navigator.share) {
@@ -679,7 +679,7 @@ Hi ${member.full_name}, this is a reminder for ${monthLabel(period.period_month)
 *By:* ${fmtDate(period.due_date)} (a late fee applies after ${fmtDate(period.grace_date)})
 
 You can send it by UPI or bank transfer. Thank you!
-_Sent from Sanchay_`;
+_Sent from SavingsClub_`;
 
   async function share() {
     haptic(12);

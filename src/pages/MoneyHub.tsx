@@ -1028,7 +1028,7 @@ function TreasuryReportSheet({ onClose }: { onClose: () => void }) {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${group?.name || 'Sanchay'}_Treasury_${today()}.csv`);
+    link.setAttribute('download', `${group?.name || 'SavingsClub'}_Treasury_${today()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1036,14 +1036,14 @@ function TreasuryReportSheet({ onClose }: { onClose: () => void }) {
 
   const handleShareWhatsApp = () => {
     if (!fund) return;
-    const text = `📊 *${group?.name || 'Sanchay'} Financial Snapshot*\n` +
+    const text = `📊 *${group?.name || 'SavingsClub'} Financial Snapshot*\n` +
       `📅 Date: ${today()}\n\n` +
       `💰 *Total Fund*: ${formatPaise(fund.total_fund_paise)}\n` +
       `🏦 *In Bank*: ${formatPaise(fund.expected_bank_balance_paise)}\n` +
       `💵 *Cash in Hand*: ${formatPaise(fund.cash_float_paise)}\n` +
       `🤝 *Active Loans*: ${formatPaise(fund.outstanding_paise)}\n` +
       `🛡️ *Safety Reserve*: ${formatPaise(fund.reserve_paise)}\n\n` +
-      `_Automated summary from Sanchay._`;
+      `_Automated summary from SavingsClub._`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 

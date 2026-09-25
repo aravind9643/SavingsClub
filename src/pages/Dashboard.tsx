@@ -475,7 +475,7 @@ function MonthlyReportSheet({
 • Members: ${positions.length}
 • Collected so far: ${formatPaise(totalContributed)}
 
-_Sent from Sanchay_`;
+_Sent from SavingsClub_`;
 
   async function share() {
     haptic(12);

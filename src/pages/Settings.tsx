@@ -187,7 +187,7 @@ export default function Settings() {
         ) : (
           <div>
             <p className="dim" style={{ fontSize: '0.88rem', margin: 0, marginBottom: 12 }}>
-              If your group ran on paper before Sanchay, enter what each member had already saved so their shares and interest calculations start accurately.
+              If your group ran on paper before SavingsClub, enter what each member had already saved so their shares and interest calculations start accurately.
             </p>
             <button
               type="button"
@@ -435,7 +435,7 @@ function DataBackupPanel() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${(group?.name || 'Sanchay').replace(/\s+/g, '_')}_backup_${today()}.json`;
+      link.download = `${(group?.name || 'SavingsClub').replace(/\s+/g, '_')}_backup_${today()}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

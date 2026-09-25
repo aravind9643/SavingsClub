@@ -100,7 +100,7 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
           {initials(group?.name)}
         </span>
         <strong style={{ fontFamily: 'var(--display)', fontSize: '0.98rem' }}>
-          {group?.name ?? 'Sanchay'}
+          {group?.name ?? 'SavingsClub'}
         </strong>
         <IconChevronDown width={12} height={12} className="brand-caret" />
       </button>
