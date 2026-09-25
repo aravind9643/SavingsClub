@@ -13,7 +13,7 @@ import {
   faBuildingColumns, faPeopleGroup, faGear, faClockRotateLeft, faSun, faMoon,
   faRightFromBracket, faChevronRight, faChevronDown, faXmark, faPlus, faEllipsis, faCheck,
   faArrowUp, faArrowDown, faArrowLeft, faInbox, faTableColumns, faShareNodes, faCalendarCheck,
-  faUserPen, faLayerGroup,
+  faUserPen, faLayerGroup, faEye, faEyeSlash, faEnvelope, faLock, faKey,
 } from '@fortawesome/free-solid-svg-icons';
 
 config.autoAddCss = false;
@@ -47,6 +47,7 @@ export const IconContributions = IconDeposits;
 export const IconLoans = make(faHandHoldingDollar);
 export const IconLoan = IconLoans;
 export const IconTreasury = make(faVault);
+export const IconVault = IconTreasury;
 export const IconExpenses = make(faReceipt);
 export const IconCash = make(faWallet);
 export const IconWallet = make(faWallet);
@@ -76,3 +77,8 @@ export const IconArrowLeft = make(faArrowLeft);
 export const IconBack = IconArrowLeft;
 export const IconInbox = make(faInbox);
 export const IconShare = make(faShareNodes);
+export const IconEye = make(faEye);
+export const IconEyeSlash = make(faEyeSlash);
+export const IconLock = make(faLock);
+export const IconEmail = make(faEnvelope);
+export const IconKey = make(faKey);

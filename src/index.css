@@ -1017,6 +1017,13 @@ button.primary {
   color: var(--on-accent);
   box-shadow: 0 3px 12px color-mix(in srgb, var(--mint) 25%, transparent);
 }
+button.primary:disabled {
+  background: color-mix(in srgb, var(--mint) 16%, var(--surface-2));
+  color: color-mix(in srgb, var(--mint) 65%, var(--text-3));
+  border-color: color-mix(in srgb, var(--mint) 12%, transparent);
+  box-shadow: none;
+  opacity: 0.8;
+}
 button.danger  { background: var(--coral);  border-color: var(--coral);  color: #fff; }
 button.ghost   { background: transparent; }
 button.block   { width: 100%; }
@@ -1152,29 +1159,181 @@ button.tag:active { transform: scale(0.96); }
 /* auth screens */
 .auth {
   min-height: 100dvh;
-  display: grid; place-items: center;
-  padding: 24px 18px calc(24px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  place-items: center;
+  padding: 32px 18px calc(32px + env(safe-area-inset-bottom, 0px));
   background:
-    radial-gradient(90% 60% at 50% 0%, var(--violet-ghost), transparent 60%),
-    radial-gradient(70% 50% at 50% 100%, var(--mint-ghost), transparent 60%),
+    radial-gradient(110% 70% at 50% -10%, color-mix(in srgb, var(--mint-ghost) 120%, transparent), transparent 60%),
+    radial-gradient(100% 60% at 50% 110%, color-mix(in srgb, var(--violet-ghost) 120%, transparent), transparent 60%),
     var(--bg);
+  position: relative;
+  overflow: hidden;
 }
+.auth::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  width: min(600px, 100vw);
+  height: 240px;
+  background: radial-gradient(circle, var(--mint-ghost) 0%, transparent 70%);
+  pointer-events: none;
+  opacity: 0.7;
+}
+
 .auth-card {
-  width: 100%; max-width: 400px;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
+  width: 100%;
+  max-width: 420px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--bg-elev));
+  border: 1px solid color-mix(in srgb, var(--hairline) 90%, var(--mint-ghost));
   border-radius: var(--r-lg);
-  padding: 26px 22px;
-  box-shadow: var(--shadow-2);
-  animation: pop-in 0.5s var(--swift);
+  padding: 28px 24px;
+  box-shadow:
+    0 24px 64px -12px rgb(0 0 0 / 70%),
+    0 0 0 1px rgb(255 255 255 / 4%) inset;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  animation: pop-in 0.45s var(--swift);
+  position: relative;
+  z-index: 1;
 }
+
 .auth-logo {
-  width: 52px; height: 52px; margin-bottom: 16px;
-  display: grid; place-items: center;
-  border-radius: 17px;
-  background: linear-gradient(145deg, var(--mint), var(--violet));
-  color: #05201a;
-  font-family: var(--display); font-weight: 700; font-size: 1.15rem;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--mint) 0%, #34c787 50%, var(--violet) 100%);
+  color: #042416;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.3rem;
+  box-shadow: 0 10px 24px -4px color-mix(in srgb, var(--mint) 40%, transparent);
+}
+
+/* Choice cards for onboarding */
+.onboard-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 16px;
+  border-radius: var(--r);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s var(--spring), background 0.18s var(--ease), border-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  width: 100%;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+}
+.onboard-card:hover {
+  background: var(--surface-3);
+  border-color: color-mix(in srgb, var(--hairline) 40%, var(--accent));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 35%);
+}
+.onboard-card:active {
+  transform: scale(0.98);
+}
+.onboard-card-ico {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--surface-3);
+  border: 1px solid var(--hairline-soft);
+}
+.onboard-card-ico.mint {
+  background: var(--mint-ghost);
+  color: var(--mint);
+  border-color: color-mix(in srgb, var(--mint) 25%, transparent);
+}
+.onboard-card-ico.violet {
+  background: var(--violet-ghost);
+  color: var(--violet);
+  border-color: color-mix(in srgb, var(--violet) 25%, transparent);
+}
+.onboard-card-main {
+  flex: 1;
+  min-width: 0;
+}
+.onboard-card-title {
+  font-family: var(--display);
+  font-size: 0.96rem;
+  font-weight: 650;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.onboard-card-sub {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  margin-top: 3px;
+  line-height: 1.35;
+}
+.onboard-card-chev {
+  color: var(--text-3);
+  flex: none;
+  transition: transform 0.16s var(--ease), color 0.16s var(--ease);
+}
+.onboard-card:hover .onboard-card-chev {
+  transform: translateX(3px);
+  color: var(--text);
+}
+
+/* Password eye button inside field */
+.input-with-action {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.input-with-action input {
+  padding-right: 44px;
+}
+.input-action-btn {
+  position: absolute;
+  right: 6px;
+  top: 0;
+  bottom: 0;
+  margin: auto 0;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: 0;
+  color: var(--text-3);
+  padding: 0;
+  border-radius: var(--r-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+  transition: color 0.16s var(--ease), opacity 0.16s var(--ease), transform 0.1s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.input-action-btn:hover {
+  color: var(--text);
+}
+.input-action-btn:active,
+.input-action-btn:active:not(:disabled) {
+  transform: scale(0.9);
+  color: var(--text);
+}
+.input-action-btn:focus,
+.input-action-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.input-action-btn svg {
+  display: block;
+  pointer-events: none;
+  flex: none;
 }
 
 /* ------------------------------------------- small screen responsiveness -- */

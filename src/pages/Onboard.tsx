@@ -3,48 +3,114 @@ import { supabase } from '../lib/supabase';
 import { useMutation } from '../hooks/useQuery';
 import { useSession } from '../context/SessionContext';
 import { ErrorNote, Field, Busy, Notice } from '../components/ui';
+import {
+  IconPlus, IconArrowLeft, IconKey, IconVault, IconCheck,
+} from '../components/icons';
+import { haptic } from '../lib/haptics';
 import type { InvitePreview } from '../lib/types';
 
 type Mode = 'choose' | 'create' | 'join';
 
 /**
- * Shown when a signed-in person belongs to no group yet. Two ways in: start one,
- * or join an existing one with the code an officer gave them.
+ * Shown when a signed-in person belongs to no group yet, or wants to join/start another.
  */
 export default function Onboard({ onDone }: { onDone?: () => void }) {
   const { session, signOut, groups } = useSession();
   const [mode, setMode] = useState<Mode>('choose');
 
-  // Reached from inside the app there is somewhere to go back to; reached
-  // because this login has no group at all, the only way out is signing out.
   const inApp = groups.length > 0;
-  const back = () => setMode('choose');
+  const back = () => {
+    haptic(10);
+    setMode('choose');
+  };
 
   return (
     <div className="auth">
       <div className="auth-card">
         {mode === 'choose' && (
           <>
-            <div className="auth-logo">✦</div>
-            <h1>{inApp ? 'Another group' : 'SavingsClub'}</h1>
-            <p className="muted" style={{ marginTop: 8, marginBottom: 22 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+              <div className="auth-logo" style={{ marginBottom: 0 }}>
+                <IconVault width={24} height={24} />
+              </div>
+              <div>
+                <h1 style={{ fontFamily: 'var(--display)', fontSize: '1.45rem', fontWeight: 750, letterSpacing: '-0.02em', margin: 0 }}>
+                  {inApp ? 'Another group' : 'SavingsClub'}
+                </h1>
+                <span className="dim" style={{ fontSize: '0.78rem' }}>
+                  {inApp ? 'Expand your community savings' : 'Welcome to group savings'}
+                </span>
+              </div>
+            </div>
+
+            <p className="muted" style={{ marginTop: 4, marginBottom: 20, lineHeight: 1.45, fontSize: '0.88rem' }}>
               {inApp
-                ? 'You can belong to as many groups as you like. Each keeps its own money, members and rules.'
-                : <>You are signed in as <strong>{session?.user.email}</strong>. Start a
-                    group of your own, or join one you have been given a code for.</>}
+                ? 'You can belong to as many groups as you like. Each keeps its own money, members, and rules.'
+                : <>Signed in as <strong style={{ color: 'var(--text)' }}>{session?.user.email}</strong>. How would you like to get started?</>}
             </p>
 
-            <div className="btn-row stack">
-              <button className="primary lg" onClick={() => setMode('create')}>
-                Start a new group
+            {/* Interactive Choice Cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <button
+                type="button"
+                className="onboard-card"
+                onClick={() => {
+                  haptic(10);
+                  setMode('create');
+                }}
+              >
+                <div className="onboard-card-ico mint">
+                  <IconPlus width={20} height={20} />
+                </div>
+                <div className="onboard-card-main">
+                  <div className="onboard-card-title">Start a new group</div>
+                  <div className="onboard-card-sub">
+                    You become the admin, configure rules & invite friends
+                  </div>
+                </div>
               </button>
-              <button className="lg" onClick={() => setMode('join')}>
-                Join with a code
+
+              <button
+                type="button"
+                className="onboard-card"
+                onClick={() => {
+                  haptic(10);
+                  setMode('join');
+                }}
+              >
+                <div className="onboard-card-ico violet">
+                  <IconKey width={19} height={19} />
+                </div>
+                <div className="onboard-card-main">
+                  <div className="onboard-card-title">Join with an invite code</div>
+                  <div className="onboard-card-sub">
+                    Enter the code shared by your group organizer
+                  </div>
+                </div>
               </button>
+            </div>
+
+            {/* Bottom action */}
+            <div style={{ marginTop: 22, textAlign: 'center' }}>
               {inApp ? (
-                <button className="ghost" onClick={() => onDone?.()}>Cancel</button>
+                <button
+                  type="button"
+                  className="sec-link"
+                  style={{ fontSize: '0.86rem', color: 'var(--text-3)' }}
+                  onClick={() => onDone?.()}
+                >
+                  Cancel and return
+                </button>
               ) : (
-                <button className="ghost" onClick={() => void signOut()}>Sign out</button>
+                <button
+                  type="button"
+                  className="sec-link"
+                  style={{ fontSize: '0.86rem', color: 'var(--text-3)' }}
+                  onClick={() => void signOut()}
+                >
+                  Sign out
+                </button>
               )}
             </div>
           </>
@@ -66,26 +132,40 @@ function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => vo
   const create = useMutation(
     async () => {
       const { data, error } = await supabase.rpc('create_group', {
-        p_group_name: groupName,
-        p_full_name: fullName,
-        p_phone: phone || null,
+        p_group_name: groupName.trim(),
+        p_full_name: fullName.trim(),
+        p_phone: phone.trim() || null,
       });
       if (error) throw error;
-      // The new group is now this login's active one server-side; pick up the
-      // claim before any query runs against it.
       await supabase.auth.refreshSession();
       return data;
     },
     { onSuccess: () => { refresh(); onDone?.(); } },
   );
 
+  const ok = Boolean(groupName.trim() && fullName.trim());
+
   return (
     <>
-      <h1>Start your group</h1>
-      <p className="muted" style={{ marginTop: 8, marginBottom: 20 }}>
-        You become the admin, which lets you invite everyone else and set the
-        rules.
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={onBack}
+          aria-label="Back"
+          style={{ width: 36, height: 36 }}
+        >
+          <IconArrowLeft width={15} height={15} />
+        </button>
+        <div>
+          <h1 style={{ fontFamily: 'var(--display)', fontSize: '1.35rem', fontWeight: 750, margin: 0 }}>
+            Start your group
+          </h1>
+          <span className="dim" style={{ fontSize: '0.78rem' }}>
+            You will become the admin
+          </span>
+        </div>
+      </div>
 
       <ErrorNote error={create.error} />
 
@@ -93,51 +173,50 @@ function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => vo
         <input
           value={groupName}
           onChange={(e) => setGroupName(e.target.value)}
-          placeholder="Friends Savings Group"
+          placeholder="e.g. Friends Savings Club"
           autoFocus
         />
       </Field>
 
-      <Field label="Your name">
+      <Field label="Your full name">
         <input
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
-          placeholder="Your full name"
+          placeholder="e.g. Aravind Merugu"
         />
       </Field>
 
       <Field label="Your phone (optional)">
         <input
           inputMode="tel"
+          type="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          placeholder="+91 …"
+          placeholder="+91 98765 43210"
         />
       </Field>
 
-      <div style={{ marginTop: 16 }}>
-        <Notice tone="warn">
-          Give the cashier and accountant roles to two different people once
-          everyone has joined — money cannot be recorded until you do.
+      <div style={{ marginTop: 14 }}>
+        <Notice tone="good">
+          You will configure monthly contributions, interest rate, and officer roles once created.
         </Notice>
       </div>
 
-      <div className="btn-row stack">
+      <div className="btn-row stack" style={{ marginTop: 18 }}>
         <Busy
           className="primary lg"
           pending={create.pending}
-          disabled={!groupName.trim() || !fullName.trim()}
+          disabled={!ok}
           onClick={() => void create.run()}
         >
-          Create the group
+          Create group
         </Busy>
-        <button className="ghost" onClick={onBack}>Back</button>
       </div>
     </>
   );
 }
 
-/** Codes are shown as ABCD-EFGH-JKLM; the server normalises whatever is typed. */
+/** Codes are shown as ABCD-EFGH-JKLM; normalises whatever is typed. */
 function formatCode(raw: string): string {
   const clean = raw.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 12);
   return clean.replace(/(.{4})(?=.)/g, '$1-');
@@ -163,7 +242,7 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
     async () => {
       const { error } = await supabase.rpc('join_group_with_code', {
         p_code: code,
-        p_full_name: fullName,
+        p_full_name: fullName.trim(),
       });
       if (error) throw error;
       await supabase.auth.refreshSession();
@@ -175,64 +254,107 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
 
   return (
     <>
-      <h1>Join a group</h1>
-      <p className="muted" style={{ marginTop: 8, marginBottom: 20 }}>
-        Enter the code someone from the group gave you.
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={onBack}
+          aria-label="Back"
+          style={{ width: 36, height: 36 }}
+        >
+          <IconArrowLeft width={15} height={15} />
+        </button>
+        <div>
+          <h1 style={{ fontFamily: 'var(--display)', fontSize: '1.35rem', fontWeight: 750, margin: 0 }}>
+            Join a group
+          </h1>
+          <span className="dim" style={{ fontSize: '0.78rem' }}>
+            Enter your 12-character invite code
+          </span>
+        </div>
+      </div>
 
       <ErrorNote error={check.error ?? join.error} />
 
       <Field label="Invite code">
-        <input
-          value={code}
-          onChange={(e) => { setCode(formatCode(e.target.value)); setPreview(null); }}
-          placeholder="ABCD-EFGH-JKLM"
-          autoCapitalize="characters"
-          autoComplete="off"
-          spellCheck={false}
-          style={{
-            fontFamily: 'var(--mono, ui-monospace, monospace)',
-            letterSpacing: '0.12em',
-            textAlign: 'center',
-            fontSize: '1.05rem',
-          }}
-          autoFocus
-        />
+        <div style={{ position: 'relative' }}>
+          <input
+            value={code}
+            onChange={(e) => {
+              setCode(formatCode(e.target.value));
+              setPreview(null);
+            }}
+            placeholder="ABCD-EFGH-JKLM"
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+            style={{
+              fontFamily: 'var(--mono, ui-monospace, monospace)',
+              letterSpacing: '0.14em',
+              textAlign: 'center',
+              fontSize: '1.15rem',
+              fontWeight: 700,
+              padding: '12px 14px',
+            }}
+            autoFocus
+          />
+        </div>
       </Field>
 
+      {/* Invalid invite */}
       {preview && !preview.valid && (
         <div style={{ marginTop: 14 }}>
-          <Notice tone="danger">{preview.reason ?? 'That code cannot be used'}</Notice>
+          <Notice tone="danger">{preview.reason ?? 'That invite code is invalid or expired'}</Notice>
         </div>
       )}
 
+      {/* Valid group preview card */}
       {preview?.valid && (
-        <>
-          <div style={{ marginTop: 14 }}>
-            <Notice tone="good">
-              <strong>{preview.group_name}</strong> · {preview.member_count} member
-              {preview.member_count === 1 ? '' : 's'}
-            </Notice>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 16 }}>
+          <div
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid color-mix(in srgb, var(--mint) 30%, var(--hairline))',
+              borderRadius: 'var(--r)',
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <span
+              className="row-ico mint"
+              style={{ width: 42, height: 42, borderRadius: 13 }}
+            >
+              <IconCheck width={18} height={18} />
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: '1.02rem' }}>
+                {preview.group_name}
+              </div>
+              <div className="dim" style={{ fontSize: '0.78rem' }}>
+                {preview.member_count} member{preview.member_count === 1 ? '' : 's'}
+              </div>
+            </div>
           </div>
 
-          <Field label="Your name">
+          <Field label="Your full name in this group">
             <input
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Your full name"
+              placeholder="e.g. Nagaraju Sandela"
               autoFocus
             />
           </Field>
 
-          <div style={{ marginTop: 14 }}>
-            <Notice tone="warn">
-              Someone from the group has to let you in before you can see the money.
-            </Notice>
-          </div>
-        </>
+          <Notice tone="warn">
+            An officer must approve your join request before you can see group transactions.
+          </Notice>
+        </div>
       )}
 
-      <div className="btn-row stack">
+      {/* Action Button */}
+      <div className="btn-row stack" style={{ marginTop: 18 }}>
         {preview?.valid ? (
           <Busy
             className="primary lg"
@@ -252,7 +374,6 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
             Check the code
           </Busy>
         )}
-        <button className="ghost" onClick={onBack}>Back</button>
       </div>
     </>
   );
@@ -260,10 +381,6 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
 
 /**
  * Shown while a join request is waiting on an officer.
- *
- * Joining a second group makes it the active one, so someone who already had a
- * working group lands here and would otherwise be cut off from it. Every group
- * they can actually use is listed, not just the first.
  */
 export function AwaitingApproval() {
   const { group, session, signOut, refresh, groups, switchGroup } = useSession();
@@ -282,24 +399,37 @@ export function AwaitingApproval() {
   return (
     <div className="auth">
       <div className="auth-card">
-        <div className="auth-logo">⏳</div>
-        <h1>Waiting for approval</h1>
-        <p className="muted" style={{ marginTop: 10 }}>
-          You asked to join <strong>{group?.name}</strong> as{' '}
-          <strong>{session?.user.email}</strong>. The cashier, accountant or
-          admin will let you in. You will see the money once they do.
+        <div className="auth-logo" style={{ background: 'linear-gradient(135deg, var(--amber), #f78c2a)' }}>
+          <IconVault width={24} height={24} />
+        </div>
+        <h1 style={{ fontFamily: 'var(--display)', fontSize: '1.45rem', fontWeight: 750 }}>
+          Waiting for approval
+        </h1>
+        <p className="muted" style={{ marginTop: 8, lineHeight: 1.5 }}>
+          You requested to join <strong style={{ color: 'var(--text)' }}>{group?.name}</strong> as{' '}
+          <strong style={{ color: 'var(--text)' }}>{session?.user.email}</strong>.
         </p>
+
+        <div style={{ margin: '16px 0' }}>
+          <Notice tone="warn">
+            An admin, cashier, or accountant must approve your request before ledger access is granted.
+          </Notice>
+        </div>
 
         <ErrorNote error={error} />
 
         <div className="btn-row stack">
-          <button className="primary lg" onClick={() => refresh()}>Check again</button>
+          <button type="button" className="primary lg" onClick={() => refresh()}>
+            Check approval status
+          </button>
           {others.map((g) => (
-            <button key={g.id} className="lg" onClick={() => void go(g.id)}>
+            <button key={g.id} type="button" className="lg" onClick={() => void go(g.id)}>
               Go to {g.name}
             </button>
           ))}
-          <button className="ghost" onClick={() => void signOut()}>Sign out</button>
+          <button type="button" className="ghost" onClick={() => void signOut()}>
+            Sign out
+          </button>
         </div>
       </div>
     </div>
