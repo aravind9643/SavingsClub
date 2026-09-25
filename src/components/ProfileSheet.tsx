@@ -63,14 +63,14 @@ export default function ProfileSheet({
             placeholder="+91 98765 43210"
           />
         </Field>
-        <Field label="Nominee name">
+        <Field label="Family contact name">
           <input
             value={nomineeName}
             onChange={(e) => setNomineeName(e.target.value)}
             placeholder="Contact if you cannot be reached"
           />
         </Field>
-        <Field label="Nominee phone">
+        <Field label="Family contact phone">
           <input
             type="tel"
             value={nomineePhone}
@@ -162,7 +162,7 @@ export default function ProfileSheet({
           icon={<IconUserEdit width={18} height={18} />}
           iconTone="violet"
           title="Edit profile"
-          sub="Update phone and nominee details"
+          sub="Update your phone and family contact"
           onClick={() => {
             haptic(10);
             setPhone(member?.phone ?? '');

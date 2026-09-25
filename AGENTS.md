@@ -63,11 +63,14 @@ src/
     ui.tsx             Hero Chip Tag List Row Notice Panel Stat Sheet Field Busy …
     icons.tsx          Font Awesome wrappers
     GroupSwitcher.tsx  bottom sheet listing your groups
+    ProfileSheet.tsx   self-edit: phone + family contact (the only member self-write)
   lib/
     money.ts           paise helpers; money is NEVER a float
     types.ts           row shapes returned by views and RPCs
     supabase.ts        client + friendlyError
-  pages/               14 screens
+  pages/               12 screens. The money screens were consolidated:
+                       Contributions -> Deposits, and Cash + Bank + Expenses
+                       -> MoneyHub (Treasury). More -> Community.
 supabase/
   migrations/          0001-0037, applied in numerical order
   tests/
@@ -142,15 +145,29 @@ group_id = current_group_id() and in_current_group()
 
 ### Money functions are SECURITY DEFINER — RLS does NOT protect them
 
-This is the sharpest edge in the codebase. Ten aggregates
+This is the sharpest edge in the codebase. Sixteen aggregates
 (`fn_fund_total_paise`, `total_outstanding_paise`, `cash_float_balance_paise`,
 …) run as definer and therefore **bypass RLS entirely**. Each takes
-`p_group_id uuid default current_group_id()` and filters on it explicitly.
+`p_group_id uuid default current_group_id()`, filters on it explicitly, **and
+calls `fn_assert_member_of(p_group_id)` before counting anything**.
 
-If one loses that filter it sums *every tenant's money together*. And because
-the loan cap check in `cast_loan_vote()` calls the same function the dashboard
-does, **the screen and the enforcement would agree on the same wrong number**
-and authorise loans that breach the reserve. Nothing throws.
+Both halves are load-bearing, and they answer different questions:
+
+| | |
+|---|---|
+| the `group_id` filter | makes the figure **correct** — without it the function sums every tenant's money together |
+| `fn_assert_member_of()` | makes the figure **yours** — without it anyone with a login can pass any group's uuid and read its balance |
+
+0012 added the first and not the second, and that gap was live for 25
+migrations: `fn_fund_total_paise('<someone else's group>')` returned their
+actual balance over PostgREST, while every policy, table read and RPC in the
+app correctly refused. See 0037 — the fix asserts **membership, not the claim**,
+because the attack is a forged claim.
+
+If one loses the `group_id` filter it sums every tenant's money together. And
+because the loan cap check in `cast_loan_vote()` calls the same function the
+dashboard does, **the screen and the enforcement would agree on the same wrong
+number** and authorise loans that breach the reserve. Nothing throws.
 
 When an RPC has already locked a group, it passes that group id explicitly
 rather than re-reading the claim — the claim could name a different group.
@@ -376,7 +393,7 @@ every money rule. Running them then found, in the same code:
 | `fmt_rupees(numeric)` did not exist | `sum()` returns numeric, not bigint |
 | `role_of()` was nondeterministic | The SQL is *correct*; the bug is what it leaves unsaid |
 | No table had a `SELECT` grant | The code is right and the platform was filling a gap |
-| 14 aggregates answered any caller | Every policy was right; these bypass policies |
+| 16 aggregates answered any caller | Every policy was right; these bypass policies |
 
 Three of those six are invisible in the source text by construction. Replay
 first, then assert — and write the assertion so it fails when the guard is
@@ -671,9 +688,11 @@ refused, export refused. Then:
 
     select fn_fund_total_paise('<group A id>');   ->  505000
 
-Group A's actual balance. **14 SECURITY DEFINER aggregates**, all granted to
-`authenticated`, all taking `p_group_id`, all reachable over PostgREST with
-nothing but a valid login and a group's uuid.
+Group A's actual balance. **16 SECURITY DEFINER aggregates** (the first count
+said 14 — the probe that found them matched only `%paise%`/`%count%` names and
+missed `loan_next_due` and `member_paid_out_paise`), all granted to
+`authenticated`, all reachable over PostgREST with nothing but a valid login
+and a group's uuid.
 
 0012 gave them an explicit group so the figures would be *correct* under
 multi-tenancy. That fixed the arithmetic and left them open: they are SECURITY
@@ -766,4 +785,4 @@ When touching database schema or migrations:
 - Check migration status: `npx supabase migration list`
 - Dry run migrations: `npx supabase db push --dry-run`
 - Push migrations: `npx supabase db push --yes` (never use `db reset` without explicit user permission).
-- Remote status: Migrations 0001–0037 are fully applied on the remote database. Tables like `distributions`, `distribution_lines`, `meetings`, `loan_schedule` and their RPCs are live.
+- Remote status: Migrations 0001–0037 are fully applied on the remote database. Tables like `distributions`, `distribution_lines`, `meetings`, `meeting_attendance`, `member_payouts` and `loan_instalments` (created by `0027_loan_schedule.sql` — the file is named for the concept, the table is not) and their RPCs are live.

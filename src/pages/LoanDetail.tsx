@@ -98,7 +98,7 @@ export default function LoanDetail() {
     const dueAmt = loan.arrears_paise > 0 ? loan.arrears_paise : loan.total_due_paise;
     const text = `Hi ${loan.borrower_name},\n\n` +
       `Friendly reminder from your savings group *${group?.name || 'SavingsClub'}* regarding your active loan.\n` +
-      `• Outstanding Principal: ${formatPaise(loan.outstanding_principal_paise)}\n` +
+      `• Still to repay: ${formatPaise(loan.outstanding_principal_paise)}\n` +
       `• ${loan.arrears_paise > 0 ? 'Arrears / Overdue' : 'Due Amount'}: ${formatPaise(dueAmt)}\n` +
       `• Due Date: ${fmtDate(loan.next_due_on ?? loan.due_on)}\n\n` +
       `Please coordinate with the cashier to settle your instalment. Thank you!`;

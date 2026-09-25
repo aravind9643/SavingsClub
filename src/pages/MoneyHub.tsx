@@ -138,7 +138,7 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
     <>
       <Screen
         title="Treasury"
-        sub="Bank balance, cash float & expenses"
+        sub="Bank balance, cash in hand & spending"
         action={
           <button
             className="icon-btn"
@@ -247,7 +247,7 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                             borderRadius: 'var(--r-full)',
                             transition: 'width 0.6s var(--swift)',
                           }}
-                          title={`Cash Float: ${cPct}%`}
+                          title={`Cash in hand: ${cPct}%`}
                         />
                       )}
                       {lPct > 0 && (
@@ -1168,8 +1168,8 @@ function TreasuryReportSheet({ onClose }: { onClose: () => void }) {
       ['Metric', 'Amount (Rs)'],
       ['Total Group Fund', (fund.total_fund_paise / 100).toFixed(2)],
       ['Expected in Bank', (fund.expected_bank_balance_paise / 100).toFixed(2)],
-      ['Cash Float in Hand', (fund.cash_float_paise / 100).toFixed(2)],
-      ['Outstanding on Loan', (fund.outstanding_paise / 100).toFixed(2)],
+      ['Cash in hand', (fund.cash_float_paise / 100).toFixed(2)],
+      ['Still out on loan', (fund.outstanding_paise / 100).toFixed(2)],
       ['Safety Reserve Kept Back', (fund.reserve_paise / 100).toFixed(2)],
       ['Total Expenses Paid', (fund.expenses_paise / 100).toFixed(2)],
     ];
