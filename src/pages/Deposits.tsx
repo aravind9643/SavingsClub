@@ -492,6 +492,11 @@ export default function Deposits() {
         <ReminderSheet
           member={reminding.member}
           period={reminding.period}
+          // What they still owe, not the whole month. Chasing a member for
+          // Rs.1000 when they have already paid Rs.600 is how a group stops
+          // trusting the app -- and it is the same mistake the chase-list
+          // itself used to make before 0026.
+          alreadyPaid={paidMap.get(reminding.member.id)?.paid ?? 0}
           groupName={group?.name ?? 'Savings Group'}
           onClose={() => setReminding(null)}
         />
@@ -789,19 +794,24 @@ function UnpaidActionSheet({
 }
 
 function ReminderSheet({
-  member, period, groupName, onClose,
+  member, period, alreadyPaid, groupName, onClose,
 }: {
   member: Member;
   period: ContributionPeriod;
+  /** Paid toward this month already, so the reminder can ask for the rest. */
+  alreadyPaid: number;
   groupName: string;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
 
+  const owed = Math.max(0, period.amount_paise - alreadyPaid);
+
   const text = `📢 *${groupName}*
 Hi ${member.full_name}, this is a reminder for ${monthLabel(period.period_month)}.
 
-*To pay:* ${formatPaise(period.amount_paise)}
+${alreadyPaid > 0 ? `*Already paid:* ${formatPaise(alreadyPaid)}
+` : ''}*To pay:* ${formatPaise(owed)}
 *By:* ${fmtDate(period.due_date)} (a late fee applies after ${fmtDate(period.grace_date)})
 
 You can send it by UPI or bank transfer. Thank you!
