@@ -11,7 +11,7 @@ import {
 import { haptic } from '../lib/haptics';
 import {
   Hero, Chip, Panel, List, Row, Empty, Sheet, Field, AmountField,
-  Busy, ErrorNote, Notice, Stat, Segments, fmtDate, fmtDateTime,
+  Busy, ErrorNote, Notice, Stat, Segments, SkeletonList, fmtDate, fmtDateTime,
 } from '../components/ui';
 import {
   IconPlus, IconBank, IconWallet, IconExpenses, IconCheck, IconArrowUp,
@@ -665,9 +665,12 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
             )}
 
             <Panel title="Statement History" flush>
-              {(bankQ.data ?? []).length === 0 ? (
+              {bankQ.loading && !bankQ.data ? (
+                <SkeletonList rows={3} />
+              ) : (bankQ.data ?? []).length === 0 ? (
                 <Empty icon={<IconBank width={22} height={22} />}>
-                  No statements recorded yet. Reconcile once each month to verify bank balances.
+                  No bank checks yet. Check the bank once a month so the group
+                  knows the books match.
                 </Empty>
               ) : (
                 <List>
@@ -756,8 +759,12 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
             <ErrorNote error={reportCash.error} />
 
             <Panel title="Cash in and out" flush>
-              {(cashQ.data ?? []).length === 0 ? (
-                <Empty icon={<IconWallet width={22} height={22} />}>No cash transactions logged yet.</Empty>
+              {cashQ.loading && !cashQ.data ? (
+                <SkeletonList rows={3} />
+              ) : (cashQ.data ?? []).length === 0 ? (
+                <Empty icon={<IconWallet width={22} height={22} />}>
+                  No cash has come in or gone out yet.
+                </Empty>
               ) : (
                 <List>
                   {(cashQ.data ?? []).map((c) => (
@@ -837,8 +844,12 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
             )}
 
             <Panel title="What the group spent" flush>
-              {paidExpenses.length === 0 ? (
-                <Empty icon={<IconExpenses width={22} height={22} />}>No approved expenses recorded yet.</Empty>
+              {expensesQ.loading && !expensesQ.data ? (
+                <SkeletonList rows={3} />
+              ) : paidExpenses.length === 0 ? (
+                <Empty icon={<IconExpenses width={22} height={22} />}>
+                  The group has not spent anything yet.
+                </Empty>
               ) : (
                 <List>
                   {paidExpenses.map((exp) => (
