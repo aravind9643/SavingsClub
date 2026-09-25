@@ -173,7 +173,7 @@ export default function Settings() {
         </div>
       </Panel>
 
-      <Panel title="Starting Balances (Paper Ledger Migration)">
+      <Panel title="What the group already had">
         {config.opening_locked ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>

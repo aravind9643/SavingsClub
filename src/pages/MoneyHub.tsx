@@ -755,7 +755,7 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                 rather than silently doing nothing. */}
             <ErrorNote error={reportCash.error} />
 
-            <Panel title="Cash Ledger" flush>
+            <Panel title="Cash in and out" flush>
               {(cashQ.data ?? []).length === 0 ? (
                 <Empty icon={<IconWallet width={22} height={22} />}>No cash transactions logged yet.</Empty>
               ) : (
@@ -836,7 +836,7 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
               </Panel>
             )}
 
-            <Panel title="Expense Ledger" flush>
+            <Panel title="What the group spent" flush>
               {paidExpenses.length === 0 ? (
                 <Empty icon={<IconExpenses width={22} height={22} />}>No approved expenses recorded yet.</Empty>
               ) : (

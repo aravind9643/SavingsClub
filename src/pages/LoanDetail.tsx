@@ -97,11 +97,11 @@ export default function LoanDetail() {
     const cleanPhone = borrowerPhone ? borrowerPhone.replace(/[^\d+]/g, '') : '';
     const dueAmt = loan.arrears_paise > 0 ? loan.arrears_paise : loan.total_due_paise;
     const text = `Hi ${loan.borrower_name},\n\n` +
-      `Friendly reminder from your savings group *${group?.name || 'SavingsClub'}* regarding your active loan.\n` +
+      `A reminder from your savings group *${group?.name || 'SavingsClub'}* about your loan.\n` +
       `• Still to repay: ${formatPaise(loan.outstanding_principal_paise)}\n` +
-      `• ${loan.arrears_paise > 0 ? 'Arrears / Overdue' : 'Due Amount'}: ${formatPaise(dueAmt)}\n` +
-      `• Due Date: ${fmtDate(loan.next_due_on ?? loan.due_on)}\n\n` +
-      `Please coordinate with the cashier to settle your instalment. Thank you!`;
+      `• ${loan.arrears_paise > 0 ? 'Behind by' : 'To pay now'}: ${formatPaise(dueAmt)}\n` +
+      `• ${loan.arrears_paise > 0 ? 'Next payment was due' : 'By'}: ${fmtDate(loan.next_due_on ?? loan.due_on)}\n\n` +
+      `Please pay the cashier when you can. Thank you!`;
     const url = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
       : `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -230,7 +230,7 @@ export default function LoanDetail() {
               </div>
               <div className="dim" style={{ fontSize: '0.82rem', marginTop: 2 }}>
                 {loan.arrears_paise > 0
-                  ? `${formatPaise(loan.arrears_paise)} in arrears`
+                  ? `${formatPaise(loan.arrears_paise)} behind`
                   : `${loan.days_overdue} days past due date`}
               </div>
             </div>
@@ -291,7 +291,7 @@ export default function LoanDetail() {
                   gap: 4,
                 }}
                 onClick={handleWhatsAppReminder}
-                title="Send instalment reminder"
+                title="Send a payment reminder"
               >
                 <IconShare width={12} height={12} />
                 Remind
