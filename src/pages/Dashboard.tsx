@@ -249,20 +249,24 @@ export default function Dashboard() {
 
         {/* ======================================= 3. GROUP VAULT (COMMUNITY FUND) */}
         {fund && (
-          <Panel
-            title="Group Vault"
-            action={
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px' }}>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>
+                Group Vault
+              </h2>
               <button
+                type="button"
                 className="sec-link"
+                style={{ fontSize: '0.82rem', fontWeight: 600 }}
                 onClick={() => {
                   haptic(10);
                   setReportOpen(true);
                 }}
               >
-                Statement
+                Statement →
               </button>
-            }
-          >
+            </div>
+
             <Hero
               label="Total Pooled Savings"
               paise={fund.total_fund_paise}
@@ -288,19 +292,25 @@ export default function Dashboard() {
 
             <div
               style={{
-                marginTop: 14,
-                padding: '10px 14px',
-                background: 'var(--surface-2)',
+                padding: '11px 14px',
+                background: 'var(--surface)',
                 borderRadius: 'var(--r-sm)',
-                fontSize: '0.84rem',
+                border: '1px solid var(--hairline)',
+                fontSize: '0.82rem',
                 color: 'var(--text-2)',
                 lineHeight: 1.45,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 9,
               }}
             >
-              🛡️ <b>{formatPaiseShort(fund.reserve_paise)}</b> is locked as a safety reserve (never lent out).
-              {config ? ` Group earns ${(config.loan_rate_bp / 100).toFixed(1)}% monthly interest on active loans.` : ''}
+              <span style={{ flex: 'none', fontSize: '1.05rem' }}>🛡️</span>
+              <div>
+                <b>{formatPaiseShort(fund.reserve_paise)}</b> safety reserve locked.
+                {config ? ` Group earns ${(config.loan_rate_bp / 100).toFixed(1)}% monthly interest on active loans.` : ''}
+              </div>
             </div>
-          </Panel>
+          </div>
         )}
 
         <div className="two-col">

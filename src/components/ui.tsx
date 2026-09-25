@@ -62,7 +62,7 @@ export function Hero({
     : 0;
   // An empty track carries no information — drop it until there is something
   // to measure.
-  const showMeter = Boolean(meter && meter.limit > 0);
+  const showMeter = Boolean(meter && meter.limit > 0 && meter.value > 0);
 
   return (
     <div className="hero">
