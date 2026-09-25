@@ -14,7 +14,7 @@ import GroupSwitcher from './components/GroupSwitcher';
 import ProfileSheet from './components/ProfileSheet';
 import { Loading, initials, resetScrollLock } from './components/ui';
 import {
-  IconHome, IconDeposits, IconLoans, IconWallet, IconMembers, IconChevronDown,
+  IconHome, IconDeposits, IconLoans, IconTreasury, IconMembers, IconChevronDown,
 } from './components/icons';
 import { haptic } from './lib/haptics';
 
@@ -31,7 +31,7 @@ const TABS = [
   { to: '/', label: 'Home', Icon: IconHome, end: true },
   { to: '/deposits', label: 'Deposits', Icon: IconDeposits },
   { to: '/loans', label: 'Loans', Icon: IconLoans },
-  { to: '/treasury', label: 'Treasury', Icon: IconWallet },
+  { to: '/treasury', label: 'Treasury', Icon: IconTreasury },
   { to: '/community', label: 'Community', Icon: IconMembers },
 ];
 

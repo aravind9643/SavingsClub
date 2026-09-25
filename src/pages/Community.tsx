@@ -10,7 +10,7 @@ import {
   Segments, fmtDate, SkeletonList,
 } from '../components/ui';
 import {
-  IconSettings, IconAudit, IconShare, IconContributions,
+  IconSettings, IconAudit, IconShare, IconMeeting,
 } from '../components/icons';
 import type {
   GroupInvite, PendingMember, Meeting, AttendanceSummary, Attendance, Member, MemberPosition,
@@ -335,7 +335,7 @@ export default function Community() {
         <Panel title="Governance & Meetings" flush>
           <List>
             <Row
-              icon={<IconContributions width={18} height={18} />}
+              icon={<IconMeeting width={18} height={18} />}
               iconTone="mint"
               title="Monthly Meetings"
               sub={latestMeeting ? `Last held on ${fmtDate(latestMeeting.held_on)}` : 'Record attendance & view meeting records'}
@@ -716,7 +716,7 @@ function MeetingSheet({ onClose }: { onClose: () => void }) {
               {meetings.map((mt) => (
                 <Row
                   key={mt.id}
-                  icon={<IconContributions width={16} height={16} />}
+                  icon={<IconMeeting width={16} height={16} />}
                   iconTone="mint"
                   title={fmtDate(mt.held_on)}
                   sub={mt.note || 'Monthly meeting'}

@@ -9,10 +9,11 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { config, type IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
-  faHouse, faCalendarCheck, faIndianRupeeSign, faReceipt, faWallet,
-  faBuildingColumns, faUserGroup, faGear, faClipboardList, faSun, faMoon,
+  faHouse, faPiggyBank, faHandHoldingDollar, faVault, faReceipt, faWallet,
+  faBuildingColumns, faPeopleGroup, faGear, faClockRotateLeft, faSun, faMoon,
   faRightFromBracket, faChevronRight, faChevronDown, faXmark, faPlus, faEllipsis, faCheck,
-  faArrowUp, faArrowDown, faInbox, faTableColumns, faHandHoldingDollar, faShareNodes,
+  faArrowUp, faArrowDown, faInbox, faTableColumns, faShareNodes, faCalendarCheck,
+  faUserPen, faLayerGroup,
 } from '@fortawesome/free-solid-svg-icons';
 
 config.autoAddCss = false;
@@ -41,19 +42,26 @@ function make(icon: IconDefinition) {
 /* navigation */
 export const IconHome = make(faHouse);
 export const IconDashboard = make(faTableColumns);
-export const IconDeposits = make(faCalendarCheck);
+export const IconDeposits = make(faPiggyBank);
 export const IconContributions = IconDeposits;
-export const IconLoans = make(faIndianRupeeSign);
+export const IconLoans = make(faHandHoldingDollar);
+export const IconLoan = IconLoans;
+export const IconTreasury = make(faVault);
 export const IconExpenses = make(faReceipt);
 export const IconCash = make(faWallet);
 export const IconWallet = make(faWallet);
 export const IconBank = make(faBuildingColumns);
-export const IconMembers = make(faUserGroup);
+export const IconMembers = make(faPeopleGroup);
+export const IconCommunity = IconMembers;
 export const IconSettings = make(faGear);
-export const IconAudit = make(faClipboardList);
+export const IconAudit = make(faClockRotateLeft);
+export const IconHistory = IconAudit;
+export const IconMeeting = make(faCalendarCheck);
 export const IconMore = make(faEllipsis);
 
 /* actions and states */
+export const IconUserEdit = make(faUserPen);
+export const IconSwitch = make(faLayerGroup);
 export const IconSun = make(faSun);
 export const IconMoon = make(faMoon);
 export const IconLogout = make(faRightFromBracket);
@@ -65,5 +73,4 @@ export const IconCheck = make(faCheck);
 export const IconArrowUp = make(faArrowUp);
 export const IconArrowDown = make(faArrowDown);
 export const IconInbox = make(faInbox);
-export const IconLoan = make(faHandHoldingDollar);
 export const IconShare = make(faShareNodes);

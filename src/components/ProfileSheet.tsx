@@ -7,7 +7,7 @@ import {
   Sheet, List, Row, Field, Busy, ErrorNote, initials, Tag, roleLabel,
 } from './ui';
 import {
-  IconSun, IconMoon, IconLogout, IconMembers, IconWallet,
+  IconSun, IconMoon, IconLogout, IconUserEdit, IconSwitch,
 } from './icons';
 import { haptic } from '../lib/haptics';
 
@@ -159,7 +159,7 @@ export default function ProfileSheet({
 
       <List>
         <Row
-          icon={<IconMembers width={18} height={18} />}
+          icon={<IconUserEdit width={18} height={18} />}
           iconTone="violet"
           title="Edit profile"
           sub="Update phone and nominee details"
@@ -175,7 +175,7 @@ export default function ProfileSheet({
 
         {openSwitcher && (
           <Row
-            icon={<IconWallet width={18} height={18} />}
+            icon={<IconSwitch width={18} height={18} />}
             iconTone="mint"
             title="Switch group"
             sub={group ? `${group.name}${groups.length > 1 ? ` · ${groups.length} groups` : ''}` : 'Change active group'}

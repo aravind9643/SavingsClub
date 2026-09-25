@@ -13,8 +13,7 @@ import {
   initials, ago, fmtDate, SkeletonList, Sheet, roleLabel, labelForStatus,
 } from '../components/ui';
 import {
-  IconPlus, IconArrowUp, IconArrowDown, IconInbox, IconCheck, IconShare,
-  IconWallet,
+  IconInbox, IconCheck, IconShare, IconWallet, IconDeposits, IconLoans, IconExpenses,
 } from '../components/icons';
 import type {
   MemberPosition, LoanRow, AuditRow, UnpaidRow, FundSummary,
@@ -332,10 +331,10 @@ export default function Dashboard() {
                     <Row
                       key={row.id}
                       icon={
-                        row.table_name === 'contributions' ? <IconArrowDown width={17} height={17} />
-                          : row.table_name === 'loans' ? <IconPlus width={17} height={17} />
+                        row.table_name === 'contributions' ? <IconDeposits width={17} height={17} />
+                          : row.table_name === 'loans' ? <IconLoans width={17} height={17} />
                             : row.table_name === 'loan_repayments' ? <IconCheck width={17} height={17} />
-                              : row.table_name === 'expenses' ? <IconArrowUp width={17} height={17} />
+                              : row.table_name === 'expenses' ? <IconExpenses width={17} height={17} />
                                 : <IconWallet width={17} height={17} />
                       }
                       iconTone={
