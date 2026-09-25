@@ -71,6 +71,7 @@ function readInitialSession(): Session | null {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(readInitialSession);
   const [authReady, setAuthReady] = useState(() => Boolean(readInitialSession()));
+  const [groupsFetchedFor, setGroupsFetchedFor] = useState<string | null>(null);
   const [groups, setGroups] = useState<MyGroup[]>([]);
   const [currentGroupId, setCurrentGroupId] = useState<string | null>(readLastGroup);
   const [member, setMember] = useState<Member | null>(null);
@@ -88,6 +89,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === 'SIGNED_OUT' || !s) {
         setSession(null);
+        setGroupsFetchedFor(null);
         setAuthReady(true);
         return;
       }
@@ -129,6 +131,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     if (!session) {
       setGroups([]);
+      setGroupsFetchedFor(null);
       setMember(null);
       setRole('member');
       setConfig(null);
@@ -161,6 +164,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       if (list.length === 0) {
         setCurrentGroupId(null);
+        setGroupsFetchedFor(session.user.id);
         setMember(null);
         setRole('member');
         setConfig(null);
@@ -199,6 +203,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // A pending member can see nothing by design, so there is no point
       // asking for the config or the role -- both would come back empty.
       if (active.status !== 'active') {
+        setGroupsFetchedFor(session.user.id);
         setMember(null);
         setRole('member');
         setConfig(null);
@@ -231,6 +236,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
       } as Member : null);
 
+      setGroupsFetchedFor(session.user.id);
       setMember(memberObj);
       setRole((r as Role) ?? active.role ?? 'member');
       setConfig((c as AppConfig) ?? null);
@@ -261,7 +267,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const group = groups.find((g) => g.id === currentGroupId) ?? groups[0] ?? null;
 
-  const isOverallLoading = !authReady || loading;
+  const isGroupsLoadedForCurrentSession = session
+    ? groupsFetchedFor === session.user.id
+    : true;
+
+  const isOverallLoading = !authReady || loading || !isGroupsLoadedForCurrentSession;
 
   const value = useMemo<SessionValue>(() => ({
     session,
@@ -272,9 +282,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     role,
     config,
     loading: isOverallLoading,
-    noGroups: Boolean(session) && !isOverallLoading && groups.length === 0,
+    noGroups: Boolean(session) && isGroupsLoadedForCurrentSession && !loading && groups.length === 0,
     awaitingApproval:
-      Boolean(session) && !isOverallLoading && groups.length > 0 && (group?.status === 'pending' || groups.every((g) => g.status === 'pending')),
+      Boolean(session) && isGroupsLoadedForCurrentSession && !loading && groups.length > 0 && (group?.status === 'pending' || groups.every((g) => g.status === 'pending')),
     isOfficer: role === 'cashier' || role === 'accountant' || role === 'admin',
     networkError,
     retry: () => setTick((n) => n + 1),
@@ -284,7 +294,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await supabase.auth.signOut();
     },
     refresh: () => setTick((n) => n + 1),
-  }), [session, groups, currentGroupId, group, member, role, config, isOverallLoading, networkError, switchGroup]);
+  }), [session, groups, currentGroupId, group, member, role, config, isOverallLoading, isGroupsLoadedForCurrentSession, loading, networkError, switchGroup]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

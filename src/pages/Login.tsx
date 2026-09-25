@@ -65,6 +65,7 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
         password,
       });
       if (e) throw e;
+      navigate('/');
     } catch (e) {
       setError(friendlyError(e));
     } finally {
