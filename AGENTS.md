@@ -69,7 +69,7 @@ src/
     supabase.ts        client + friendlyError
   pages/               14 screens
 supabase/
-  migrations/          0001-0024, applied in numerical order
+  migrations/          0001-0037, applied in numerical order
   tests/
     assertions.sql     protections still in force (RLS on, RPC-only writes, …)
     isolation.sql      two real groups, proves neither can see the other
@@ -464,6 +464,19 @@ no-op on a fresh database.
 | `0022` | `governance_fixes.sql` | Guarantor cannot vote; withdrawal distinguished from rejection; vote deadlock broken when members leave |
 | `0023` | `plain_error_messages.sql` | Database error text rewritten in plain words — these strings are UI |
 | `0024` | `rename_president_to_admin.sql` | `role_enum` label renamed in place; all 17 functions and 1 policy redefined in the same transaction |
+| `0025` | `member_payouts.sql` | Member exit payouts, share calculations, and payout ledger |
+| `0026` | `partial_contributions.sql` | Multiple part-payments per period, single late-fee calculation |
+| `0027` | `loan_schedule.sql` | Equal principal loan instalments, schedule tracking, arrears reporting |
+| `0028` | `opening_balance.sql` | Pre-existing group onboarding with per-member opening balances |
+| `0029` | `distributions.sql` | Profit & final distribution proposals, line splits & confirmation |
+| `0030` | `meetings.sql` | Meeting attendance recording, excused status, and absent fines |
+| `0031` | `writeoff_recovery.sql` | Recovery of previously written-off loan debt |
+| `0032` | `reminders_and_export.sql` | Server-derived reminders view & full JSON ledger export |
+| `0033` | `deterministic_role.sql` | Tie-breaking role resolution by authority order |
+| `0034` | `explicit_read_grants.sql` | Explicit PostgREST SELECT grants on tables and views for `authenticated` |
+| `0035` | `readable_money_in_errors.sql` | User-friendly `fmt_rupees` formatting with numeric overload |
+| `0036` | `settable_meeting_fine.sql` | Meeting absent fee configuration in `update_config` |
+| `0037` | `guard_definer_aggregates.sql` | Strict group-membership assertions in SECURITY DEFINER money aggregates |
 
 ---
 
@@ -720,3 +733,37 @@ DEFINER, and RLS is exactly what SECURITY DEFINER turns off.
   instead of tables. Respects `prefers-reduced-motion`.
 - Telugu-in-Roman-script is the maintainer's working language; code, comments
   and UI copy are English.
+
+---
+
+## Design System & Frontend Architecture
+
+- **Brand & Display Name**: **SavingsClub** ("SavingsClub — Group Savings & Loans").
+- **Typography**: Inter Variable (`Inter-VariableFont_opsz,wght.ttf`), Google Fonts `opsz` 14..32, weights 300..800. Enabled font features:
+  `font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'cv11' 1, 'tnum' 1;`
+  Monospace / tabular numbers (`tnum`) ensure financial figures align cleanly without jitter.
+- **Iconography**: Semantic FontAwesome SVGs wrapped centrally in `src/components/icons.tsx`.
+- **Mobile Stat Cards Layout**: In `.stats.three` on mobile screens (`< 440px`), the layout is strictly a 2+1 grid (`grid-column: 1 / -1` for the 3rd stat card). Do not collapse into a single column.
+- **Core User Experience Enhancements**:
+  1. **Dashboard 1-Tap Quick Actions Bar**: 4-action grid below the Account card: Deposit, Get Loan, Invite via WhatsApp with active code, and Statement Sheet.
+  2. **Treasury Proportional Asset Allocation Bar**: Multi-segment bar showing % in Bank (`mint`), % Cash Float (`amber`), % Active Loans (`violet`), with clickable breakdown pills to respective sub-ledgers.
+  3. **Fast Member Search & Filtering**: Real-time instant search by name, phone, role, or email with match counts and clear button on both Deposits and Members pages.
+  4. **Loan Payoff Progress Bars**: Visual progress meter on running loans displaying `% repaid` (`(principal_paid_paise / principal_paise) * 100`) and remaining principal.
+  5. **WhatsApp Monthly Collection Broadcast**: 1-tap summary of month, collected vs expected, paid vs pending members for sharing directly to the group chat.
+
+---
+
+## Verification Checklist for Agents
+
+Before completing any task, agents MUST run and verify:
+```bash
+npx tsc --noEmit          # 0 errors
+npx oxlint src            # 0 warnings, 0 errors
+npm run build             # production bundle builds cleanly
+```
+
+When touching database schema or migrations:
+- Check migration status: `npx supabase migration list`
+- Dry run migrations: `npx supabase db push --dry-run`
+- Push migrations: `npx supabase db push --yes` (never use `db reset` without explicit user permission).
+- Remote status: Migrations 0001–0037 are fully applied on the remote database. Tables like `distributions`, `distribution_lines`, `meetings`, `loan_schedule` and their RPCs are live.
