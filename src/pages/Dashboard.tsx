@@ -14,10 +14,11 @@ import {
 } from '../components/ui';
 import {
   IconInbox, IconCheck, IconShare, IconWallet, IconDeposits, IconLoans, IconExpenses,
+  IconTreasury,
 } from '../components/icons';
 import type {
   MemberPosition, LoanRow, AuditRow, UnpaidRow, FundSummary,
-  ContributionPeriod, Contribution,
+  ContributionPeriod, Contribution, GroupInvite,
 } from '../lib/types';
 
 export default function Dashboard() {
@@ -95,6 +96,18 @@ export default function Dashboard() {
       return (data as Contribution) ?? null;
     },
   );
+
+  const inviteQ = useQuery<GroupInvite | null>('invite:active', async () => {
+    let q = supabase
+      .from('group_invites').select('*')
+      .is('revoked_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false }).limit(1);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q.maybeSingle();
+    if (error) throw error;
+    return (data as GroupInvite) ?? null;
+  });
 
   if (loading && !fund) {
     return (
@@ -234,6 +247,172 @@ export default function Dashboard() {
             )}
           </div>
         )}
+
+        {/* ======================================= 1B. QUICK ACTIONS BAR */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, margin: '2px 0' }}>
+          <button
+            type="button"
+            className="sec-link"
+            onClick={() => {
+              haptic(10);
+              nav('/deposits');
+            }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '12px 6px',
+              background: 'var(--surface)',
+              borderRadius: 'var(--r)',
+              border: '1px solid var(--hairline)',
+              textAlign: 'center',
+            }}
+          >
+            <span
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                background: 'var(--mint-ghost)',
+                color: 'var(--mint)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <IconDeposits width={17} height={17} />
+            </span>
+            <span style={{ fontSize: '0.74rem', fontWeight: 650, color: 'var(--text)' }}>
+              Deposit
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="sec-link"
+            onClick={() => {
+              haptic(10);
+              nav('/loans/new');
+            }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '12px 6px',
+              background: 'var(--surface)',
+              borderRadius: 'var(--r)',
+              border: '1px solid var(--hairline)',
+              textAlign: 'center',
+            }}
+          >
+            <span
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                background: 'var(--amber-ghost)',
+                color: 'var(--amber)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <IconLoans width={17} height={17} />
+            </span>
+            <span style={{ fontSize: '0.74rem', fontWeight: 650, color: 'var(--text)' }}>
+              Get Loan
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="sec-link"
+            onClick={() => {
+              haptic(10);
+              if (inviteQ.data) {
+                const text = `Join our savings group *${group?.name || 'SavingsClub'}*!\n` +
+                  `Use invite code: *${inviteQ.data.code}*\n` +
+                  `Valid for 7 days. Open the app to join.`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+              } else {
+                nav('/community');
+              }
+            }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '12px 6px',
+              background: 'var(--surface)',
+              borderRadius: 'var(--r)',
+              border: '1px solid var(--hairline)',
+              textAlign: 'center',
+            }}
+          >
+            <span
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                background: 'var(--violet-ghost)',
+                color: 'var(--violet)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <IconShare width={17} height={17} />
+            </span>
+            <span style={{ fontSize: '0.74rem', fontWeight: 650, color: 'var(--text)' }}>
+              Invite
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="sec-link"
+            onClick={() => {
+              haptic(10);
+              setReportOpen(true);
+            }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '12px 6px',
+              background: 'var(--surface)',
+              borderRadius: 'var(--r)',
+              border: '1px solid var(--hairline)',
+              textAlign: 'center',
+            }}
+          >
+            <span
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                background: 'var(--surface-3)',
+                color: 'var(--text-2)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <IconTreasury width={17} height={17} />
+            </span>
+            <span style={{ fontSize: '0.74rem', fontWeight: 650, color: 'var(--text)' }}>
+              Statement
+            </span>
+          </button>
+        </div>
 
         {/* ======================================= 2. ACTION CENTER */}
         {myVoteNeeded.length > 0 && (

@@ -68,39 +68,68 @@ export default function Loans() {
           </Empty>
         ) : (
           <List>
-            {shown.map((l) => (
-              <Row
-                key={l.id}
-                icon={initials(l.borrower_name)}
-                iconTone={l.is_overdue ? 'coral'
-                  : toneForStatus(l.status, l.withdrawn_by_requester)}
-                title={l.borrower_name}
-                sub={
-                  l.status === 'requested'
-                    ? `${l.approvals} of ${l.required_approvals} approvals${l.can_i_vote ? ' · your vote needed' : ''}`
-                    : l.is_overdue
-                      // Behind on the plan is now the common case, and
-                      // days_overdue stays 0 until the final date -- so say
-                      // what is actually missing rather than a day count
-                      // that reads "0 days overdue".
-                      ? l.arrears_paise > 0
-                        ? `${formatPaiseShort(l.arrears_paise)} behind`
-                        : `Overdue by ${l.days_overdue} days`
-                      : l.status === 'disbursed'
-                        ? `Next payment ${fmtDate(l.next_due_on ?? l.due_on)}`
-                        : labelForStatus(l.status, l.withdrawn_by_requester)
-                }
-                amount={formatPaiseShort(
-                  l.status === 'disbursed' ? l.outstanding_principal_paise : l.principal_paise,
-                )}
-                amountTone={l.is_overdue ? 'coral' : undefined}
-                note={l.status === 'disbursed'
-                  ? 'still to repay'
-                  : labelForStatus(l.status, l.withdrawn_by_requester)}
-                onClick={() => nav(`/loans/${l.id}`)}
-                chevron
-              />
-            ))}
+            {shown.map((l) => {
+              const repaidPct = l.principal_paise > 0
+                ? Math.min(100, Math.max(0, Math.round((l.principal_paid_paise / l.principal_paise) * 100)))
+                : 0;
+              const isDisbursed = l.status === 'disbursed';
+
+              return (
+                <Row
+                  key={l.id}
+                  icon={initials(l.borrower_name)}
+                  iconTone={l.is_overdue ? 'coral'
+                    : toneForStatus(l.status, l.withdrawn_by_requester)}
+                  title={l.borrower_name}
+                  sub={
+                    isDisbursed ? (
+                      <div>
+                        <span>
+                          {l.is_overdue
+                            ? l.arrears_paise > 0
+                              ? `${formatPaiseShort(l.arrears_paise)} behind`
+                              : `Overdue by ${l.days_overdue} days`
+                            : `Next ${fmtDate(l.next_due_on ?? l.due_on)} · ${repaidPct}% repaid`}
+                        </span>
+                        <div
+                          style={{
+                            marginTop: 5,
+                            height: 4,
+                            width: '100%',
+                            maxWidth: 150,
+                            background: 'var(--surface-sunken)',
+                            borderRadius: 2,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${repaidPct}%`,
+                              height: '100%',
+                              background: repaidPct >= 100
+                                ? 'var(--mint)'
+                                : 'linear-gradient(90deg, var(--mint), var(--violet))',
+                              borderRadius: 2,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : l.status === 'requested'
+                      ? `${l.approvals} of ${l.required_approvals} approvals${l.can_i_vote ? ' · your vote needed' : ''}`
+                      : labelForStatus(l.status, l.withdrawn_by_requester)
+                  }
+                  amount={formatPaiseShort(
+                    isDisbursed ? l.outstanding_principal_paise : l.principal_paise,
+                  )}
+                  amountTone={l.is_overdue ? 'coral' : undefined}
+                  note={isDisbursed
+                    ? 'still to repay'
+                    : labelForStatus(l.status, l.withdrawn_by_requester)}
+                  onClick={() => nav(`/loans/${l.id}`)}
+                  chevron
+                />
+              );
+            })}
           </List>
         )}
       </Screen>

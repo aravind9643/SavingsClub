@@ -33,6 +33,7 @@ export default function Members() {
   const { member: me, isOfficer, currentGroupId } = useSession();
   const [sheet, setSheet] = useState<'add' | 'roles' | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const positions = useQuery<MemberPosition[]>('positions', async () => {
     let q = supabase
@@ -78,6 +79,21 @@ export default function Members() {
   const clash = Boolean(cashier && accountant && cashier.member_id === accountant.member_id);
   const missing = !cashier || !accountant;
   const unlinked = (membersQ.data ?? []).filter((m) => m.is_active && !m.auth_user_id);
+
+  const filteredPositions = useMemo(() => {
+    const list = positions.data ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((p) => {
+      const m = byId.get(p.member_id);
+      return (
+        p.full_name.toLowerCase().includes(q) ||
+        (m?.email && m.email.toLowerCase().includes(q)) ||
+        (m?.phone && m.phone.includes(q)) ||
+        (p.role && p.role.toLowerCase().includes(q))
+      );
+    });
+  }, [positions.data, search, byId]);
 
   return (
     <>
@@ -128,12 +144,71 @@ export default function Members() {
           </Panel>
         )}
 
-        <Panel title="Everyone" flush>
+        {/* Member Search input */}
+        <div style={{ position: 'relative', margin: '14px 0 10px' }}>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search member by name, phone, email or role..."
+            style={{
+              paddingLeft: 36,
+              paddingRight: search ? 36 : 14,
+              minHeight: 40,
+              fontSize: '0.86rem',
+              borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--hairline)',
+              background: 'var(--surface)',
+            }}
+          />
+          <span
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--text-3)',
+              pointerEvents: 'none',
+              fontSize: '0.88rem',
+            }}
+          >
+            🔍
+          </span>
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              style={{
+                position: 'absolute',
+                right: 8,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-3)',
+                padding: '4px 8px',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        <Panel
+          title={search ? `Members (${filteredPositions.length})` : "Everyone"}
+          flush
+        >
           {positions.loading && !positions.data ? (
             <SkeletonList rows={5} />
+          ) : filteredPositions.length === 0 ? (
+            <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-3)', fontSize: '0.88rem' }}>
+              No members match &ldquo;{search}&rdquo;
+            </div>
           ) : (
             <List>
-              {(positions.data ?? []).map((p) => {
+              {filteredPositions.map((p) => {
                 const m = byId.get(p.member_id);
                 return (
                   <Row

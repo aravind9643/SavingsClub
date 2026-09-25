@@ -144,6 +144,71 @@ export default function LoanDetail() {
           </div>
         </div>
 
+        {(loan.status === 'disbursed' || loan.status === 'closed') && (() => {
+          const repaidPct = loan.principal_paise > 0
+            ? Math.min(100, Math.max(0, Math.round((loan.principal_paid_paise / loan.principal_paise) * 100)))
+            : 0;
+          return (
+            <div
+              className="panel"
+              style={{
+                padding: '14px 16px',
+                marginBlock: 14,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-2)' }}>
+                  Loan Payoff Progress
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    color: repaidPct >= 100 ? 'var(--mint)' : 'var(--accent)',
+                  }}
+                >
+                  {repaidPct}% Repaid
+                </span>
+              </div>
+              <div
+                style={{
+                  height: 8,
+                  width: '100%',
+                  background: 'var(--surface-sunken)',
+                  borderRadius: 999,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    width: `${repaidPct}%`,
+                    height: '100%',
+                    background: repaidPct >= 100
+                      ? 'var(--mint)'
+                      : 'linear-gradient(90deg, var(--mint), var(--violet))',
+                    borderRadius: 999,
+                    transition: 'width 0.4s ease',
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '0.78rem',
+                  color: 'var(--text-3)',
+                }}
+              >
+                <span>Repaid: {formatPaise(loan.principal_paid_paise)}</span>
+                <span>Remaining: {formatPaise(loan.outstanding_principal_paise)}</span>
+              </div>
+            </div>
+          );
+        })()}
+
         {loan.status === 'disbursed' && (loan.is_overdue || loan.arrears_paise > 0) && (
           <div
             className="panel"

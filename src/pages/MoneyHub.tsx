@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
@@ -35,6 +35,7 @@ const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
 ];
 
 export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
+  const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const urlTab = params.get('tab') as HubTab | null;
   const [tab, setTab] = useState<HubTab>(defaultTab || urlTab || 'overview');
@@ -181,6 +182,154 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                   </>
                 }
               />
+            )}
+
+            {/* Asset Distribution Multi-segment Bar */}
+            {fund && (
+              (() => {
+                const bAmt = Math.max(0, expectedBankBalance);
+                const cAmt = Math.max(0, cashBalance);
+                const lAmt = Math.max(0, fund.outstanding_paise);
+                const totalAssets = bAmt + cAmt + lAmt;
+                const bPct = totalAssets > 0 ? Math.round((bAmt / totalAssets) * 100) : 0;
+                const cPct = totalAssets > 0 ? Math.round((cAmt / totalAssets) * 100) : 0;
+                const lPct = totalAssets > 0 ? Math.max(0, 100 - bPct - cPct) : 0;
+
+                return (
+                  <div
+                    className="panel"
+                    style={{
+                      background: 'linear-gradient(145deg, var(--surface), var(--surface-2))',
+                      border: '1px solid var(--hairline)',
+                      borderRadius: 'var(--r)',
+                      padding: '14px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 12,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700, color: 'var(--text-3)' }}>
+                        Asset Allocation
+                      </span>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 650, color: 'var(--text-2)' }}>
+                        {formatPaiseShort(totalAssets)} Total Assets
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        height: 10,
+                        borderRadius: 'var(--r-full)',
+                        background: 'var(--surface-3)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        gap: 2,
+                      }}
+                    >
+                      {bPct > 0 && (
+                        <div
+                          style={{
+                            width: `${bPct}%`,
+                            background: 'var(--mint)',
+                            borderRadius: 'var(--r-full)',
+                            transition: 'width 0.6s var(--swift)',
+                          }}
+                          title={`In Bank: ${bPct}%`}
+                        />
+                      )}
+                      {cPct > 0 && (
+                        <div
+                          style={{
+                            width: `${cPct}%`,
+                            background: 'var(--amber)',
+                            borderRadius: 'var(--r-full)',
+                            transition: 'width 0.6s var(--swift)',
+                          }}
+                          title={`Cash Float: ${cPct}%`}
+                        />
+                      )}
+                      {lPct > 0 && (
+                        <div
+                          style={{
+                            width: `${lPct}%`,
+                            background: 'var(--violet)',
+                            borderRadius: 'var(--r-full)',
+                            transition: 'width 0.6s var(--swift)',
+                          }}
+                          title={`Active Loans: ${lPct}%`}
+                        />
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                      <div
+                        style={{
+                          padding: '8px 10px',
+                          background: 'var(--surface-3)',
+                          borderRadius: 'var(--r-sm)',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => handleTabChange('bank')}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--mint)', flex: 'none' }} />
+                          <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-2)' }}>Bank</span>
+                        </div>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text)', marginTop: 2 }}>
+                          {bPct}%
+                        </div>
+                        <div className="dim" style={{ fontSize: '0.72rem' }}>
+                          {formatPaiseShort(bAmt)}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: '8px 10px',
+                          background: 'var(--surface-3)',
+                          borderRadius: 'var(--r-sm)',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => handleTabChange('cash')}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--amber)', flex: 'none' }} />
+                          <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-2)' }}>Cash</span>
+                        </div>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text)', marginTop: 2 }}>
+                          {cPct}%
+                        </div>
+                        <div className="dim" style={{ fontSize: '0.72rem' }}>
+                          {formatPaiseShort(cAmt)}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: '8px 10px',
+                          background: 'var(--surface-3)',
+                          borderRadius: 'var(--r-sm)',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => nav('/loans')}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--violet)', flex: 'none' }} />
+                          <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-2)' }}>Loans</span>
+                        </div>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text)', marginTop: 2 }}>
+                          {lPct}%
+                        </div>
+                        <div className="dim" style={{ fontSize: '0.72rem' }}>
+                          {formatPaiseShort(lAmt)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
             )}
 
             {activeDist && (

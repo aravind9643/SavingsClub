@@ -23,6 +23,7 @@ export default function Deposits() {
   const { fund } = useFund();
   const [periodId, setPeriodId] = useState<string>('');
   const [memberFilter, setMemberFilter] = useState<MemberFilter>('all');
+  const [search, setSearch] = useState('');
   const [paying, setPaying] = useState<{ period: ContributionPeriod; member: Member } | null>(null);
   const [reminding, setReminding] = useState<{ period: ContributionPeriod; member: Member } | null>(null);
   const [unpaidAction, setUnpaidAction] = useState<{ period: ContributionPeriod; member: Member } | null>(null);
@@ -157,16 +158,34 @@ export default function Deposits() {
   const unpaidCount = members.length - paidCount;
 
   const shownMembers = useMemo(() => {
-    if (memberFilter === 'paid') return members.filter((m) => isSettled(m.id));
-    if (memberFilter === 'unpaid') return members.filter((m) => !isSettled(m.id));
-    return members;
-  }, [members, paidMap, memberFilter, perMember]);
+    let list = members;
+    if (memberFilter === 'paid') list = members.filter((m) => isSettled(m.id));
+    if (memberFilter === 'unpaid') list = members.filter((m) => !isSettled(m.id));
+    const q = search.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((m) =>
+      m.full_name.toLowerCase().includes(q) || (m.phone && m.phone.includes(q))
+    );
+  }, [members, paidMap, memberFilter, perMember, search]);
 
   const collected = members.reduce((sum, m) => {
     const c = paidMap.get(m.id);
     return sum + (c ? c.paid + c.fees : 0);
   }, 0);
   const expectedTotal = (period?.amount_paise ?? 0) * members.length;
+
+  const handleBroadcastWhatsApp = () => {
+    haptic(10);
+    if (!period) return;
+    const pct = expectedTotal > 0 ? Math.round((collected / expectedTotal) * 100) : 0;
+    const text = `📢 *${group?.name || 'SavingsClub'} — ${monthLabel(period.period_month)} Collection Update*\n\n` +
+      `💰 *Collected*: ${formatPaise(collected)} of ${formatPaise(expectedTotal)} (${pct}%)\n` +
+      `✅ *Paid*: ${paidCount} member${paidCount === 1 ? '' : 's'}\n` +
+      `⏳ *Pending*: ${unpaidCount} member${unpaidCount === 1 ? '' : 's'}\n` +
+      `📅 *Due Date*: ${fmtDate(period.due_date)} (Grace until ${fmtDate(period.grace_date)})\n\n` +
+      `_Sent from SavingsClub_`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  };
 
   if ((periodsQ.loading && !periodsQ.data) || (rolesQ.loading && !rolesQ.data)) {
     return <Screen title="Monthly Deposits"><SkeletonList rows={5} /></Screen>;
@@ -241,6 +260,27 @@ export default function Deposits() {
             <div className="meter">
               <i style={{ width: `${expectedTotal ? (collected / expectedTotal) * 100 : 0}%` }} />
             </div>
+            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-start' }}>
+              <button
+                type="button"
+                className="sec-link"
+                onClick={handleBroadcastWhatsApp}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: 'var(--mint-ghost)',
+                  color: 'var(--mint)',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--r-sm)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                }}
+              >
+                <IconShare width={13} height={13} />
+                Share status to WhatsApp group
+              </button>
+            </div>
           </div>
         )}
 
@@ -287,6 +327,58 @@ export default function Deposits() {
               { value: 'paid', label: 'Paid', count: paidCount },
             ]}
           />
+        </div>
+
+        {/* Search input */}
+        <div style={{ position: 'relative', margin: '8px 0 12px' }}>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search member by name or phone..."
+            style={{
+              paddingLeft: 36,
+              paddingRight: search ? 36 : 14,
+              minHeight: 40,
+              fontSize: '0.86rem',
+              borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--hairline)',
+              background: 'var(--surface)',
+            }}
+          />
+          <span
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--text-3)',
+              pointerEvents: 'none',
+              fontSize: '0.88rem',
+            }}
+          >
+            🔍
+          </span>
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              style={{
+                position: 'absolute',
+                right: 8,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'transparent',
+                border: 0,
+                padding: '4px 8px',
+                color: 'var(--text-3)',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         <Panel
