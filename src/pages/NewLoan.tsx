@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
@@ -7,7 +7,7 @@ import { useSession } from '../context/SessionContext';
 import { useFund } from '../context/FundContext';
 import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees } from '../lib/money';
 import {
-  Panel, Field, AmountField, Busy, ErrorNote, Notice, Chip, Stat,
+  Panel, Field, AmountField, Busy, ErrorNote, Notice, Chip, Stat, Sheet,
 } from '../components/ui';
 import { IconClose } from '../components/icons';
 import type { Member, MemberPosition } from '../lib/types';
@@ -69,11 +69,39 @@ export default function NewLoan() {
   const overFund = wanted > 0 && wanted > available;
   const ok = Boolean(amount && guarantor && Number(term) > 0) && !overCap && !overFund;
 
+  const [showSchedule, setShowSchedule] = useState(false);
+
   // Roughly what the loan costs if repaid on schedule — simple interest on a
   // balance that falls evenly, which is what the reducing-balance rule gives.
   const months = Number(term) || 1;
   const rate = (config?.loan_rate_bp ?? 200) / 10000;
   const estInterest = Math.round(wanted * rate * ((months + 1) / 2));
+
+  const schedule = useMemo(() => {
+    if (wanted <= 0 || months <= 0) return [];
+    const basePrincipal = Math.floor(wanted / months);
+    const remainder = wanted - basePrincipal * months;
+    let balance = wanted;
+    const items = [];
+
+    for (let i = 1; i <= months; i++) {
+      const p = i === 1 ? basePrincipal + remainder : basePrincipal;
+      const interest = Math.round(balance * rate);
+      const totalDue = p + interest;
+      balance = Math.max(0, balance - p);
+      items.push({
+        month: i,
+        principal: p,
+        interest,
+        totalDue,
+        remainingBalance: balance,
+      });
+    }
+    return items;
+  }, [wanted, months, rate]);
+
+  const month1Payment = schedule[0]?.totalDue ?? 0;
+  const monthLastPayment = schedule[schedule.length - 1]?.totalDue ?? 0;
 
   return (
     <Screen
@@ -151,17 +179,37 @@ export default function NewLoan() {
         </Field>
 
         {wanted > 0 && (
-          <div className="stats" style={{ marginTop: 14 }}>
-            <Stat
-              k="Interest, roughly"
-              v={formatPaiseShort(estInterest)}
-              s={`${(rate * 100).toFixed(0)}% a month on the falling balance`}
-            />
-            <Stat
-              k="Total to repay"
-              v={formatPaiseShort(wanted + estInterest)}
-              s={`over ${months} month${months > 1 ? 's' : ''}`}
-            />
+          <div style={{ marginTop: 16 }}>
+            <div className="stats three">
+              <Stat
+                k="Month 1 Payment"
+                v={formatPaiseShort(month1Payment)}
+                s="highest payment"
+              />
+              <Stat
+                k={`Month ${months} Payment`}
+                v={formatPaiseShort(monthLastPayment)}
+                s="lowest (reducing)"
+                tone="mint"
+              />
+              <Stat
+                k="Total Interest"
+                v={formatPaiseShort(estInterest)}
+                s={`over ${months} mo`}
+                tone="amber"
+              />
+            </div>
+
+            <div style={{ marginTop: 12, textAlign: 'center' }}>
+              <button
+                type="button"
+                className="sec-link"
+                style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--accent)' }}
+                onClick={() => setShowSchedule(true)}
+              >
+                📅 View monthly payment schedule →
+              </button>
+            </div>
           </div>
         )}
       </Panel>
@@ -179,6 +227,41 @@ export default function NewLoan() {
           Send for approval
         </Busy>
       </div>
+
+      {showSchedule && (
+        <Sheet open title="Repayment Schedule" onClose={() => setShowSchedule(false)}>
+          <p className="dim" style={{ fontSize: '0.84rem', margin: '0 0 14px' }}>
+            Reducing balance schedule for {formatPaise(wanted)} over {months} months at {(rate * 100).toFixed(1)}%/month.
+          </p>
+          <div style={{ maxHeight: 340, overflowY: 'auto', border: '1px solid var(--hairline)', borderRadius: 'var(--r-sm)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'right' }}>
+              <thead>
+                <tr style={{ background: 'var(--surface-3)', borderBottom: '1px solid var(--hairline)', color: 'var(--text-3)' }}>
+                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>Month</th>
+                  <th style={{ padding: '8px 10px' }}>Principal</th>
+                  <th style={{ padding: '8px 10px' }}>Interest</th>
+                  <th style={{ padding: '8px 10px' }}>Total Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedule.map((row) => (
+                  <tr key={row.month} style={{ borderBottom: '1px solid var(--hairline)' }}>
+                    <td style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 600 }}>#{row.month}</td>
+                    <td style={{ padding: '8px 10px' }}>{formatPaise(row.principal)}</td>
+                    <td style={{ padding: '8px 10px', color: 'var(--amber)' }}>{formatPaise(row.interest)}</td>
+                    <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--text)' }}>{formatPaise(row.totalDue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="btn-row stack" style={{ marginTop: 16 }}>
+            <button type="button" className="primary lg" onClick={() => setShowSchedule(false)}>
+              Got it
+            </button>
+          </div>
+        </Sheet>
+      )}
     </Screen>
   );
 }

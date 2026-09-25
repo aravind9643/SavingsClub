@@ -686,19 +686,9 @@ ${receipt.lateFeePaise > 0 ? `*Late fee:* ${formatPaise(receipt.lateFeePaise)}\n
 ${fundTotalPaise !== undefined ? `*Total fund now:* ${formatPaise(fundTotalPaise)}\n` : ''}
 _Recorded on SavingsClub_`;
 
-  async function share() {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `Receipt - ${receipt.memberName} (${receipt.month})`,
-          text,
-        });
-        return;
-      } catch {
-        /* fallback to copy */
-      }
-    }
-    copy();
+  function shareWhatsApp() {
+    haptic(10);
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   }
 
   async function copy() {
@@ -737,9 +727,28 @@ _Recorded on SavingsClub_`;
       </Panel>
 
       <div className="btn-row stack" style={{ marginTop: 20 }}>
-        <button type="button" className="primary lg" onClick={() => void share()}>
-          <IconShare width={16} height={16} style={{ marginRight: 8 }} />
-          Share to WhatsApp
+        <button
+          type="button"
+          className="sec-link"
+          style={{
+            background: '#25D366',
+            color: '#fff',
+            padding: '12px 18px',
+            borderRadius: 'var(--r-sm)',
+            fontWeight: 700,
+            fontSize: '0.92rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+          }}
+          onClick={shareWhatsApp}
+        >
+          <IconShare width={16} height={16} />
+          Send Receipt on WhatsApp
+        </button>
+        <button type="button" className="subtle" onClick={() => window.print()}>
+          Print / Save PDF Slip
         </button>
         <button type="button" className="subtle" onClick={() => void copy()}>
           {copied ? 'Copied to clipboard!' : 'Copy text receipt'}

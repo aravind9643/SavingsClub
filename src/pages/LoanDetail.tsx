@@ -13,6 +13,7 @@ import {
 import { IconCheck, IconClose, IconArrowDown, IconShare } from '../components/icons';
 import type { LoanRow, Vote, PaymentMethod, Member } from '../lib/types';
 import { today } from '../lib/dates';
+import { PaymentReceiptSheet, type ReceiptData } from '../components/PaymentReceiptSheet';
 
 interface VoteRow {
   id: string; voter_id: string; vote: Vote; note: string | null; voted_at: string;
@@ -30,6 +31,7 @@ export default function LoanDetail() {
   const { member, role, currentGroupId, group } = useSession();
   const isOfficer = useIsOfficer();
   const [sheet, setSheet] = useState<'repay' | 'disburse' | 'cancel' | 'writeoff' | 'recovery' | null>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptData | null>(null);
 
   const loanQ = useQuery<LoanRow | null>(id ? `loan:${id}` : null, async () => {
     let q = supabase
@@ -350,12 +352,29 @@ export default function LoanDetail() {
                     icon={<IconArrowDown width={17} height={17} />}
                     iconTone="mint"
                     title={formatPaise(r.principal_paise + r.interest_paise + r.penalty_paise)}
-                    sub={`${fmtDate(r.paid_on)} · ${r.method}`}
+                    sub={`${fmtDate(r.paid_on)} · ${r.method.toUpperCase()} · tap for receipt`}
                     note={
                       r.interest_paise + r.penalty_paise > 0
                         ? `${formatPaiseShort(r.interest_paise + r.penalty_paise)} interest`
                         : undefined
                     }
+                    onClick={() => {
+                      haptic(10);
+                      setSelectedReceipt({
+                        id: r.id,
+                        groupName: group?.name || 'SavingsClub',
+                        memberName: loan.borrower_name,
+                        memberPhone: borrowerQ.data?.phone,
+                        title: 'Loan Repayment',
+                        periodOrDetail: `Loan #${loan.id.slice(0, 6)}`,
+                        amountPaise: r.principal_paise,
+                        feeOrInterestPaise: r.interest_paise + r.penalty_paise,
+                        feeLabel: 'Interest & Charges',
+                        paidOn: r.paid_on,
+                        method: r.method,
+                      });
+                    }}
+                    chevron
                   />
                 ))}
               </List>
@@ -415,6 +434,13 @@ export default function LoanDetail() {
       )}
       {sheet === 'recovery' && (
         <RecoverySheet loan={loan} onClose={() => setSheet(null)} />
+      )}
+
+      {selectedReceipt && (
+        <PaymentReceiptSheet
+          receipt={selectedReceipt}
+          onClose={() => setSelectedReceipt(null)}
+        />
       )}
     </>
   );

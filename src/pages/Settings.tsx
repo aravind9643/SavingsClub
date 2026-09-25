@@ -8,6 +8,13 @@ import { Panel, Field, Busy, ErrorNote, Notice, Loading, Sheet } from '../compon
 import { haptic } from '../lib/haptics';
 import { today } from '../lib/dates';
 import type { GroupInvite, Member } from '../lib/types';
+import {
+  type GroupExportData,
+  exportContributionsCSV,
+  exportLoansCSV,
+  exportTreasuryCSV,
+} from '../lib/export';
+import { PrintableStatementModal } from '../components/PrintableStatement';
 
 export default function Settings() {
   const { config, isOfficer, refresh } = useSession();
@@ -130,6 +137,7 @@ export default function Settings() {
         <Panel title="Rules right now">
           <ReadOnly config={config} />
         </Panel>
+        <InstallAppPanel />
         <DataBackupPanel />
       </Screen>
     );
@@ -257,6 +265,8 @@ export default function Settings() {
           </Field>
         </div>
       </Panel>
+
+      <InstallAppPanel />
 
       <DataBackupPanel />
 
@@ -420,16 +430,22 @@ function ReadOnly({ config }: { config: NonNullable<ReturnType<typeof useSession
   );
 }
 
+async function fetchExportData(): Promise<GroupExportData> {
+  const { data, error } = await supabase.rpc('export_group_data');
+  if (error) throw error;
+  return data as GroupExportData;
+}
+
 function DataBackupPanel() {
   const { group } = useSession();
   const [downloading, setDownloading] = useState(false);
+  const [statementData, setStatementData] = useState<GroupExportData | null>(null);
 
   const handleExportJSON = async () => {
     try {
       haptic(10);
       setDownloading(true);
-      const { data, error } = await supabase.rpc('export_group_data');
-      if (error) throw error;
+      const data = await fetchExportData();
       const jsonStr = JSON.stringify(data, null, 2);
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -448,29 +464,261 @@ function DataBackupPanel() {
     }
   };
 
+  const handleExportCSV = async (type: 'contributions' | 'loans' | 'treasury') => {
+    try {
+      haptic(10);
+      setDownloading(true);
+      const data = await fetchExportData();
+      const name = group?.name || 'SavingsClub';
+      if (type === 'contributions') exportContributionsCSV(data, name);
+      else if (type === 'loans') exportLoansCSV(data, name);
+      else if (type === 'treasury') exportTreasuryCSV(data, name);
+      haptic(20);
+    } catch (e) {
+      alert((e as Error).message || 'Failed to export CSV');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleOpenStatement = async () => {
+    try {
+      haptic(10);
+      setDownloading(true);
+      const data = await fetchExportData();
+      setStatementData(data);
+    } catch (e) {
+      alert((e as Error).message || 'Failed to generate statement');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
-    <Panel title="Download Group Backup">
-      <p className="dim" style={{ fontSize: '0.88rem', margin: 0, marginBottom: 12 }}>
-        Download a complete copy of all group records (members, deposits, loans, expenses, and payments) for your own backup.
-      </p>
-      <Busy
-        type="button"
-        className="sec-link"
-        style={{
-          background: 'var(--surface-2)',
-          border: '1px solid var(--hairline)',
-          padding: '10px 14px',
-          borderRadius: 'var(--r-sm)',
-          fontWeight: 600,
-          fontSize: '0.9rem',
-          color: 'var(--text)',
-        }}
-        pending={downloading}
-        onClick={() => void handleExportJSON()}
-      >
-        Download Full Backup (.json)
-      </Busy>
-    </Panel>
+    <>
+      <Panel title="Reports & Data Export">
+        <p className="dim" style={{ fontSize: '0.88rem', margin: '0 0 12px' }}>
+          Download clean Excel / CSV spreadsheets for accounting, or generate an annual printable statement.
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
+          <button
+            type="button"
+            className="sec-link"
+            disabled={downloading}
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--hairline)',
+              padding: '10px 12px',
+              borderRadius: 'var(--r-sm)',
+              fontWeight: 600,
+              fontSize: '0.84rem',
+              color: 'var(--text)',
+              textAlign: 'center',
+            }}
+            onClick={() => void handleExportCSV('contributions')}
+          >
+            📊 Deposits (.csv)
+          </button>
+
+          <button
+            type="button"
+            className="sec-link"
+            disabled={downloading}
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--hairline)',
+              padding: '10px 12px',
+              borderRadius: 'var(--r-sm)',
+              fontWeight: 600,
+              fontSize: '0.84rem',
+              color: 'var(--text)',
+              textAlign: 'center',
+            }}
+            onClick={() => void handleExportCSV('loans')}
+          >
+            💳 Loans (.csv)
+          </button>
+
+          <button
+            type="button"
+            className="sec-link"
+            disabled={downloading}
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--hairline)',
+              padding: '10px 12px',
+              borderRadius: 'var(--r-sm)',
+              fontWeight: 600,
+              fontSize: '0.84rem',
+              color: 'var(--text)',
+              textAlign: 'center',
+            }}
+            onClick={() => void handleExportCSV('treasury')}
+          >
+            🪙 Cash Float (.csv)
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Busy
+            type="button"
+            className="sec-link"
+            style={{
+              flex: '1 1 180px',
+              background: 'var(--mint-ghost)',
+              border: '1px solid var(--mint)',
+              padding: '10px 14px',
+              borderRadius: 'var(--r-sm)',
+              fontWeight: 600,
+              fontSize: '0.88rem',
+              color: 'var(--mint)',
+              textAlign: 'center',
+            }}
+            pending={downloading}
+            onClick={() => void handleOpenStatement()}
+          >
+            📑 Annual Statement (Print / PDF)
+          </Busy>
+
+          <Busy
+            type="button"
+            className="sec-link"
+            style={{
+              flex: '1 1 140px',
+              background: 'var(--surface-3)',
+              border: '1px solid var(--hairline)',
+              padding: '10px 14px',
+              borderRadius: 'var(--r-sm)',
+              fontWeight: 600,
+              fontSize: '0.84rem',
+              color: 'var(--text-2)',
+              textAlign: 'center',
+            }}
+            pending={downloading}
+            onClick={() => void handleExportJSON()}
+          >
+            Full Backup (.json)
+          </Busy>
+        </div>
+      </Panel>
+
+      {statementData && (
+        <PrintableStatementModal
+          data={statementData}
+          groupName={group?.name || 'SavingsClub'}
+          onClose={() => setStatementData(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function InstallAppPanel() {
+  const [isStandalone, setIsStandalone] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(display-mode: standalone)').matches || (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+  });
+  const [promptEvent, setPromptEvent] = useState<any>(null);
+  const [showIosGuide, setShowIosGuide] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setPromptEvent(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+  const handleInstall = async () => {
+    if (promptEvent) {
+      promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      if (choice.outcome === 'accepted') {
+        setIsStandalone(true);
+        setPromptEvent(null);
+      }
+    } else if (isIOS) {
+      setShowIosGuide(true);
+    } else {
+      alert('To install SavingsClub: open your browser menu (⋮) and tap "Add to Home screen" or "Install App".');
+    }
+  };
+
+  if (isStandalone) {
+    return (
+      <Panel title="Mobile App">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+          <span style={{ fontSize: '1.2rem' }}>📱</span>
+          <div>
+            <div style={{ fontWeight: 650, color: 'var(--mint)', fontSize: '0.9rem' }}>
+              Installed on this device
+            </div>
+            <div className="dim" style={{ fontSize: '0.8rem', marginTop: 1 }}>
+              SavingsClub is running in standalone full-screen mode.
+            </div>
+          </div>
+        </div>
+      </Panel>
+    );
+  }
+
+  return (
+    <>
+      <Panel title="Install as Mobile App">
+        <p className="dim" style={{ fontSize: '0.88rem', margin: '0 0 12px' }}>
+          Add SavingsClub to your phone's home screen for fast 1-tap access, full-screen view, and offline support.
+        </p>
+
+        <button
+          type="button"
+          className="sec-link"
+          style={{
+            background: 'var(--surface-2)',
+            border: '1px solid var(--accent)',
+            padding: '10px 14px',
+            borderRadius: 'var(--r-sm)',
+            fontWeight: 700,
+            fontSize: '0.88rem',
+            color: 'var(--text)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+          }}
+          onClick={handleInstall}
+        >
+          📲 Add to Home Screen / Install
+        </button>
+      </Panel>
+
+      {showIosGuide && (
+        <Sheet open title="Install on iPhone / iPad" onClose={() => setShowIosGuide(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '8px 0', fontSize: '0.9rem' }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flex: 'none' }}>1</span>
+              <div>Tap the <strong>Share</strong> button at the bottom of Safari (the square with an arrow pointing up).</div>
+            </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flex: 'none' }}>2</span>
+              <div>Scroll down and select <strong>&ldquo;Add to Home Screen&rdquo;</strong>.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flex: 'none' }}>3</span>
+              <div>Tap <strong>Add</strong> in the top right. SavingsClub will now launch full-screen!</div>
+            </div>
+          </div>
+          <div className="btn-row stack" style={{ marginTop: 20 }}>
+            <button type="button" className="primary lg" onClick={() => setShowIosGuide(false)}>
+              Got it
+            </button>
+          </div>
+        </Sheet>
+      )}
+    </>
   );
 }
 

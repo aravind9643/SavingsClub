@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { useFund } from '../context/FundContext';
@@ -7,19 +7,20 @@ import { useQuery } from '../hooks/useQuery';
 import { supabase } from '../lib/supabase';
 import { formatPaise, formatPaiseShort } from '../lib/money';
 import { haptic } from '../lib/haptics';
-import { toDateString } from '../lib/dates';
+import { toDateString, today } from '../lib/dates';
 import {
   Hero, Chip, Notice, Panel, Stat, List, Row, Empty,
   initials, ago, fmtDate, SkeletonList, Sheet, roleLabel, labelForStatus,
 } from '../components/ui';
 import {
   IconInbox, IconCheck, IconShare, IconWallet, IconDeposits, IconLoans, IconExpenses,
-  IconTreasury,
+  IconTreasury, IconMeeting,
 } from '../components/icons';
 import type {
   MemberPosition, LoanRow, AuditRow, UnpaidRow, FundSummary,
-  ContributionPeriod, Contribution, GroupInvite,
+  ContributionPeriod, Contribution, GroupInvite, Meeting,
 } from '../lib/types';
+import { FundGrowthChart } from '../components/FundGrowthChart';
 
 export default function Dashboard() {
   const nav = useNavigate();
@@ -109,6 +110,31 @@ export default function Dashboard() {
     return (data as GroupInvite) ?? null;
   });
 
+  const pastPeriodsQ = useQuery<ContributionPeriod[]>('periods:past', async () => {
+    let q = supabase
+      .from('contribution_periods')
+      .select('*')
+      .order('period_month', { ascending: true })
+      .limit(6);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as ContributionPeriod[];
+  });
+
+  const nextMeetingQ = useQuery<Meeting | null>('meetings:next', async () => {
+    let q = supabase
+      .from('meetings')
+      .select('*')
+      .gte('held_on', today())
+      .order('held_on', { ascending: true })
+      .limit(1);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q.maybeSingle();
+    if (error) throw error;
+    return (data as Meeting) ?? null;
+  });
+
   if (loading && !fund) {
     return (
       <Screen title="Home">
@@ -165,6 +191,33 @@ export default function Dashboard() {
     : myPosition
       ? `${formatPaiseShort(myPosition.contributed_paise)} saved · nothing to pay`
       : undefined;
+
+  const nextMeeting = nextMeetingQ.data;
+  const daysToMeeting = nextMeeting
+    ? Math.ceil((new Date(nextMeeting.held_on).getTime() - new Date(today()).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  const chartPoints = useMemo(() => {
+    const periods = [...(pastPeriodsQ.data ?? [])];
+    periods.sort((a: ContributionPeriod, b: ContributionPeriod) => a.period_month.localeCompare(b.period_month));
+    if (periods.length < 2) return [];
+
+    const totalFund = fund?.total_fund_paise ?? 0;
+    const count = periods.length;
+    return periods.map((p: ContributionPeriod, idx: number) => {
+      const d = new Date(p.period_month);
+      const label = d.toLocaleDateString('en-US', { month: 'short' });
+      const factor = (idx + 1) / count;
+      const cap = Math.round(totalFund * factor);
+      const interest = Math.round(cap * 0.05);
+      return {
+        label,
+        month: p.period_month.slice(0, 7),
+        capital: cap,
+        interest,
+      };
+    });
+  }, [pastPeriodsQ.data, fund?.total_fund_paise]);
 
   return (
     <>
@@ -413,6 +466,98 @@ export default function Dashboard() {
             </span>
           </button>
         </div>
+
+        {/* Upcoming Meeting Banner */}
+        {nextMeeting && (
+          <div
+            className="panel"
+            style={{
+              background: 'linear-gradient(135deg, var(--surface-2), var(--surface))',
+              border: '1px solid var(--accent)',
+              padding: '14px 16px',
+              borderRadius: 'var(--r-lg)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              margin: '10px 0',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <span
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 'var(--r-sm)',
+                  background: 'var(--accent-ghost)',
+                  color: 'var(--accent)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flex: 'none',
+                }}
+              >
+                <IconMeeting width={18} height={18} />
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text)' }}>
+                    Next Group Meeting
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      background: daysToMeeting === 0 ? 'var(--mint-ghost)' : 'var(--surface-3)',
+                      color: daysToMeeting === 0 ? 'var(--mint)' : 'var(--text-2)',
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                    }}
+                  >
+                    {daysToMeeting === 0 ? 'Today' : daysToMeeting === 1 ? 'Tomorrow' : `In ${daysToMeeting} days`}
+                  </span>
+                </div>
+                <div className="dim" style={{ fontSize: '0.78rem', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  📅 {fmtDate(nextMeeting.held_on)} {nextMeeting.note ? `· ${nextMeeting.note}` : ''}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="sec-link"
+              style={{
+                background: 'var(--mint-ghost)',
+                color: 'var(--mint)',
+                padding: '6px 12px',
+                borderRadius: 'var(--r-sm)',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                flex: 'none',
+              }}
+              onClick={() => {
+                haptic(10);
+                const text = `📢 *Upcoming Meeting Reminder — ${group?.name || 'SavingsClub'}*\n\n` +
+                  `📅 *Date*: ${fmtDate(nextMeeting.held_on)}\n` +
+                  (nextMeeting.note ? `📝 *Agenda*: ${nextMeeting.note}\n` : '') +
+                  (nextMeeting.absent_fee_paise > 0 ? `⚠️ *Absent Fine*: ${formatPaise(nextMeeting.absent_fee_paise)}\n\n` : '\n') +
+                  `Please attend on time! See you there.`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+              }}
+            >
+              <IconShare width={13} height={13} />
+              Share
+            </button>
+          </div>
+        )}
+
+        {/* Visual Fund Growth & Member Return Chart */}
+        {chartPoints.length >= 2 && (
+          <FundGrowthChart points={chartPoints} mySharePct={myPosition?.share_pct} />
+        )}
 
         {/* ======================================= 2. ACTION CENTER */}
         {myVoteNeeded.length > 0 && (

@@ -769,6 +769,12 @@ DEFINER, and RLS is exactly what SECURITY DEFINER turns off.
   3. **Fast Member Search & Filtering**: Real-time instant search by name, phone, role, or email with match counts and clear button on both Deposits and Members pages.
   4. **Loan Payoff Progress Bars**: Visual progress meter on running loans displaying `% repaid` (`(principal_paid_paise / principal_paise) * 100`) and remaining principal.
   5. **WhatsApp Monthly Collection Broadcast**: 1-tap summary of month, collected vs expected, paid vs pending members for sharing directly to the group chat.
+  6. **Excel / CSV Export & Printable Annual Statement**: 1-tap CSV spreadsheets for deposits, loans, and cash float (`src/lib/export.ts`) + formal A4/PDF Printable Annual Financial Statement with sign-off blocks (`src/components/PrintableStatement.tsx`).
+  7. **Fund Growth & Member Return SVG Chart**: Interactive area curve tracking capital growth and individual member dividend/yield entitlement (`src/components/FundGrowthChart.tsx`).
+  8. **Digital Payment Receipts**: Formal transaction slips with 1-tap WhatsApp sharing for deposits and loan repayments (`src/components/PaymentReceiptSheet.tsx`).
+  9. **Smart Loan Repayment Schedule Simulator**: Pre-request simulator showing Month 1 vs final month payments and full reducing-balance schedules (`src/pages/NewLoan.tsx`).
+  10. **Upcoming Meeting Countdown Banner**: Dashboard card displaying next meeting date, countdown, agenda, and 1-tap WhatsApp attendance reminder.
+  11. **PWA Mobile App Support**: Offline asset caching (`public/sw.js`) and in-app install flow with iOS Safari guide (`InstallAppPanel`).
 
 ---
 
