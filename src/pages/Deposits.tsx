@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
 import { useSession } from '../context/SessionContext';
 import { useFund } from '../context/FundContext';
-import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees } from '../lib/money';
+import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees, toPaise } from '../lib/money';
 import { haptic } from '../lib/haptics';
 import {
   List, Row, Panel, Empty, SkeletonList, Sheet, Field, AmountField, Busy,
@@ -478,6 +478,7 @@ export default function Deposits() {
               - (paidMap.get(paying.member.id)?.paid ?? 0),
           )}
           alreadyPaid={paidMap.get(paying.member.id)?.paid ?? 0}
+          feesAlreadyCharged={paidMap.get(paying.member.id)?.fees ?? 0}
           onClose={() => setPaying(null)}
           onRecorded={(r) => setReceiptData(r)}
         />
@@ -525,13 +526,17 @@ function isThisMonth(iso: string): boolean {
 }
 
 function RecordSheet({
-  period, member, defaultPaise, alreadyPaid, onClose, onRecorded,
+  period, member, defaultPaise, alreadyPaid, feesAlreadyCharged,
+  onClose, onRecorded,
 }: {
   period: ContributionPeriod;
   member: Member;
   defaultPaise: number;
   /** Paid toward this month already. Non-zero means this is a top-up. */
   alreadyPaid: number;
+  /** Late fee already charged for this month. The database charges it
+      once per member per period, so a second late instalment adds none. */
+  feesAlreadyCharged: number;
   onClose: () => void;
   onRecorded: (r: { memberName: string; amountPaise: number; lateFeePaise: number; month: string; paidOn: string; method: string }) => void;
 }) {
@@ -540,30 +545,46 @@ function RecordSheet({
   const [paidOn, setPaidOn] = useState(() => today());
   const [method, setMethod] = useState<'bank' | 'cash'>('bank');
 
-  const late = new Date(paidOn) > new Date(period.grace_date);
+  // Past the grace date AND no fee charged for this month yet. The second
+  // half matters: record_contribution charges the fee once per member per
+  // period (0026), so warning again on a later instalment promises a
+  // charge that will not happen.
+  const willCharge =
+    new Date(paidOn) > new Date(period.grace_date) && feesAlreadyCharged === 0;
 
   const save = useMutation(
     async () => {
-      const { error } = await supabase.rpc('record_contribution', {
-        p_period_id: period.id,
-        p_member_id: member.id,
-        p_amount_paise: rupeesToPaise(amount),
-        p_paid_on: paidOn,
-        p_method: method,
-      });
+      // The RPC returns the row it inserted. That row carries the late fee the
+      // database actually charged, which is the only authoritative figure.
+      const { data, error } = await supabase
+        .rpc('record_contribution', {
+          p_period_id: period.id,
+          p_member_id: member.id,
+          p_amount_paise: rupeesToPaise(amount),
+          p_paid_on: paidOn,
+          p_method: method,
+        })
+        .single<Contribution>();
       if (error) throw error;
+      return data;
     },
     {
       invalidates: ['contributions', 'positions', 'fund', 'cash', 'feed'],
-      onSuccess: () => {
+      onSuccess: (row) => {
         onClose();
         onRecorded({
           memberName: member.full_name,
-          amountPaise: rupeesToPaise(amount),
-          lateFeePaise: late ? (config?.late_fee_paise ?? 0) : 0,
+          // Both figures come from the saved row, never from what was typed
+          // or guessed. The late fee especially: the database charges it ONCE
+          // per member per period (0026), so a member paying late in three
+          // instalments is charged one fee -- while a client-side
+          // `late ? config.late_fee_paise : 0` would hand them three receipts
+          // each claiming a fee, Rs.150 of receipts for a Rs.50 charge.
+          amountPaise: toPaise(row?.amount_paise ?? rupeesToPaise(amount)),
+          lateFeePaise: toPaise(row?.late_fee_paise ?? 0),
           month: monthLabel(period.period_month),
-          paidOn,
-          method,
+          paidOn: row?.paid_on ?? paidOn,
+          method: row?.method ?? method,
         });
       },
     },
@@ -604,10 +625,19 @@ function RecordSheet({
         </Field>
       </div>
 
-      {late && (
+      {willCharge && (
         <div style={{ marginTop: 14 }}>
           <Notice tone="warn">
-            After the grace date — a late fee is added automatically.
+            This is after {fmtDate(period.grace_date)}, so a late fee of{' '}
+            {formatPaise(config?.late_fee_paise ?? 0)} is added.
+          </Notice>
+        </div>
+      )}
+      {feesAlreadyCharged > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <Notice>
+            The late fee for this month was already charged. No further fee is
+            added.
           </Notice>
         </div>
       )}
