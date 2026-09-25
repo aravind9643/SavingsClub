@@ -27,9 +27,9 @@ interface RepaymentRow {
 export default function LoanDetail() {
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
-  const { member, currentGroupId } = useSession();
+  const { member, role, currentGroupId } = useSession();
   const isOfficer = useIsOfficer();
-  const [sheet, setSheet] = useState<'repay' | 'disburse' | 'cancel' | 'writeoff' | null>(null);
+  const [sheet, setSheet] = useState<'repay' | 'disburse' | 'cancel' | 'writeoff' | 'recovery' | null>(null);
 
   const loanQ = useQuery<LoanRow | null>(id ? `loan:${id}` : null, async () => {
     let q = supabase
@@ -212,6 +212,18 @@ export default function LoanDetail() {
           </div>
         )}
 
+        {loan.status === 'written_off' && (role === 'cashier' || role === 'accountant') && (
+          <div className="btn-row stack" style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              className="primary lg"
+              onClick={() => setSheet('recovery')}
+            >
+              Record Recovery
+            </button>
+          </div>
+        )}
+
         {loan.status === 'approved' && isOfficer && !isBorrower && (
           <div className="btn-row stack">
             <button className="primary lg" onClick={() => setSheet('disburse')}>
@@ -237,6 +249,9 @@ export default function LoanDetail() {
       )}
       {sheet === 'writeoff' && (
         <WriteOffSheet loan={loan} onClose={() => setSheet(null)} />
+      )}
+      {sheet === 'recovery' && (
+        <RecoverySheet loan={loan} onClose={() => setSheet(null)} />
       )}
     </>
   );
@@ -542,6 +557,67 @@ function WriteOffSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }
           Write off {formatPaise(loan.outstanding_principal_paise)}
         </Busy>
         <button type="button" onClick={onClose}>Keep pursuing</button>
+      </div>
+    </Sheet>
+  );
+}
+
+function RecoverySheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }) {
+  const unrecovered = Math.max(0, loan.principal_paise - loan.principal_paid_paise);
+  const [principal, setPrincipal] = useState(String(paiseToRupees(unrecovered)));
+  const [interest, setInterest] = useState('0');
+  const [paidOn, setPaidOn] = useState(() => today());
+  const [method, setMethod] = useState<PaymentMethod>('bank');
+  const [note, setNote] = useState('');
+
+  const recovery = useMutation(
+    async () => {
+      const pAmt = rupeesToPaise(principal);
+      const iAmt = rupeesToPaise(interest);
+      if (pAmt <= 0 && iAmt <= 0) throw new Error('Enter an amount to recover');
+      const { error } = await supabase.rpc('record_recovery', {
+        p_loan_id: loan.id,
+        p_principal_paise: pAmt,
+        p_interest_paise: iAmt,
+        p_paid_on: paidOn,
+        p_method: method,
+        p_note: note.trim() || null,
+      });
+      if (error) throw error;
+    },
+    { invalidates: [`loan:${loan.id}`, 'loans', 'positions', 'fund', 'cash', 'feed', 'audit'], onSuccess: onClose },
+  );
+
+  return (
+    <Sheet open title="Record recovery on written-off loan" onClose={onClose}>
+      <Notice tone="good">
+        Recovering money reverses the loss without distorting group expense limits.
+      </Notice>
+      <Field label="Principal recovered">
+        <AmountField value={principal} onChange={setPrincipal} autoFocus />
+      </Field>
+      <Field label="Interest recovered (if any)">
+        <AmountField value={interest} onChange={setInterest} />
+      </Field>
+      <div className="field-row">
+        <Field label="Date received">
+          <input type="date" value={paidOn} max={today()} onChange={(e) => setPaidOn(e.target.value)} />
+        </Field>
+        <Field label="Method">
+          <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+            <option value="bank">Bank</option>
+            <option value="cash">Cash</option>
+          </select>
+        </Field>
+      </div>
+      <Field label="Note">
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Settlement agreement, etc." />
+      </Field>
+      <ErrorNote error={recovery.error} />
+      <div className="btn-row stack">
+        <Busy className="primary lg" pending={recovery.pending} onClick={() => void recovery.run()}>
+          Record recovery
+        </Busy>
       </div>
     </Sheet>
   );

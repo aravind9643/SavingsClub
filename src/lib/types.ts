@@ -20,6 +20,7 @@ export interface Member {
   is_active: boolean;
   nominee_name: string | null;
   nominee_phone: string | null;
+  opening_balance_paise?: number;
 }
 
 export type MemberStatus = 'pending' | 'active' | 'left';
@@ -258,6 +259,9 @@ export interface AppConfig {
   expense_annual_pct_bp: number;
   cash_float_limit_paise: number;
   cash_report_hours: number;
+  meeting_absent_fee_paise?: number;
+  opened_on?: string | null;
+  opening_locked?: boolean;
 }
 
 export type PayoutKind = 'exit' | 'dividend' | 'interim';

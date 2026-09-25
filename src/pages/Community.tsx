@@ -7,12 +7,17 @@ import { useQuery, useMutation } from '../hooks/useQuery';
 import { haptic } from '../lib/haptics';
 import {
   List, Row, Panel, Sheet, Field, Busy, ErrorNote, Notice, initials, Tag, roleLabel,
+  Segments, fmtDate,
 } from '../components/ui';
 import {
   IconMembers, IconSettings, IconAudit, IconSun, IconMoon, IconLogout,
-  IconPlus, IconChevronDown, IconShare,
+  IconPlus, IconChevronDown, IconShare, IconContributions,
 } from '../components/icons';
-import type { GroupInvite, PendingMember } from '../lib/types';
+import type {
+  GroupInvite, PendingMember, Meeting, AttendanceSummary, Attendance, Member,
+} from '../lib/types';
+import { today } from '../lib/dates';
+import { formatPaise, formatPaiseShort } from '../lib/money';
 
 export default function Community() {
   const nav = useNavigate();
@@ -21,7 +26,20 @@ export default function Community() {
   const { theme, setTheme } = useAppTheme();
   const openSwitcher = useGroupSwitcher();
   const [editingProfile, setEditingProfile] = useState(false);
+  const [meetingSheet, setMeetingSheet] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Meetings query
+  const meetingsQ = useQuery<Meeting[]>('meetings', async () => {
+    let q = supabase
+      .from('meetings').select('*').order('held_on', { ascending: false });
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as Meeting[];
+  });
+
+  const latestMeeting = (meetingsQ.data ?? [])[0];
 
   // Invite query
   const inviteQ = useQuery<GroupInvite | null>('invite:active', async () => {
@@ -207,6 +225,18 @@ export default function Community() {
               note={pendingMembers.length > 0 ? `${pendingMembers.length} pending` : undefined}
             />
             <Row
+              icon={<IconContributions width={18} height={18} />}
+              iconTone="mint"
+              title="Monthly Meetings"
+              sub={latestMeeting ? `Last held on ${fmtDate(latestMeeting.held_on)}` : 'Log meetings & track attendance'}
+              onClick={() => {
+                haptic(10);
+                setMeetingSheet(true);
+              }}
+              chevron
+              note={latestMeeting ? fmtDate(latestMeeting.held_on) : undefined}
+            />
+            <Row
               icon={<IconSettings width={18} height={18} />}
               iconTone="amber"
               title="Group Rules & Constitution"
@@ -268,6 +298,9 @@ export default function Community() {
 
       {editingProfile && (
         <EditProfileSheet onClose={() => setEditingProfile(false)} />
+      )}
+      {meetingSheet && (
+        <MeetingSheet onClose={() => setMeetingSheet(false)} />
       )}
     </>
   );
@@ -332,6 +365,233 @@ function EditProfileSheet({ onClose }: { onClose: () => void }) {
           Save profile
         </Busy>
       </div>
+    </Sheet>
+  );
+}
+
+function MeetingSheet({ onClose }: { onClose: () => void }) {
+  const { currentGroupId, config } = useSession();
+  const isOfficer = useIsOfficer();
+  const [tab, setTab] = useState<'record' | 'attendance' | 'history'>(isOfficer ? 'record' : 'attendance');
+  const [heldOn, setHeldOn] = useState(today());
+  const [note, setNote] = useState('');
+  const [attendance, setAttendance] = useState<Record<string, Attendance>>({});
+
+  const membersQ = useQuery<Member[]>('members:active', async () => {
+    let q = supabase
+      .from('members')
+      .select('*')
+      .eq('status', 'active')
+      .order('full_name');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as Member[];
+  });
+
+  const attendanceQ = useQuery<AttendanceSummary[]>('attendance_summary', async () => {
+    let q = supabase
+      .from('v_member_attendance_summary')
+      .select('*')
+      .order('full_name');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as AttendanceSummary[];
+  });
+
+  const meetingsQ = useQuery<Meeting[]>('meetings', async () => {
+    let q = supabase
+      .from('meetings')
+      .select('*')
+      .order('held_on', { ascending: false });
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as Meeting[];
+  });
+
+  const members = membersQ.data ?? [];
+  const summaries = attendanceQ.data ?? [];
+  const meetings = meetingsQ.data ?? [];
+
+  const saveMeeting = useMutation(
+    async () => {
+      const payload: Record<string, Attendance> = {};
+      for (const m of members) {
+        payload[m.id] = attendance[m.id] || 'present';
+      }
+      const { error } = await supabase.rpc('record_meeting', {
+        p_held_on: heldOn,
+        p_attendance: payload,
+        p_note: note.trim() || null,
+      });
+      if (error) throw error;
+    },
+    {
+      invalidates: ['meetings', 'attendance_summary', 'fund'],
+      onSuccess: () => {
+        haptic(20);
+        setTab('history');
+      },
+    },
+  );
+
+  const absentFee = config?.meeting_absent_fee_paise ?? 0;
+
+  return (
+    <Sheet open title="Group Meetings & Attendance" onClose={onClose}>
+      <Segments<'record' | 'attendance' | 'history'>
+        value={tab}
+        onChange={(next) => {
+          haptic(10);
+          setTab(next);
+        }}
+        options={[
+          ...(isOfficer ? [{ value: 'record' as const, label: 'Log Meeting' }] : []),
+          { value: 'attendance' as const, label: 'Member Roster' },
+          { value: 'history' as const, label: 'History', count: meetings.length > 0 ? meetings.length : undefined },
+        ]}
+      />
+
+      {tab === 'record' && isOfficer && (
+        <div style={{ marginTop: 14 }}>
+          <div className="field-row">
+            <Field label="Meeting Date">
+              <input
+                type="date"
+                value={heldOn}
+                max={today()}
+                onChange={(e) => setHeldOn(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <Field label="Meeting Agenda / Note (optional)">
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Monthly chanda collection & loan review"
+            />
+          </Field>
+
+          {absentFee > 0 ? (
+            <Notice tone="warn">
+              Unexcused absence incurs a fine of <strong>{formatPaise(absentFee)}</strong> as set in group rules.
+            </Notice>
+          ) : (
+            <Notice>
+              Take attendance for all active members. Excused members do not incur absence marks.
+            </Notice>
+          )}
+
+          <div style={{ marginBlock: 14 }}>
+            <div style={{ fontWeight: 650, fontSize: '0.88rem', marginBottom: 10 }} className="dim">
+              Mark Attendance ({members.length} members):
+            </div>
+            <div style={{ maxHeight: 280, overflowY: 'auto', paddingRight: 4 }}>
+              {members.map((m) => {
+                const cur = attendance[m.id] || 'present';
+                return (
+                  <div
+                    key={m.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 0',
+                      borderBottom: '1px solid var(--hairline)',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{m.full_name}</div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {(['present', 'absent', 'excused'] as Attendance[]).map((st) => {
+                        const isSel = cur === st;
+                        const color = st === 'present' ? 'var(--mint)' : st === 'absent' ? 'var(--coral)' : 'var(--amber)';
+                        const bg = isSel
+                          ? (st === 'present' ? 'var(--mint-ghost)' : st === 'absent' ? 'var(--coral-ghost)' : 'var(--amber-ghost)')
+                          : 'var(--surface-2)';
+                        return (
+                          <button
+                            key={st}
+                            type="button"
+                            style={{
+                              background: bg,
+                              color: isSel ? color : 'var(--text-3)',
+                              border: `1px solid ${isSel ? color : 'var(--hairline)'}`,
+                              padding: '5px 10px',
+                              borderRadius: 'var(--r-sm)',
+                              fontSize: '0.78rem',
+                              fontWeight: isSel ? 700 : 500,
+                              cursor: 'pointer',
+                              textTransform: 'capitalize',
+                            }}
+                            onClick={() => {
+                              haptic(5);
+                              setAttendance((prev) => ({ ...prev, [m.id]: st }));
+                            }}
+                          >
+                            {st}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <ErrorNote error={saveMeeting.error} />
+          <div className="btn-row stack" style={{ marginTop: 14 }}>
+            <Busy className="primary lg" pending={saveMeeting.pending} onClick={() => void saveMeeting.run()}>
+              Save Meeting Record
+            </Busy>
+          </div>
+        </div>
+      )}
+
+      {tab === 'attendance' && (
+        <div style={{ marginTop: 14 }}>
+          {summaries.length === 0 ? (
+            <div className="dim" style={{ textAlign: 'center', padding: 24 }}>No attendance records found.</div>
+          ) : (
+            <List>
+              {summaries.map((s) => (
+                <Row
+                  key={s.member_id}
+                  title={s.full_name}
+                  sub={`${s.present_count} present · ${s.absent_count} absent · ${s.excused_count} excused`}
+                  amount={s.fines_paise > 0 ? formatPaise(s.fines_paise) : undefined}
+                  amountTone={s.fines_paise > 0 ? 'coral' : undefined}
+                  note={s.fines_paise > 0 ? 'Fines' : 'Good'}
+                />
+              ))}
+            </List>
+          )}
+        </div>
+      )}
+
+      {tab === 'history' && (
+        <div style={{ marginTop: 14 }}>
+          {meetings.length === 0 ? (
+            <div className="dim" style={{ textAlign: 'center', padding: 24 }}>No meetings recorded yet.</div>
+          ) : (
+            <List>
+              {meetings.map((mt) => (
+                <Row
+                  key={mt.id}
+                  icon={<IconContributions width={16} height={16} />}
+                  iconTone="mint"
+                  title={fmtDate(mt.held_on)}
+                  sub={mt.note || 'Regular group meeting'}
+                  note={mt.absent_fee_paise > 0 ? `Fine: ${formatPaiseShort(mt.absent_fee_paise)}` : undefined}
+                />
+              ))}
+            </List>
+          )}
+        </div>
+      )}
     </Sheet>
   );
 }

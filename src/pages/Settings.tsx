@@ -3,13 +3,17 @@ import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useMutation, useQuery } from '../hooks/useQuery';
 import { useSession } from '../context/SessionContext';
-import { paiseToRupees, rupeesToPaise } from '../lib/money';
-import { Panel, Field, Busy, ErrorNote, Notice, Loading } from '../components/ui';
-import type { GroupInvite } from '../lib/types';
+import { paiseToRupees, rupeesToPaise, formatPaise } from '../lib/money';
+import { Panel, Field, Busy, ErrorNote, Notice, Loading, Sheet } from '../components/ui';
+import { haptic } from '../lib/haptics';
+import { today } from '../lib/dates';
+import type { GroupInvite, Member } from '../lib/types';
 
 export default function Settings() {
   const { config, isOfficer, refresh } = useSession();
   const [saved, setSaved] = useState(false);
+
+  const [openingSheet, setOpeningSheet] = useState(false);
 
   const [form, setForm] = useState(() => config && ({
     group_name: config.name,
@@ -17,6 +21,7 @@ export default function Settings() {
     due_day: String(config.due_day),
     grace_day: String(config.grace_day),
     late_fee: String(paiseToRupees(config.late_fee_paise)),
+    meeting_absent_fee: String(paiseToRupees(config.meeting_absent_fee_paise ?? 0)),
     loan_rate: String(config.loan_rate_bp / 100),
     overdue_rate: String(config.overdue_rate_bp / 100),
     max_months: String(config.max_loan_months),
@@ -37,6 +42,7 @@ export default function Settings() {
       due_day: String(config.due_day),
       grace_day: String(config.grace_day),
       late_fee: String(paiseToRupees(config.late_fee_paise)),
+      meeting_absent_fee: String(paiseToRupees(config.meeting_absent_fee_paise ?? 0)),
       loan_rate: String(config.loan_rate_bp / 100),
       overdue_rate: String(config.overdue_rate_bp / 100),
       max_months: String(config.max_loan_months),
@@ -48,7 +54,7 @@ export default function Settings() {
       float_limit: String(paiseToRupees(config.cash_float_limit_paise)),
       report_hours: String(config.cash_report_hours),
     });
-  }, [config?.id]);
+  }, [config?.id, config?.meeting_absent_fee_paise]);
 
   const save = useMutation(
     async () => {
@@ -57,6 +63,7 @@ export default function Settings() {
       const grace = Number(form.grace_day);
       const monthly = rupeesToPaise(form.monthly);
       const lateFee = rupeesToPaise(form.late_fee);
+      const absentFee = rupeesToPaise(form.meeting_absent_fee);
       const loanRate = Math.round(Number(form.loan_rate) * 100);
       const overdueRate = Math.round(Number(form.overdue_rate) * 100);
       const maxMonths = Number(form.max_months);
@@ -73,6 +80,7 @@ export default function Settings() {
       if (isNaN(grace) || grace < 1 || grace > 28) throw new Error('Grace day must be between 1 and 28');
       if (grace < due) throw new Error('Grace day cannot be earlier than due day');
       if (lateFee < 0) throw new Error('Late fee cannot be negative');
+      if (absentFee < 0) throw new Error('Meeting absence fee cannot be negative');
       if (isNaN(loanRate) || loanRate < 0) throw new Error('Loan rate cannot be negative');
       if (isNaN(overdueRate) || overdueRate < 0) throw new Error('Overdue rate cannot be negative');
       if (isNaN(maxMonths) || maxMonths < 1) throw new Error('Max loan duration must be at least 1 month');
@@ -101,10 +109,11 @@ export default function Settings() {
         p_cash_float_limit_paise: floatLimit,
         p_cash_report_hours: reportHours,
         p_setup_complete: true,
+        p_meeting_absent_fee_paise: absentFee,
       });
       if (error) throw error;
     },
-    { invalidates: ['fund'], onSuccess: () => { setSaved(true); refresh(); } },
+    { invalidates: ['fund', 'config', 'session'], onSuccess: () => { setSaved(true); refresh(); } },
   );
 
   if (!config || !form) return <Screen title="Group rules"><Loading /></Screen>;
@@ -126,6 +135,7 @@ export default function Settings() {
   }
 
   return (
+    <>
     <Screen title="Group rules" sub="The app follows these, always">
       <ErrorNote error={save.error} />
       {saved && <Notice tone="good">Saved.</Notice>}
@@ -138,7 +148,7 @@ export default function Settings() {
 
       <InvitePanel />
 
-      <Panel title="Monthly savings">
+      <Panel title="Monthly savings & meetings">
         <div className="field-row">
           <Field label="Amount each month (₹)">
             <input inputMode="decimal" value={form.monthly} onChange={set('monthly')} />
@@ -155,6 +165,50 @@ export default function Settings() {
             <input inputMode="numeric" value={form.grace_day} onChange={set('grace_day')} />
           </Field>
         </div>
+        <div className="field-row" style={{ marginTop: 14 }}>
+          <Field label="Meeting absence fine (₹)" hint="Charged per unexcused absence, 0 for none">
+            <input inputMode="decimal" value={form.meeting_absent_fee} onChange={set('meeting_absent_fee')} />
+          </Field>
+        </div>
+      </Panel>
+
+      <Panel title="Starting Balances (Paper Ledger Migration)">
+        {config.opening_locked ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontWeight: 600 }}>Opening balances finalized</div>
+              <div className="dim" style={{ fontSize: '0.85rem', marginTop: 2 }}>
+                Locked on {config.opened_on ? new Date(config.opened_on).toLocaleDateString() : 'setup'}. Baseline is immutable.
+              </div>
+            </div>
+            <span className="tag mint">✓ Locked</span>
+          </div>
+        ) : (
+          <div>
+            <p className="dim" style={{ fontSize: '0.88rem', margin: 0, marginBottom: 12 }}>
+              If your group ran on paper before Sanchay, enter what each member had already saved so their shares and interest calculations start accurately.
+            </p>
+            <button
+              type="button"
+              className="sec-link"
+              style={{
+                background: 'var(--surface-2)',
+                border: '1px solid var(--hairline)',
+                padding: '10px 14px',
+                borderRadius: 'var(--r-sm)',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                color: 'var(--text)',
+              }}
+              onClick={() => {
+                haptic(10);
+                setOpeningSheet(true);
+              }}
+            >
+              Record Starting Balances
+            </button>
+          </div>
+        )}
       </Panel>
 
       <Panel title="Loans">
@@ -214,6 +268,10 @@ export default function Settings() {
         </Busy>
       </div>
     </Screen>
+    {openingSheet && (
+      <OpeningBalancesSheet onClose={() => setOpeningSheet(false)} />
+    )}
+    </>
   );
 }
 
@@ -345,6 +403,7 @@ function ReadOnly({ config }: { config: NonNullable<ReturnType<typeof useSession
     ['Yes votes for a loan', config.loan_required_approvals > 0 ? `${config.loan_required_approvals} members` : 'A simple majority'],
     ['Yes votes for spending', config.expense_required_approvals > 0 ? `${config.expense_required_approvals} members` : 'Two out of every three'],
     ['Most cash in hand', `₹${paiseToRupees(config.cash_float_limit_paise)}`],
+    ['Meeting absence fee', config.meeting_absent_fee_paise ? `₹${paiseToRupees(config.meeting_absent_fee_paise)}` : 'None'],
   ];
   return (
     <div style={{ display: 'grid', gap: 10 }}>
@@ -355,5 +414,185 @@ function ReadOnly({ config }: { config: NonNullable<ReturnType<typeof useSession
         </div>
       ))}
     </div>
+  );
+}
+
+function OpeningBalancesSheet({ onClose }: { onClose: () => void }) {
+  const { config, currentGroupId, refresh } = useSession();
+  const [openedOn, setOpenedOn] = useState(config?.opened_on || today());
+  const [balances, setBalances] = useState<Record<string, string>>({});
+  const [lockConfirm, setLockConfirm] = useState(false);
+
+  const membersQ = useQuery<Member[]>('members:active', async () => {
+    let q = supabase
+      .from('members')
+      .select('*')
+      .eq('status', 'active')
+      .order('full_name');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as Member[];
+  });
+
+  const members = membersQ.data ?? [];
+
+  // Initialize from member opening_balance_paise when loaded
+  useEffect(() => {
+    if (members.length > 0 && Object.keys(balances).length === 0) {
+      const init: Record<string, string> = {};
+      for (const m of members) {
+        init[m.id] = m.opening_balance_paise ? String(paiseToRupees(m.opening_balance_paise)) : '0';
+      }
+      setBalances(init);
+    }
+  }, [members]);
+
+  // Calculate total starting fund in paise
+  const totalStartingPaise = members.reduce((sum, m) => {
+    const val = balances[m.id];
+    return sum + (val ? rupeesToPaise(val) : 0);
+  }, 0);
+
+  const saveOpening = useMutation(
+    async () => {
+      const payload: Record<string, number> = {};
+      for (const m of members) {
+        const val = balances[m.id];
+        const paise = val ? rupeesToPaise(val) : 0;
+        if (paise < 0) throw new Error('Starting balances cannot be negative');
+        payload[m.id] = paise;
+      }
+      const { error } = await supabase.rpc('set_opening_position', {
+        p_opened_on: openedOn,
+        p_balances: payload,
+      });
+      if (error) throw error;
+    },
+    {
+      invalidates: ['fund', 'members', 'session'],
+      onSuccess: () => {
+        haptic(20);
+        refresh();
+      },
+    },
+  );
+
+  const lockOpening = useMutation(
+    async () => {
+      const { error } = await supabase.rpc('lock_opening_position');
+      if (error) throw error;
+    },
+    {
+      invalidates: ['fund', 'members', 'session'],
+      onSuccess: () => {
+        haptic(20);
+        refresh();
+        onClose();
+      },
+    },
+  );
+
+  return (
+    <Sheet open title="Starting Balances (Paper Ledger)" onClose={onClose}>
+      <p className="dim" style={{ fontSize: '0.85rem', marginBottom: 12 }}>
+        Enter what each member had already accumulated before the group joined Sanchay. This becomes their initial savings share.
+      </p>
+
+      <Field label="Group Inception Date">
+        <input
+          type="date"
+          value={openedOn}
+          max={today()}
+          onChange={(e) => setOpenedOn(e.target.value)}
+        />
+      </Field>
+
+      <div style={{ marginBlock: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontWeight: 650, fontSize: '0.88rem' }} className="dim">Member Balances</span>
+          <span style={{ fontWeight: 700, color: 'var(--mint)', fontSize: '0.95rem' }}>
+            Total: {formatPaise(totalStartingPaise)}
+          </span>
+        </div>
+
+        <div style={{ maxHeight: 260, overflowY: 'auto', paddingRight: 4 }}>
+          {members.map((m) => (
+            <div
+              key={m.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 0',
+                borderBottom: '1px solid var(--hairline)',
+                gap: 12,
+              }}
+            >
+              <div style={{ minWidth: 0, flex: 1, fontWeight: 600, fontSize: '0.92rem' }}>
+                {m.full_name}
+              </div>
+              <div style={{ width: 130 }}>
+                <input
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={balances[m.id] ?? '0'}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setBalances((prev) => ({ ...prev, [m.id]: v }));
+                  }}
+                  style={{ textAlign: 'right', padding: '6px 10px', fontSize: '0.92rem' }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <Notice>
+        Starting balances can only be edited before official contributions or disbursed loans are logged.
+      </Notice>
+
+      <ErrorNote error={saveOpening.error || lockOpening.error} />
+
+      <div className="btn-row stack" style={{ marginTop: 14 }}>
+        <Busy className="primary lg" pending={saveOpening.pending} onClick={() => void saveOpening.run()}>
+          Save Starting Balances
+        </Busy>
+
+        {!lockConfirm ? (
+          <button
+            type="button"
+            className="lg"
+            style={{ color: 'var(--amber)' }}
+            onClick={() => setLockConfirm(true)}
+          >
+            Lock Starting Balances Permanently
+          </button>
+        ) : (
+          <div style={{ background: 'var(--surface-2)', padding: 12, borderRadius: 'var(--r-sm)' }}>
+            <p style={{ margin: 0, fontSize: '0.85rem', marginBottom: 8, color: 'var(--text)' }}>
+              Are you sure? Once locked, these baseline figures cannot be edited because all future shares and payouts depend on them.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Busy
+                className="coral sm"
+                pending={lockOpening.pending}
+                onClick={() => void lockOpening.run()}
+              >
+                Yes, Lock Baseline
+              </Busy>
+              <button
+                type="button"
+                className="sm"
+                onClick={() => setLockConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Sheet>
   );
 }

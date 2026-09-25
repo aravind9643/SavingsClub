@@ -15,10 +15,11 @@ import {
 } from '../components/ui';
 import {
   IconPlus, IconBank, IconWallet, IconExpenses, IconCheck, IconArrowUp,
-  IconArrowDown, IconShare,
+  IconArrowDown, IconShare, IconLoan,
 } from '../components/icons';
 import type {
   BankStatement, CashEntry, ExpenseRow, ExpenseCategory, Vote,
+  Distribution, DistributionLine, DistributionKind,
 } from '../lib/types';
 import { today } from '../lib/dates';
 
@@ -53,6 +54,7 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
   const [cashSheet, setCashSheet] = useState(false);
   const [expenseSheet, setExpenseSheet] = useState(false);
   const [reportSheet, setReportSheet] = useState(false);
+  const [distSheet, setDistSheet] = useState(false);
   const [initialCashData, setInitialCashData] = useState<{
     direction: 'in' | 'out';
     amount: string;
@@ -107,6 +109,18 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
   const votingExpenses = allExpenses.filter((e) => e.status === 'proposed');
   const paidExpenses = allExpenses.filter((e) => e.status === 'paid');
   const totalSpentPaise = paidExpenses.reduce((sum, e) => sum + e.amount_paise, 0);
+
+  // ---------------------------------------- Distribution Queries & Mutations
+  const distQ = useQuery<Distribution[]>('distributions', async () => {
+    let q = supabase
+      .from('distributions').select('*').order('proposed_at', { ascending: false });
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as Distribution[];
+  });
+
+  const activeDist = (distQ.data ?? []).find((d) => d.status === 'proposed');
 
   const cashBalance = fund?.cash_float_paise ?? 0;
   const cashLimit = fund?.cash_float_limit_paise ?? 0;
@@ -167,6 +181,42 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                   </>
                 }
               />
+            )}
+
+            {activeDist && (
+              <div
+                className="panel"
+                style={{
+                  background: 'var(--amber-ghost)',
+                  border: '1px solid var(--amber)',
+                  borderRadius: 'var(--r)',
+                  padding: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  marginBottom: 14,
+                }}
+                onClick={() => {
+                  haptic(10);
+                  setDistSheet(true);
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className="row-ico amber" style={{ width: 36, height: 36, borderRadius: 10 }}>
+                    <IconLoan width={17} height={17} />
+                  </span>
+                  <div>
+                    <div style={{ fontWeight: 650, color: 'var(--text)', fontSize: '0.92rem' }}>
+                      {activeDist.kind === 'profit' ? 'Profit Share' : 'Group Wind-up'} Proposed
+                    </div>
+                    <div className="dim" style={{ fontSize: '0.8rem', marginTop: 1 }}>
+                      {formatPaise(activeDist.total_paise)} · Awaiting second officer
+                    </div>
+                  </div>
+                </div>
+                <span className="tag amber">Review</span>
+              </div>
             )}
 
             {/* Quick Status Cards */}
@@ -393,6 +443,30 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                   <IconShare width={16} height={16} style={{ color: 'var(--text-2)' }} />
                   <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text)' }}>
                     Share Report
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="sec-link"
+                  style={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--hairline)',
+                    borderRadius: 'var(--r-sm)',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: 6,
+                  }}
+                  onClick={() => {
+                    haptic(10);
+                    setDistSheet(true);
+                  }}
+                >
+                  <IconLoan width={16} height={16} style={{ color: 'var(--mint)' }} />
+                  <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text)' }}>
+                    Profit Share
                   </span>
                 </button>
               </div>
@@ -643,6 +717,9 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
       )}
       {reportSheet && (
         <TreasuryReportSheet onClose={() => setReportSheet(false)} />
+      )}
+      {distSheet && (
+        <DistributionSheet onClose={() => setDistSheet(false)} />
       )}
     </>
   );
@@ -988,6 +1065,267 @@ function TreasuryReportSheet({ onClose }: { onClose: () => void }) {
           Download Excel / CSV
         </button>
       </div>
+    </Sheet>
+  );
+}
+
+function DistributionSheet({ onClose }: { onClose: () => void }) {
+  const { member, isOfficer, currentGroupId } = useSession();
+  const [kind, setKind] = useState<DistributionKind>('profit');
+  const [amountRupees, setAmountRupees] = useState('');
+  const [date, setDate] = useState(today());
+  const [note, setNote] = useState('');
+
+  // 1. Fetch active proposal if one exists
+  const distQ = useQuery<Distribution[]>('distributions', async () => {
+    let q = supabase
+      .from('distributions')
+      .select('*')
+      .order('proposed_at', { ascending: false });
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as Distribution[];
+  });
+
+  const activeDist = (distQ.data ?? []).find((d) => d.status === 'proposed');
+
+  // 2. Fetch lines if active proposal exists
+  const linesQ = useQuery<DistributionLine[]>(
+    activeDist ? `dist_lines_${activeDist.id}` : null,
+    async () => {
+      if (!activeDist) return [];
+      let q = supabase
+        .from('v_distribution_lines')
+        .select('*')
+        .eq('distribution_id', activeDist.id)
+        .order('full_name');
+      if (currentGroupId) q = q.eq('group_id', currentGroupId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as DistributionLine[];
+    }
+  );
+
+  // 3. Fetch distributable profit available
+  const profitQ = useQuery<number>(`distributable_${kind}`, async () => {
+    const { data, error } = await supabase.rpc('fn_distributable_paise', { p_kind: kind });
+    if (error) throw error;
+    return Number(data ?? 0);
+  });
+
+  const maxDistributable = profitQ.data ?? 0;
+
+  // Set default amount when distributable pool loaded and field is empty
+  useEffect(() => {
+    if (!activeDist && maxDistributable > 0 && !amountRupees) {
+      setAmountRupees(String(paiseToRupees(maxDistributable)));
+    }
+  }, [maxDistributable, activeDist]);
+
+  const propose = useMutation(
+    async () => {
+      const paise = rupeesToPaise(amountRupees);
+      if (paise <= 0) throw new Error('Please enter a valid amount');
+      if (paise > maxDistributable) {
+        throw new Error(`Amount cannot exceed distributable pool of ${formatPaise(maxDistributable)}`);
+      }
+      const { error } = await supabase.rpc('propose_distribution', {
+        p_kind: kind,
+        p_amount_paise: paise,
+        p_as_of: date,
+        p_note: note.trim() || null,
+      });
+      if (error) throw error;
+    },
+    {
+      invalidates: ['distributions', 'fund', 'members'],
+      onSuccess: () => {
+        haptic(20);
+      },
+    }
+  );
+
+  const confirm = useMutation(
+    async () => {
+      if (!activeDist) return;
+      const { error } = await supabase.rpc('confirm_distribution', {
+        p_distribution_id: activeDist.id,
+      });
+      if (error) throw error;
+    },
+    {
+      invalidates: ['distributions', 'fund', 'members'],
+      onSuccess: () => {
+        haptic(20);
+        onClose();
+      },
+    }
+  );
+
+  const cancel = useMutation(
+    async () => {
+      if (!activeDist) return;
+      const { error } = await supabase.rpc('cancel_distribution', {
+        p_distribution_id: activeDist.id,
+      });
+      if (error) throw error;
+    },
+    {
+      invalidates: ['distributions', 'fund', 'members'],
+      onSuccess: () => {
+        haptic(10);
+      },
+    }
+  );
+
+  const isProposer = Boolean(activeDist && member && activeDist.proposed_by === member.id);
+  const lines = linesQ.data ?? [];
+
+  return (
+    <Sheet open title="Profit Share & Dividends" onClose={onClose}>
+      {activeDist ? (
+        <>
+          <div style={{ marginBottom: 14 }}>
+            <span className="tag amber" style={{ marginBottom: 6 }}>
+              Proposed · Awaiting Second Officer
+            </span>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '1.4rem', fontWeight: 700 }}>
+              {formatPaise(activeDist.total_paise)}
+            </div>
+            <div className="dim" style={{ fontSize: '0.85rem', marginTop: 4 }}>
+              {activeDist.kind === 'profit' ? 'Annual Profit Distribution' : 'Final Group Share-out'} · As of {fmtDate(activeDist.as_of)}
+            </div>
+            {activeDist.note && (
+              <div style={{ marginTop: 6, fontSize: '0.9rem', fontStyle: 'italic' }}>
+                "{activeDist.note}"
+              </div>
+            )}
+          </div>
+
+          <div style={{ maxHeight: 220, overflowY: 'auto', marginBlock: 12 }}>
+            <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 8 }} className="dim">
+              Member Payout Breakdown (Pro-rata):
+            </div>
+            <List>
+              {lines.map((l) => (
+                <Row
+                  key={l.id}
+                  title={l.full_name}
+                  amount={formatPaise(l.amount_paise)}
+                  amountTone="mint"
+                />
+              ))}
+            </List>
+          </div>
+
+          {isProposer ? (
+            <Notice tone="warn">
+              You proposed this share-out. A different officer (Cashier, Accountant, or Admin) must verify the figures and confirm it at your group meeting.
+            </Notice>
+          ) : isOfficer ? (
+            <Notice tone="good">
+              Verify these member payouts with your bank balance. Confirming will create the official member payout entries.
+            </Notice>
+          ) : (
+            <Notice>
+              Proposed by group officers. Awaiting final sign-off at the group meeting.
+            </Notice>
+          )}
+
+          <ErrorNote error={confirm.error || cancel.error} />
+
+          <div className="btn-row stack" style={{ marginTop: 14 }}>
+            {!isProposer && isOfficer && (
+              <Busy className="primary lg" pending={confirm.pending} onClick={() => void confirm.run()}>
+                Confirm & Distribute
+              </Busy>
+            )}
+            {isOfficer && (
+              <Busy className="coral lg" pending={cancel.pending} onClick={() => void cancel.run()}>
+                Cancel Proposal
+              </Busy>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ marginBottom: 14 }}>
+            <div className="dim" style={{ fontSize: '0.85rem' }}>Available Distributable Pool:</div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '1.35rem', fontWeight: 700, color: 'var(--mint)' }}>
+              {formatPaise(maxDistributable)}
+            </div>
+            <div className="dim" style={{ fontSize: '0.8rem', marginTop: 2 }}>
+              Interest earnings minus expenses and previous profit distributions.
+            </div>
+          </div>
+
+          {isOfficer ? (
+            <>
+              <div className="field-row">
+                <Field label="Share-out Type">
+                  <select
+                    value={kind}
+                    onChange={(e) => {
+                      setKind(e.target.value as DistributionKind);
+                    }}
+                  >
+                    <option value="profit">Annual Profit Dividend</option>
+                    <option value="final">Final Group Wind-up</option>
+                  </select>
+                </Field>
+                <Field label="Distribution Date">
+                  <input
+                    type="date"
+                    value={date}
+                    max={today()}
+                    onChange={(e) => setDate(e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              <Field
+                label="Amount to distribute (₹)"
+                hint={`Max today: ${formatPaiseShort(maxDistributable)}`}
+              >
+                <AmountField
+                  value={amountRupees}
+                  onChange={setAmountRupees}
+                />
+              </Field>
+
+              <Field label="Note / Occasion (optional)">
+                <input
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="e.g. Diwali 2026 Profit Dividend"
+                />
+              </Field>
+
+              <Notice>
+                Proposing calculates each member's exact pro-rata share based on their savings. A second officer must review and confirm it before money is paid.
+              </Notice>
+
+              <ErrorNote error={propose.error} />
+
+              <div className="btn-row stack" style={{ marginTop: 14 }}>
+                <Busy
+                  className="primary lg"
+                  pending={propose.pending}
+                  disabled={maxDistributable <= 0}
+                  onClick={() => void propose.run()}
+                >
+                  Propose Distribution
+                </Busy>
+              </div>
+            </>
+          ) : (
+            <Notice>
+              Only officers (Admin, Cashier, Accountant) can propose profit share distributions.
+            </Notice>
+          )}
+        </>
+      )}
     </Sheet>
   );
 }
