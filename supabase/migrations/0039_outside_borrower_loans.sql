@@ -492,18 +492,36 @@ revoke all on v_loan_status from anon;
 
 create view v_reminders
 with (security_invoker = true) as
+-- Money owed for a month, including part payments -- the shortfall, not the
+-- whole amount, because telling someone who has paid half that they owe the
+-- full sum is how a group loses faith in the app.
+select
+  u.member_id,
+  u.group_id,
+  u.full_name,
+  (case when u.is_overdue then 'contribution_overdue'
+        else 'contribution_due' end)::reminder_kind_enum as kind,
+  u.shortfall_paise                                       as amount_paise,
+  u.grace_date                                            as due_on,
+  to_char(u.period_month, 'Mon YYYY')                     as subject
+from v_unpaid_contributions u
+
+union all
+
+-- Loan instalments. This is the reminder that could not exist at all before
+-- there was a schedule to be behind on.
 select
   coalesce(l.borrower_id, l.guarantor_id) as member_id,
   l.group_id,
-  l.borrower_name,
+  l.borrower_name                         as full_name,
   (case when l.arrears_paise > 0 then 'loan_overdue'
         else 'loan_instalment_due' end)::reminder_kind_enum as kind,
   (case when l.arrears_paise > 0 then l.arrears_paise
         else coalesce((select i.principal_paise from loan_instalments i
                        where i.loan_id = l.id and i.due_on > current_date
-                       order by i.due_on limit 1), 0) end) as amount_paise,
-  coalesce(l.next_due_on, l.due_on) as due_on,
-  'Loan repayment' as title
+                       order by i.due_on limit 1), 0) end)  as amount_paise,
+  coalesce(l.next_due_on, l.due_on)                         as due_on,
+  'Loan repayment'                                          as subject
 from v_loan_status l
 where l.status = 'disbursed'
   and (l.arrears_paise > 0

@@ -380,7 +380,7 @@ export default function LoanDetail() {
                         id: r.id,
                         groupName: group?.name || 'SavingsClub',
                         memberName: loan.borrower_name,
-                        memberPhone: borrowerQ.data?.phone,
+                        memberPhone: loan.is_outside_borrower ? (loan.outside_borrower_phone ?? undefined) : borrowerQ.data?.phone,
                         title: 'Loan Repayment',
                         periodOrDetail: `Loan #${loan.id.slice(0, 6)}`,
                         amountPaise: r.principal_paise,
