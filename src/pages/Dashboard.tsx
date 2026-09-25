@@ -135,6 +135,28 @@ export default function Dashboard() {
     return (data as Meeting) ?? null;
   });
 
+  const chartPoints = useMemo(() => {
+    const periods = [...(pastPeriodsQ.data ?? [])];
+    periods.sort((a: ContributionPeriod, b: ContributionPeriod) => a.period_month.localeCompare(b.period_month));
+    if (periods.length < 2) return [];
+
+    const totalFund = fund?.total_fund_paise ?? 0;
+    const count = periods.length;
+    return periods.map((p: ContributionPeriod, idx: number) => {
+      const d = new Date(p.period_month);
+      const label = d.toLocaleDateString('en-US', { month: 'short' });
+      const factor = (idx + 1) / count;
+      const cap = Math.round(totalFund * factor);
+      const interest = Math.round(cap * 0.05);
+      return {
+        label,
+        month: p.period_month.slice(0, 7),
+        capital: cap,
+        interest,
+      };
+    });
+  }, [pastPeriodsQ.data, fund?.total_fund_paise]);
+
   if (loading && !fund) {
     return (
       <Screen title="Home">
@@ -196,28 +218,6 @@ export default function Dashboard() {
   const daysToMeeting = nextMeeting
     ? Math.ceil((new Date(nextMeeting.held_on).getTime() - new Date(today()).getTime()) / (1000 * 60 * 60 * 24))
     : null;
-
-  const chartPoints = useMemo(() => {
-    const periods = [...(pastPeriodsQ.data ?? [])];
-    periods.sort((a: ContributionPeriod, b: ContributionPeriod) => a.period_month.localeCompare(b.period_month));
-    if (periods.length < 2) return [];
-
-    const totalFund = fund?.total_fund_paise ?? 0;
-    const count = periods.length;
-    return periods.map((p: ContributionPeriod, idx: number) => {
-      const d = new Date(p.period_month);
-      const label = d.toLocaleDateString('en-US', { month: 'short' });
-      const factor = (idx + 1) / count;
-      const cap = Math.round(totalFund * factor);
-      const interest = Math.round(cap * 0.05);
-      return {
-        label,
-        month: p.period_month.slice(0, 7),
-        capital: cap,
-        interest,
-      };
-    });
-  }, [pastPeriodsQ.data, fund?.total_fund_paise]);
 
   return (
     <>

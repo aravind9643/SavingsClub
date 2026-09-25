@@ -47,8 +47,30 @@ function readLastGroup(): string | null {
   }
 }
 
+function readInitialSession(): Session | null {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.access_token && parsed.user) {
+            return parsed as Session;
+          }
+        }
+      }
+    }
+  } catch {
+    // fallback if private window or parse error
+  }
+  return null;
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<Session | null>(readInitialSession);
+  const [authReady, setAuthReady] = useState(() => Boolean(readInitialSession()));
   const [groups, setGroups] = useState<MyGroup[]>([]);
   const [currentGroupId, setCurrentGroupId] = useState<string | null>(readLastGroup);
   const [member, setMember] = useState<Member | null>(null);
@@ -59,10 +81,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthReady(true);
+    });
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === 'SIGNED_OUT' || !s) {
         setSession(null);
+        setAuthReady(true);
         return;
       }
       setSession((prev) => {
@@ -71,6 +97,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
         return s;
       });
+      setAuthReady(true);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -95,6 +122,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!authReady) {
+      return;
+    }
 
     if (!session) {
       setGroups([]);
@@ -207,7 +238,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })();
 
     return () => { cancelled = true; };
-  }, [userId, currentGroupId, tick]);
+  }, [userId, currentGroupId, tick, authReady]);
 
   const switchGroup = useCallback(async (groupId: string) => {
     if (groupId === currentGroupId) return;
@@ -230,6 +261,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const group = groups.find((g) => g.id === currentGroupId) ?? groups[0] ?? null;
 
+  const isOverallLoading = !authReady || loading;
+
   const value = useMemo<SessionValue>(() => ({
     session,
     groups,
@@ -238,10 +271,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     member,
     role,
     config,
-    loading,
-    noGroups: Boolean(session) && !loading && groups.length === 0,
+    loading: isOverallLoading,
+    noGroups: Boolean(session) && !isOverallLoading && groups.length === 0,
     awaitingApproval:
-      Boolean(session) && !loading && groups.length > 0 && (group?.status === 'pending' || groups.every((g) => g.status === 'pending')),
+      Boolean(session) && !isOverallLoading && groups.length > 0 && (group?.status === 'pending' || groups.every((g) => g.status === 'pending')),
     isOfficer: role === 'cashier' || role === 'accountant' || role === 'admin',
     networkError,
     retry: () => setTick((n) => n + 1),
@@ -251,7 +284,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await supabase.auth.signOut();
     },
     refresh: () => setTick((n) => n + 1),
-  }), [session, groups, currentGroupId, group, member, role, config, loading, networkError, switchGroup]);
+  }), [session, groups, currentGroupId, group, member, role, config, isOverallLoading, networkError, switchGroup]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

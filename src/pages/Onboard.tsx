@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useMutation } from '../hooks/useQuery';
 import { useSession } from '../context/SessionContext';
@@ -14,14 +15,35 @@ type Mode = 'choose' | 'create' | 'join';
 /**
  * Shown when a signed-in person belongs to no group yet, or wants to join/start another.
  */
-export default function Onboard({ onDone }: { onDone?: () => void }) {
-  const { session, signOut, groups } = useSession();
-  const [mode, setMode] = useState<Mode>('choose');
+export default function Onboard({
+  initialMode,
+  onDone,
+}: {
+  initialMode?: Mode;
+  onDone?: () => void;
+}) {
+  const { session, signOut, groups, group } = useSession();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const queryMode = searchParams.get('mode') as Mode | null;
+  const [mode, setMode] = useState<Mode>(queryMode || initialMode || 'choose');
+
+  useEffect(() => {
+    if (queryMode && (queryMode === 'create' || queryMode === 'join' || queryMode === 'choose')) {
+      setMode(queryMode);
+    }
+  }, [queryMode]);
 
   const inApp = groups.length > 0;
   const back = () => {
     haptic(10);
     setMode('choose');
+  };
+
+  const handleDone = () => {
+    if (onDone) onDone();
+    else navigate('/');
   };
 
   return (
@@ -97,10 +119,11 @@ export default function Onboard({ onDone }: { onDone?: () => void }) {
                 <button
                   type="button"
                   className="sec-link"
-                  style={{ fontSize: '0.86rem', color: 'var(--text-3)' }}
-                  onClick={() => onDone?.()}
+                  style={{ fontSize: '0.9rem', color: 'var(--text-2)' }}
+                  onClick={handleDone}
                 >
-                  Cancel and return
+                  <IconArrowLeft width={14} height={14} style={{ marginRight: 6 }} />
+                  <span>Return to {group?.name ?? 'your group'}</span>
                 </button>
               ) : (
                 <button
@@ -116,8 +139,8 @@ export default function Onboard({ onDone }: { onDone?: () => void }) {
           </>
         )}
 
-        {mode === 'create' && <CreateGroup onBack={back} onDone={onDone} />}
-        {mode === 'join' && <JoinGroup onBack={back} onDone={onDone} />}
+        {mode === 'create' && <CreateGroup onBack={back} onDone={handleDone} />}
+        {mode === 'join' && <JoinGroup onBack={back} onDone={handleDone} />}
       </div>
     </div>
   );
@@ -384,6 +407,7 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
  */
 export function AwaitingApproval() {
   const { group, session, signOut, refresh, groups, switchGroup } = useSession();
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const others = groups.filter((g) => g.status === 'active');
 
@@ -427,6 +451,9 @@ export function AwaitingApproval() {
               Go to {g.name}
             </button>
           ))}
+          <button type="button" className="lg" onClick={() => navigate('/onboard')}>
+            Join or start another group
+          </button>
           <button type="button" className="ghost" onClick={() => void signOut()}>
             Sign out
           </button>

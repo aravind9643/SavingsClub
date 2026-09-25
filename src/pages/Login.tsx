@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase, friendlyError } from '../lib/supabase';
 import { ErrorNote, Field, Busy } from '../components/ui';
 import { IconEye, IconEyeSlash, IconEmail, IconVault } from '../components/icons';
@@ -6,8 +7,15 @@ import { haptic } from '../lib/haptics';
 
 type Mode = 'signin' | 'signup' | 'magic';
 
-export default function Login() {
-  const [mode, setMode] = useState<Mode>('signin');
+export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const [mode, setMode] = useState<Mode>(() => {
+    if (location.pathname === '/signup') return 'signup';
+    if (location.pathname === '/login') return 'signin';
+    return initialMode;
+  });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -15,6 +23,14 @@ export default function Login() {
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (location.pathname === '/signup' && mode !== 'signup') {
+      setMode('signup');
+    } else if (location.pathname === '/login' && mode !== 'signin' && mode !== 'magic') {
+      setMode('signin');
+    }
+  }, [location.pathname, mode]);
 
   async function submit() {
     setBusy(true);
@@ -40,6 +56,7 @@ export default function Login() {
         if (!data.session) {
           setInfo('Account created! Please check your email to confirm, then sign in.');
           setMode('signin');
+          navigate('/login', { replace: true });
         }
         return;
       }
@@ -139,9 +156,13 @@ export default function Login() {
               className={`seg${mode === 'signin' ? ' on' : ''}`}
               style={{ padding: '7px 0', textAlign: 'center', width: '100%', borderRadius: 'var(--r-full)' }}
               onClick={() => {
+                haptic(10);
                 setMode('signin');
                 setError(null);
                 setInfo(null);
+                if (location.pathname !== '/login') {
+                  navigate('/login');
+                }
               }}
             >
               Sign in
@@ -151,9 +172,13 @@ export default function Login() {
               className={`seg${mode === 'signup' ? ' on' : ''}`}
               style={{ padding: '7px 0', textAlign: 'center', width: '100%', borderRadius: 'var(--r-full)' }}
               onClick={() => {
+                haptic(10);
                 setMode('signup');
                 setError(null);
                 setInfo(null);
+                if (location.pathname !== '/signup') {
+                  navigate('/signup');
+                }
               }}
             >
               Create account
@@ -273,8 +298,12 @@ export default function Login() {
               className="sec-link"
               style={{ fontSize: '0.84rem' }}
               onClick={() => {
+                haptic(10);
                 setMode('signin');
                 setError(null);
+                if (location.pathname !== '/login') {
+                  navigate('/login');
+                }
               }}
             >
               Sign in with password

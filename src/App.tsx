@@ -2,7 +2,7 @@ import {
   createContext, useContext, useEffect, useRef, useState, lazy, Suspense,
   type ReactNode,
 } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { SessionProvider, useSession } from './context/SessionContext';
 import { FundProvider, useFund } from './context/FundContext';
 import Login from './pages/Login';
@@ -129,9 +129,9 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
 
 function Shell() {
   const [switcher, setSwitcher] = useState(false);
-  const [adding, setAdding] = useState(false);
   const { networkError, retry } = useSession();
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     resetScrollLock();
@@ -139,10 +139,6 @@ function Shell() {
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
   }, [location.pathname]);
-
-  // Adding a group takes over the screen: create/join both end in a session
-  // refresh, and a half-visible ledger behind them would be the old group's.
-  if (adding) return <Onboard onDone={() => setAdding(false)} />;
 
   return (
     <SwitcherCtx.Provider value={() => setSwitcher(true)}>
@@ -205,7 +201,10 @@ function Shell() {
       <GroupSwitcher
         open={switcher}
         onClose={() => setSwitcher(false)}
-        onAddGroup={() => setAdding(true)}
+        onAddGroup={() => {
+          setSwitcher(false);
+          navigate('/onboard');
+        }}
       />
     </div>
     </SwitcherCtx.Provider>
@@ -214,27 +213,67 @@ function Shell() {
 
 function Gate() {
   const {
-    session, member, loading, noGroups, awaitingApproval, currentGroupId, groups,
+    session, member, loading, noGroups, awaitingApproval, currentGroupId, groups, refresh,
   } = useSession();
+  const navigate = useNavigate();
   useTheme();
 
-  if (loading) return <div className="auth"><Loading what="Signing in" /></div>;
-  if (!session) return <Login />;
-  if (noGroups) return <Onboard />;
-  if (awaitingApproval || (groups.length > 0 && groups.every((g) => g.status === 'pending'))) {
-    return <AwaitingApproval />;
+  // Unauthenticated: dedicated /login and /signup routes
+  if (!session) {
+    if (loading) return <div className="auth"><Loading what="Signing in" /></div>;
+    return (
+      <Routes>
+        <Route path="/login" element={<Login initialMode="signin" />} />
+        <Route path="/signup" element={<Login initialMode="signup" />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
   }
-  // Signed in, in an active group, but the member row has not arrived. A brief
-  // window during a switch rather than a state anyone can get stuck in.
-  if (!member) return <div className="auth"><Loading what="Opening your group" /></div>;
 
-  // Remounting the whole shell on a group change throws away every page's local
-  // state -- open sheets, half-typed amounts, scroll position -- which would
-  // otherwise carry over from one group's screen to another's.
+  // Signed in, but no groups yet: dedicated /onboard and /join routes
+  if (noGroups) {
+    return (
+      <Routes>
+        <Route path="/onboard" element={<Onboard />} />
+        <Route path="/join" element={<Onboard initialMode="join" />} />
+        <Route path="/login" element={<Navigate to="/onboard" replace />} />
+        <Route path="/signup" element={<Navigate to="/onboard" replace />} />
+        <Route path="*" element={<Navigate to="/onboard" replace />} />
+      </Routes>
+    );
+  }
+
+  // Signed in with pending membership awaiting officer approval
+  if (awaitingApproval || (groups.length > 0 && groups.every((g) => g.status === 'pending'))) {
+    return (
+      <Routes>
+        <Route path="/onboard" element={<Onboard onDone={() => refresh()} />} />
+        <Route path="/join" element={<Onboard initialMode="join" onDone={() => refresh()} />} />
+        <Route path="/awaiting-approval" element={<AwaitingApproval />} />
+        <Route path="*" element={<AwaitingApproval />} />
+      </Routes>
+    );
+  }
+
+  // Signed in, in an active group, but member row hasn't arrived
+  if (loading || !member) return <div className="auth"><Loading what="Opening your group" /></div>;
+
+  // Signed in, active group member
   return (
-    <FundProvider key={currentGroupId ?? 'none'}>
-      <Shell />
-    </FundProvider>
+    <Routes>
+      <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/signup" element={<Navigate to="/" replace />} />
+      <Route path="/onboard" element={<Onboard onDone={() => navigate('/')} />} />
+      <Route path="/join" element={<Onboard initialMode="join" onDone={() => navigate('/')} />} />
+      <Route
+        path="/*"
+        element={
+          <FundProvider key={currentGroupId ?? 'none'}>
+            <Shell />
+          </FundProvider>
+        }
+      />
+    </Routes>
   );
 }
 
