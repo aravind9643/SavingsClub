@@ -130,6 +130,7 @@ export default function Settings() {
         <Panel title="Rules right now">
           <ReadOnly config={config} />
         </Panel>
+        <DataBackupPanel />
       </Screen>
     );
   }
@@ -256,6 +257,8 @@ export default function Settings() {
           </Field>
         </div>
       </Panel>
+
+      <DataBackupPanel />
 
       <Notice tone="warn">
         Change these and the signed agreement should change too — and everyone should
@@ -414,6 +417,60 @@ function ReadOnly({ config }: { config: NonNullable<ReturnType<typeof useSession
         </div>
       ))}
     </div>
+  );
+}
+
+function DataBackupPanel() {
+  const { group } = useSession();
+  const [downloading, setDownloading] = useState(false);
+
+  const handleExportJSON = async () => {
+    try {
+      haptic(10);
+      setDownloading(true);
+      const { data, error } = await supabase.rpc('export_group_data');
+      if (error) throw error;
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${(group?.name || 'Sanchay').replace(/\s+/g, '_')}_backup_${today()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      haptic(20);
+    } catch (e) {
+      alert((e as Error).message || 'Failed to export group data');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <Panel title="Ledger Data & Backup">
+      <p className="dim" style={{ fontSize: '0.88rem', margin: 0, marginBottom: 12 }}>
+        Export the group's complete financial history (all members, contributions, loans, votes, expenses, and treasury records) as a single portable JSON archive.
+      </p>
+      <Busy
+        type="button"
+        className="sec-link"
+        style={{
+          background: 'var(--surface-2)',
+          border: '1px solid var(--hairline)',
+          padding: '10px 14px',
+          borderRadius: 'var(--r-sm)',
+          fontWeight: 600,
+          fontSize: '0.9rem',
+          color: 'var(--text)',
+        }}
+        pending={downloading}
+        onClick={() => void handleExportJSON()}
+      >
+        Export Complete Ledger (.json)
+      </Busy>
+    </Panel>
   );
 }
 

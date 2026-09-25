@@ -10,8 +10,8 @@ import {
   Panel, Stat, List, Row, Sheet, Field, AmountField, Busy, ErrorNote,
   Tag, Notice, Loading, fmtDate, ago, toneForStatus, labelForStatus,
 } from '../components/ui';
-import { IconCheck, IconClose, IconArrowDown } from '../components/icons';
-import type { LoanRow, Vote, PaymentMethod } from '../lib/types';
+import { IconCheck, IconClose, IconArrowDown, IconShare } from '../components/icons';
+import type { LoanRow, Vote, PaymentMethod, Member } from '../lib/types';
 import { today } from '../lib/dates';
 
 interface VoteRow {
@@ -27,7 +27,7 @@ interface RepaymentRow {
 export default function LoanDetail() {
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
-  const { member, role, currentGroupId } = useSession();
+  const { member, role, currentGroupId, group } = useSession();
   const isOfficer = useIsOfficer();
   const [sheet, setSheet] = useState<'repay' | 'disburse' | 'cancel' | 'writeoff' | 'recovery' | null>(null);
 
@@ -38,6 +38,15 @@ export default function LoanDetail() {
     const { data, error } = await q.maybeSingle();
     if (error) throw error;
     return (data as LoanRow) ?? null;
+  });
+
+  const borrowerQ = useQuery<Member | null>(loanQ.data?.borrower_id ? `borrower:${loanQ.data.borrower_id}` : null, async () => {
+    if (!loanQ.data?.borrower_id) return null;
+    let q = supabase.from('members').select('*').eq('id', loanQ.data.borrower_id);
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { data, error } = await q.maybeSingle();
+    if (error) throw error;
+    return (data as Member) ?? null;
   });
 
   const votesQ = useQuery<VoteRow[]>(id ? `loan:${id}:votes` : null, async () => {
@@ -82,6 +91,23 @@ export default function LoanDetail() {
   const dueInterest = Math.max(
     0, loan.accrued_interest_paise + loan.accrued_penalty_paise - loan.interest_paid_paise);
 
+  const handleWhatsAppReminder = () => {
+    haptic(10);
+    const borrowerPhone = borrowerQ.data?.phone;
+    const cleanPhone = borrowerPhone ? borrowerPhone.replace(/[^\d+]/g, '') : '';
+    const dueAmt = loan.arrears_paise > 0 ? loan.arrears_paise : loan.total_due_paise;
+    const text = `Hi ${loan.borrower_name},\n\n` +
+      `Friendly reminder from your savings group *${group?.name || 'Sanchay'}* regarding your active loan.\n` +
+      `• Outstanding Principal: ${formatPaise(loan.outstanding_principal_paise)}\n` +
+      `• ${loan.arrears_paise > 0 ? 'Arrears / Overdue' : 'Due Amount'}: ${formatPaise(dueAmt)}\n` +
+      `• Due Date: ${fmtDate(loan.next_due_on ?? loan.due_on)}\n\n` +
+      `Please coordinate with the cashier to settle your instalment. Thank you!`;
+    const url = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
   return (
     <>
       <Screen
@@ -118,6 +144,56 @@ export default function LoanDetail() {
           </div>
         </div>
 
+        {loan.status === 'disbursed' && (loan.is_overdue || loan.arrears_paise > 0) && (
+          <div
+            className="panel"
+            style={{
+              background: 'var(--coral-ghost)',
+              border: '1px solid var(--coral)',
+              borderRadius: 'var(--r)',
+              padding: 14,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              marginBlock: 14,
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 650, color: 'var(--coral)' }}>
+                Repayment Overdue
+              </div>
+              <div className="dim" style={{ fontSize: '0.82rem', marginTop: 2 }}>
+                {loan.arrears_paise > 0
+                  ? `${formatPaise(loan.arrears_paise)} in arrears`
+                  : `${loan.days_overdue} days past due date`}
+              </div>
+            </div>
+            {isOfficer && (
+              <button
+                type="button"
+                className="sec-link"
+                style={{
+                  background: 'var(--mint-ghost)',
+                  color: 'var(--mint)',
+                  padding: '8px 12px',
+                  borderRadius: 'var(--r-sm)',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  flexShrink: 0,
+                }}
+                onClick={handleWhatsAppReminder}
+              >
+                <IconShare width={14} height={14} />
+                WhatsApp
+              </button>
+            )}
+          </div>
+        )}
+
         {loan.status === 'requested' && (
           <>
             <VotePanel loan={loan} isBorrower={isBorrower} votes={votesQ.data ?? []} />
@@ -135,7 +211,29 @@ export default function LoanDetail() {
           </>
         )}
 
-        <Panel title="Details">
+        <Panel
+          title="Details"
+          action={
+            loan.status === 'disbursed' && isOfficer && !loan.is_overdue && loan.arrears_paise === 0 ? (
+              <button
+                type="button"
+                className="sec-link"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+                onClick={handleWhatsAppReminder}
+                title="Send instalment reminder"
+              >
+                <IconShare width={12} height={12} />
+                Remind
+              </button>
+            ) : undefined
+          }
+        >
           <div className="stats">
             <Stat k="Loan amount" v={formatPaiseShort(loan.principal_paise)} />
             <Stat k="Repaid" v={formatPaiseShort(loan.principal_paid_paise)} tone="mint" />
