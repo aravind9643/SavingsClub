@@ -175,7 +175,7 @@ rather than re-reading the claim — the claim could name a different group.
 ### Writes are RPC-only
 
 Every table has **no write policy at all** except `members`, which permits
-self-edit of `phone`, `nominee_name`, `nominee_phone` via a column grant. That
+self-edit of `full_name`, `phone`, `nominee_name`, `nominee_phone` via a column grant. That
 absence is the security property: it is why a member cannot insert their own
 approving vote or flip a loan straight to `disbursed`.
 

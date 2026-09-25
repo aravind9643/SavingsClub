@@ -23,6 +23,7 @@ export default function ProfileSheet({
   const { theme, setTheme } = useAppTheme();
 
   const [editing, setEditing] = useState(false);
+  const [fullName, setFullName] = useState(member?.full_name ?? '');
   const [phone, setPhone] = useState(member?.phone ?? '');
   const [nomineeName, setNomineeName] = useState(member?.nominee_name ?? '');
   const [nomineePhone, setNomineePhone] = useState(member?.nominee_phone ?? '');
@@ -30,9 +31,14 @@ export default function ProfileSheet({
   const saveProfile = useMutation(
     async () => {
       if (!member) return;
+      const cleanName = fullName.trim();
+      if (!cleanName) {
+        throw new Error('Your name cannot be empty');
+      }
       const { error } = await supabase
         .from('members')
         .update({
+          full_name: cleanName,
           phone: phone.trim() || null,
           nominee_name: nomineeName.trim() || null,
           nominee_phone: nomineePhone.trim() || null,
@@ -55,6 +61,14 @@ export default function ProfileSheet({
   if (editing) {
     return (
       <Sheet open title="Edit Profile" onClose={() => setEditing(false)}>
+        <Field label="Your full name">
+          <input
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="Your full name"
+            autoFocus
+          />
+        </Field>
         <Field label="Phone number">
           <input
             type="tel"
@@ -162,9 +176,10 @@ export default function ProfileSheet({
           icon={<IconUserEdit width={18} height={18} />}
           iconTone="violet"
           title="Edit profile"
-          sub="Update your phone and family contact"
+          sub="Update your name, phone and family contact"
           onClick={() => {
             haptic(10);
+            setFullName(member?.full_name ?? '');
             setPhone(member?.phone ?? '');
             setNomineeName(member?.nominee_name ?? '');
             setNomineePhone(member?.nominee_phone ?? '');

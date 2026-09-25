@@ -144,30 +144,30 @@ export default function Community() {
             </button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-            <div style={{ background: 'var(--surface-3)', padding: '10px 8px', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
-              <span className="dim" style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+            <div style={{ background: 'var(--surface-3)', border: '1px solid var(--hairline-soft)', padding: '10px 6px', borderRadius: 'var(--r-sm)', textAlign: 'center', minWidth: 0 }}>
+              <span className="dim" style={{ fontSize: '0.66rem', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, display: 'block' }}>
                 Admin
               </span>
-              <span style={{ fontSize: '0.85rem', fontWeight: 650, color: 'var(--text)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 650, color: 'var(--text)', display: 'block', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {admin ? byId.get(admin.member_id) ?? 'Assigned' : 'Unassigned'}
               </span>
             </div>
 
-            <div style={{ background: 'var(--surface-3)', padding: '10px 8px', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
-              <span className="dim" style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block' }}>
+            <div style={{ background: 'var(--surface-3)', border: '1px solid var(--hairline-soft)', padding: '10px 6px', borderRadius: 'var(--r-sm)', textAlign: 'center', minWidth: 0 }}>
+              <span className="dim" style={{ fontSize: '0.66rem', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, display: 'block' }}>
                 Cashier
               </span>
-              <span style={{ fontSize: '0.85rem', fontWeight: 650, color: 'var(--text)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 650, color: 'var(--text)', display: 'block', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {cashier ? byId.get(cashier.member_id) ?? 'Assigned' : 'Unassigned'}
               </span>
             </div>
 
-            <div style={{ background: 'var(--surface-3)', padding: '10px 8px', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
-              <span className="dim" style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block' }}>
+            <div style={{ background: 'var(--surface-3)', border: '1px solid var(--hairline-soft)', padding: '10px 6px', borderRadius: 'var(--r-sm)', textAlign: 'center', minWidth: 0 }}>
+              <span className="dim" style={{ fontSize: '0.66rem', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, display: 'block' }}>
                 Accountant
               </span>
-              <span style={{ fontSize: '0.85rem', fontWeight: 650, color: 'var(--text)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 650, color: 'var(--text)', display: 'block', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {accountant ? byId.get(accountant.member_id) ?? 'Assigned' : 'Unassigned'}
               </span>
             </div>
@@ -231,9 +231,9 @@ export default function Community() {
             >
               <code
                 style={{
-                  fontSize: 'clamp(1.05rem, 4.4vw, 1.25rem)',
-                  fontFamily: 'monospace',
-                  letterSpacing: '1px',
+                  fontSize: 'clamp(1rem, 4.2vw, 1.22rem)',
+                  fontFamily: 'var(--mono)',
+                  letterSpacing: '0.06em',
                   fontWeight: 700,
                   color: 'var(--text)',
                   whiteSpace: 'nowrap',
@@ -249,9 +249,10 @@ export default function Community() {
                   onClick={handleCopyCode}
                   style={{
                     background: 'var(--surface-3)',
-                    padding: '6px 14px',
+                    border: '1px solid var(--hairline-soft)',
+                    padding: '6px 13px',
                     borderRadius: 'var(--r-sm)',
-                    fontSize: '0.82rem',
+                    fontSize: '0.8rem',
                     fontWeight: 600,
                   }}
                 >
@@ -263,10 +264,11 @@ export default function Community() {
                   onClick={handleShareInvite}
                   style={{
                     background: 'var(--mint-ghost)',
+                    border: '1px solid color-mix(in srgb, var(--mint) 25%, transparent)',
                     color: 'var(--mint)',
-                    padding: '6px 14px',
+                    padding: '6px 13px',
                     borderRadius: 'var(--r-sm)',
-                    fontSize: '0.82rem',
+                    fontSize: '0.8rem',
                     fontWeight: 600,
                     display: 'flex',
                     alignItems: 'center',
@@ -283,18 +285,16 @@ export default function Community() {
 
         {/* ======================================= 4. MEMBERS DIRECTORY */}
         <Panel
-          title={
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-              <span>Members ({activePositions.length})</span>
-              <button
-                type="button"
-                className="sec-link"
-                onClick={() => nav('/members')}
-                style={{ fontSize: '0.8rem', fontWeight: 600 }}
-              >
-                View all & standing →
-              </button>
-            </div>
+          title={`Members (${activePositions.length})`}
+          action={
+            <button
+              type="button"
+              className="sec-link"
+              onClick={() => nav('/members')}
+              style={{ fontSize: '0.8rem', fontWeight: 600 }}
+            >
+              View all & standing →
+            </button>
           }
           flush
         >
@@ -338,13 +338,12 @@ export default function Community() {
               icon={<IconMeeting width={18} height={18} />}
               iconTone="mint"
               title="Monthly Meetings"
-              sub={latestMeeting ? `Last held on ${fmtDate(latestMeeting.held_on)}` : 'Record attendance & view meeting records'}
+              sub={latestMeeting ? `Last held on ${fmtDate(latestMeeting.held_on)}` : 'Attendance, fines & meeting records'}
               onClick={() => {
                 haptic(10);
                 setMeetingSheet(true);
               }}
               chevron
-              note={latestMeeting ? fmtDate(latestMeeting.held_on) : 'Take attendance'}
             />
             <Row
               icon={<IconSettings width={18} height={18} />}
