@@ -15,6 +15,7 @@ import ProfileSheet from './components/ProfileSheet';
 import { Loading, initials, resetScrollLock } from './components/ui';
 import {
   IconHome, IconDeposits, IconLoans, IconTreasury, IconMembers, IconChevronDown,
+  IconArrowLeft,
 } from './components/icons';
 import { haptic } from './lib/haptics';
 
@@ -262,8 +263,14 @@ export default function App() {
  * element is actually scrolling.
  */
 export function Screen({
-  title, sub, action, children,
-}: { title: string; sub?: ReactNode; action?: ReactNode; children: ReactNode }) {
+  title, sub, action, onBack, children,
+}: {
+  title: string;
+  sub?: ReactNode;
+  action?: ReactNode;
+  onBack?: () => void;
+  children: ReactNode;
+}) {
   const { member } = useSession();
   const sentinel = useRef<HTMLDivElement | null>(null);
   const [condensed, setCondensed] = useState(false);
@@ -284,6 +291,19 @@ export function Screen({
     <>
       <header className={`appbar${condensed ? ' condensed' : ''}`}>
         <div className="appbar-inner">
+          {onBack && (
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => {
+                haptic(10);
+                onBack();
+              }}
+              aria-label="Back"
+            >
+              <IconArrowLeft width={16} height={16} />
+            </button>
+          )}
           <span className="appbar-title">
             <span className="appbar-name">{title}</span>
             {sub ? <span className="appbar-sub">{sub}</span> : null}

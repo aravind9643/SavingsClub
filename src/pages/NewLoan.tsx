@@ -9,7 +9,6 @@ import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees } from '../
 import {
   Panel, Field, AmountField, Busy, ErrorNote, Notice, Chip, Stat, Sheet,
 } from '../components/ui';
-import { IconClose } from '../components/icons';
 import type { Member, MemberPosition } from '../lib/types';
 
 export default function NewLoan() {
@@ -106,11 +105,7 @@ export default function NewLoan() {
   return (
     <Screen
       title="Request a loan"
-      action={
-        <button className="icon-btn" onClick={() => nav('/loans')} aria-label="Cancel">
-          <IconClose />
-        </button>
-      }
+      onBack={() => nav('/loans')}
     >
       <div className="hero" style={{ padding: '18px' }}>
         <div className="hero-label">You can borrow up to</div>

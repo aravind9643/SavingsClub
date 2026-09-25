@@ -86,8 +86,8 @@ export default function LoanDetail() {
   }, [id]);
 
   const loan = loanQ.data;
-  if (loanQ.loading && !loan) return <Screen title="Loan"><Loading /></Screen>;
-  if (!loan) return <Screen title="Loan"><div className="empty">Not found.</div></Screen>;
+  if (loanQ.loading && !loan) return <Screen title="Loan" onBack={() => nav('/loans')}><Loading /></Screen>;
+  if (!loan) return <Screen title="Loan" onBack={() => nav('/loans')}><div className="empty">Not found.</div></Screen>;
 
   const isBorrower = member?.id === loan.borrower_id;
   const dueInterest = Math.max(
@@ -115,11 +115,7 @@ export default function LoanDetail() {
       <Screen
         title={loan.borrower_name}
         sub={`Loan · ${loan.status}`}
-        action={
-          <button className="icon-btn" onClick={() => nav('/loans')} aria-label="Back">
-            <IconClose />
-          </button>
-        }
+        onBack={() => nav('/loans')}
       >
         <div className="hero">
           <div className="hero-label">

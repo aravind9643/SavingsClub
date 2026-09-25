@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useMutation, useQuery } from '../hooks/useQuery';
@@ -17,6 +18,7 @@ import {
 import { PrintableStatementModal } from '../components/PrintableStatement';
 
 export default function Settings() {
+  const nav = useNavigate();
   const { config, isOfficer, refresh } = useSession();
   const [saved, setSaved] = useState(false);
 
@@ -123,7 +125,7 @@ export default function Settings() {
     { invalidates: ['fund', 'config', 'session'], onSuccess: () => { setSaved(true); refresh(); } },
   );
 
-  if (!config || !form) return <Screen title="Group rules"><Loading /></Screen>;
+  if (!config || !form) return <Screen title="Group rules" onBack={() => nav('/community')}><Loading /></Screen>;
 
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => {
     setForm({ ...form, [k]: e.target.value });
@@ -132,7 +134,7 @@ export default function Settings() {
 
   if (!isOfficer) {
     return (
-      <Screen title="Group rules">
+      <Screen title="Group rules" onBack={() => nav('/community')}>
         <Notice tone="warn">Only the cashier, accountant or admin can change these.</Notice>
         <Panel title="Rules right now">
           <ReadOnly config={config} />
@@ -145,7 +147,7 @@ export default function Settings() {
 
   return (
     <>
-    <Screen title="Group rules" sub="The app follows these, always">
+    <Screen title="Group rules" sub="The app follows these, always" onBack={() => nav('/community')}>
       <ErrorNote error={save.error} />
       {saved && <Notice tone="good">Saved.</Notice>}
 

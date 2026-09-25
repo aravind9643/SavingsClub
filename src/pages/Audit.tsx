@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery } from '../hooks/useQuery';
@@ -41,6 +42,7 @@ const GROUPS: Record<Filter, string[] | null> = {
 const PAGE_SIZE = 50;
 
 export default function Audit() {
+  const nav = useNavigate();
   const { currentGroupId } = useSession();
   const [filter, setFilter] = useState<Filter>('all');
   const [limit, setLimit] = useState(PAGE_SIZE);
@@ -89,7 +91,7 @@ export default function Audit() {
   });
 
   return (
-    <Screen title="History" sub="Every change, and who made it">
+    <Screen title="History" sub="Every change, and who made it" onBack={() => nav('/community')}>
       <Segments<Filter>
         value={filter}
         onChange={handleFilterChange}

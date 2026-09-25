@@ -100,6 +100,7 @@ export default function Members() {
       <Screen
         title="Members"
         sub={`${(positions.data ?? []).filter((p) => p.is_active).length} active`}
+        onBack={() => nav('/community')}
       >
         {clash && (
           <Notice tone="danger">

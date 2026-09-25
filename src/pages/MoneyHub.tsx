@@ -627,8 +627,8 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                 paise={expectedBankBalance}
                 meta={
                   <>
-                    <Chip>Total Fund <b>{formatPaiseShort(fund.total_fund_paise)}</b></Chip>
-                    <Chip tone="violet">− On loan <b>{formatPaiseShort(fund.outstanding_paise)}</b></Chip>
+                    <Chip>Fund <b>{formatPaiseShort(fund.total_fund_paise)}</b></Chip>
+                    <Chip tone="violet">− Loan <b>{formatPaiseShort(fund.outstanding_paise)}</b></Chip>
                     <Chip tone="amber">− Cash float <b>{formatPaiseShort(fund.cash_float_paise)}</b></Chip>
                   </>
                 }
@@ -644,11 +644,10 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
             )}
 
             {isMoneyHandler && (
-              <div className="btn-row" style={{ marginBlock: 12 }}>
+              <div className="btn-row">
                 <button
                   type="button"
-                  className="primary lg"
-                  style={{ width: '100%' }}
+                  className="primary block"
                   onClick={() => {
                     haptic(10);
                     setBankSheet(true);
@@ -732,11 +731,10 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
             )}
 
             {isCashier && (
-              <div className="btn-row" style={{ marginBlock: 12 }}>
+              <div className="btn-row">
                 <button
                   type="button"
-                  className="primary lg"
-                  style={{ width: '100%' }}
+                  className="primary block"
                   onClick={() => {
                     haptic(10);
                     setInitialCashData(undefined);
@@ -812,11 +810,10 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
               }
             />
 
-            <div className="btn-row" style={{ marginBlock: 12 }}>
+            <div className="btn-row">
               <button
                 type="button"
-                className="primary lg"
-                style={{ width: '100%' }}
+                className="primary block"
                 onClick={() => {
                   haptic(10);
                   setExpenseSheet(true);

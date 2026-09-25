@@ -218,16 +218,14 @@ code, kbd, samp, pre { font-family: var(--mono); }
 /* ================================================================ layout == */
 .app {
   min-height: 100dvh;
-  /* The tab bar is fixed, so the scroll container must reserve its height or
-     the last card sits underneath it. Generous on purpose: leaves clearance for
-     floating action buttons so they do not overlap list items. */
-  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 64px);
+  /* Tab bar clearance is handled by .screen */
+  padding-bottom: 0;
 }
 
 .screen {
   max-width: 560px;
   margin: 0 auto;
-  padding: 0 16px calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 60px);
+  padding: 0 16px calc(var(--tabbar-h) + max(16px, env(safe-area-inset-bottom, 0px)) + 24px);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -359,7 +357,7 @@ code, kbd, samp, pre { font-family: var(--mono); }
   align-items: center;
   justify-content: center;
   border-radius: var(--r-full);
-  border: 0;
+  border: 1px solid var(--hairline-soft);
   background: var(--surface-2);
   color: var(--text-2);
   cursor: pointer;
@@ -370,21 +368,21 @@ code, kbd, samp, pre { font-family: var(--mono); }
   font-weight: 650;
   letter-spacing: 0.02em;
   line-height: 1;
-  transition: transform 0.18s var(--spring), background 0.18s var(--ease), color 0.18s var(--ease);
+  transition: transform 0.18s var(--spring), background 0.18s var(--ease), color 0.18s var(--ease), border-color 0.18s var(--ease);
 }
 .icon-btn > svg,
 .icon-btn > .svg-inline--fa {
   width: 16px !important;
   height: 16px !important;
 }
-.icon-btn:hover { background: var(--surface-3); color: var(--text); }
+.icon-btn:hover { background: var(--surface-3); color: var(--text); border-color: var(--hairline); }
 .icon-btn:active { transform: scale(0.9); }
 
 /* The avatar in the app bar reads as a person, not a control. */
 .icon-btn.avatar {
   background: var(--violet-ghost);
   color: var(--violet);
-  border: 1px solid color-mix(in srgb, var(--violet) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--violet) 30%, transparent);
   font-weight: 700;
   font-size: 0.8rem;
 }
@@ -424,23 +422,30 @@ code, kbd, samp, pre { font-family: var(--mono); }
   line-height: 1.05;
   margin: 6px 0 2px;
 }
-.hero-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 14px;
+}
 
 .chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 10px;
   border-radius: var(--r-full);
   background: var(--surface-2);
+  border: 1px solid var(--hairline-soft);
   font-size: 0.77rem; font-weight: 550;
   letter-spacing: -0.005em;
   color: var(--text-2);
   white-space: nowrap;
 }
 .chip b { color: var(--text); font-weight: 650; }
-.chip.mint   { background: var(--mint-ghost);   color: var(--mint); }
-.chip.coral  { background: var(--coral-ghost);  color: var(--coral); }
-.chip.amber  { background: var(--amber-ghost);  color: var(--amber); }
-.chip.violet { background: var(--violet-ghost); color: var(--violet); }
+.chip.mint   { background: var(--mint-ghost);   color: var(--mint);   border-color: color-mix(in srgb, var(--mint) 25%, transparent); }
+.chip.coral  { background: var(--coral-ghost);  color: var(--coral);  border-color: color-mix(in srgb, var(--coral) 25%, transparent); }
+.chip.amber  { background: var(--amber-ghost);  color: var(--amber);  border-color: color-mix(in srgb, var(--amber) 25%, transparent); }
+.chip.violet { background: var(--violet-ghost); color: var(--violet); border-color: color-mix(in srgb, var(--violet) 25%, transparent); }
 .chip.mint b, .chip.coral b, .chip.amber b, .chip.violet b { color: inherit; }
 
 .tag {
@@ -555,19 +560,21 @@ button.row {
   display: grid; place-items: center;
   border-radius: 13px;
   background: var(--surface-2);
+  border: 1px solid var(--hairline-soft);
   color: var(--text-2);
   font-family: var(--body);
   font-weight: 650; font-size: 0.76rem;
   letter-spacing: 0.02em;
   line-height: 1;
   overflow: hidden;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 20%);
 }
 .row-ico > svg,
 .row-ico > .svg-inline--fa { width: 16px !important; height: 16px !important; }
-.row-ico.mint   { background: var(--mint-ghost);   color: var(--mint); }
-.row-ico.coral  { background: var(--coral-ghost);  color: var(--coral); }
-.row-ico.amber  { background: var(--amber-ghost);  color: var(--amber); }
-.row-ico.violet { background: var(--violet-ghost); color: var(--violet); }
+.row-ico.mint   { background: var(--mint-ghost);   color: var(--mint);   border-color: color-mix(in srgb, var(--mint) 25%, transparent); }
+.row-ico.coral  { background: var(--coral-ghost);  color: var(--coral);  border-color: color-mix(in srgb, var(--coral) 25%, transparent); }
+.row-ico.amber  { background: var(--amber-ghost);  color: var(--amber);  border-color: color-mix(in srgb, var(--amber) 25%, transparent); }
+.row-ico.violet { background: var(--violet-ghost); color: var(--violet); border-color: color-mix(in srgb, var(--violet) 25%, transparent); }
 
 /* The title/sub pair are <span>s so a Row can be a <button>; they need an
    explicit block display or they run together on one line. */
@@ -690,16 +697,16 @@ button.notice {
   z-index: 40;
   display: flex;
   justify-content: space-around;
-  padding: 8px 6px calc(8px + env(safe-area-inset-bottom, 0px));
-  background: color-mix(in srgb, var(--bg-elev) 86%, transparent);
+  padding: 6px 6px max(8px, env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
   border-top: 1px solid var(--hairline);
 }
 .tab {
   flex: 1;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  padding: 5px 2px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 4px 2px;
   font-size: 0.68rem; font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--text-3);
@@ -1004,7 +1011,12 @@ button:disabled:not(.ghost) {
 }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+button.primary {
+  background: linear-gradient(135deg, var(--mint), #34c787);
+  border-color: transparent;
+  color: var(--on-accent);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--mint) 25%, transparent);
+}
 button.danger  { background: var(--coral);  border-color: var(--coral);  color: #fff; }
 button.ghost   { background: transparent; }
 button.block   { width: 100%; }
@@ -1013,6 +1025,7 @@ button.lg      { padding: 14px 20px; font-size: 1rem; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .btn-row.stack { flex-direction: column; }
 .btn-row.stack button { width: 100%; }
+.screen > .btn-row { margin-top: 0; margin-bottom: 0; }
 
 /* ------------------------------------------------------------------ misc -- */
 .muted { color: var(--text-2); font-size: 0.86rem; }
@@ -1096,13 +1109,21 @@ button.tag:active { transform: scale(0.96); }
 
 .seg {
   padding: 7px 14px; border-radius: var(--r-full);
-  background: var(--surface-2); border: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-soft);
   color: var(--text-2); font-size: 0.83rem; font-weight: 550;
   cursor: pointer; white-space: nowrap;
-  transition: background 0.18s var(--ease), color 0.18s var(--ease), transform 0.16s var(--spring);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 15%);
+  transition: background 0.18s var(--ease), color 0.18s var(--ease), border-color 0.18s var(--ease), transform 0.16s var(--spring);
 }
 .seg:active { transform: scale(0.95); }
-.seg.on { background: var(--accent); color: var(--on-accent); }
+.seg.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 650;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 30%, transparent);
+}
 
 /* In-panel segmented options that stay neatly inside card bounds */
 .seg-grid {
