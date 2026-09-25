@@ -7,7 +7,7 @@ import { useSession } from '../context/SessionContext';
 import { useFund } from '../context/FundContext';
 import { formatPaise, formatPaiseShort, rupeesToPaise, paiseToRupees } from '../lib/money';
 import {
-  Panel, Field, AmountField, Busy, ErrorNote, Notice, Chip, Stat, Sheet,
+  Panel, Field, AmountField, Busy, ErrorNote, Notice, Chip, Stat, Sheet, Segments,
 } from '../components/ui';
 import type { Member, MemberPosition } from '../lib/types';
 
@@ -16,10 +16,19 @@ export default function NewLoan() {
   const { member, config, currentGroupId } = useSession();
   const { fund } = useFund();
 
+  const [borrowerType, setBorrowerType] = useState<'member' | 'outside'>('member');
   const [amount, setAmount] = useState('');
   const [term, setTerm] = useState('6');
   const [guarantor, setGuarantor] = useState('');
   const [purpose, setPurpose] = useState('');
+
+  // Outside borrower fields
+  const [outsideName, setOutsideName] = useState('');
+  const [outsidePhone, setOutsidePhone] = useState('');
+  const [outsideAddress, setOutsideAddress] = useState('');
+  const [customRate, setCustomRate] = useState(
+    ((config?.loan_rate_bp ?? 200) / 100).toFixed(1),
+  );
 
   const membersQ = useQuery<Member[]>('members', async () => {
     let q = supabase.from('members').select('*').eq('status', 'active').is('left_on', null).order('full_name');
@@ -43,6 +52,22 @@ export default function NewLoan() {
 
   const create = useMutation(
     async () => {
+      if (borrowerType === 'outside') {
+        const rateBp = Math.round((parseFloat(customRate) || 0) * 100);
+        const { data, error } = await supabase.rpc('request_outside_loan', {
+          p_borrower_name: outsideName.trim(),
+          p_borrower_phone: outsidePhone.trim() || null,
+          p_borrower_address: outsideAddress.trim() || null,
+          p_principal_paise: rupeesToPaise(amount),
+          p_term_months: Number(term),
+          p_rate_bp: rateBp,
+          p_guarantor_id: member?.id ?? null,
+          p_purpose: purpose || null,
+        });
+        if (error) throw error;
+        return data as { id: string };
+      }
+
       const { data, error } = await supabase.rpc('request_loan', {
         p_guarantor_id: guarantor,
         p_principal_paise: rupeesToPaise(amount),
@@ -59,21 +84,24 @@ export default function NewLoan() {
   );
 
   const wanted = rupeesToPaise(amount || 0);
-  const owed = myPos.data?.outstanding_paise ?? 0;
+  const owed = borrowerType === 'member' ? (myPos.data?.outstanding_paise ?? 0) : 0;
   const cap = fund?.per_member_cap_paise ?? 0;
   const available = fund?.still_lendable_paise ?? 0;
   const headroom = Math.max(0, Math.min(cap - owed, available));
 
-  const overCap = wanted > 0 && owed + wanted > cap;
+  const overCap = wanted > 0 && (owed + wanted > cap);
   const overFund = wanted > 0 && wanted > available;
-  const ok = Boolean(amount && guarantor && Number(term) > 0) && !overCap && !overFund;
+
+  const ok = borrowerType === 'outside'
+    ? Boolean(amount && outsideName.trim() && Number(term) > 0 && parseFloat(customRate) >= 0) && !overCap && !overFund
+    : Boolean(amount && guarantor && Number(term) > 0) && !overCap && !overFund;
 
   const [showSchedule, setShowSchedule] = useState(false);
 
-  // Roughly what the loan costs if repaid on schedule — simple interest on a
-  // balance that falls evenly, which is what the reducing-balance rule gives.
   const months = Number(term) || 1;
-  const rate = (config?.loan_rate_bp ?? 200) / 10000;
+  const rate = borrowerType === 'outside'
+    ? (parseFloat(customRate) || 0) / 100
+    : (config?.loan_rate_bp ?? 200) / 10000;
   const estInterest = Math.round(wanted * rate * ((months + 1) / 2));
 
   const schedule = useMemo(() => {
@@ -107,13 +135,31 @@ export default function NewLoan() {
       title="Request a loan"
       onBack={() => nav('/loans')}
     >
+      <div style={{ marginBottom: 14 }}>
+        <Segments<'member' | 'outside'>
+          value={borrowerType}
+          onChange={(val) => {
+            setBorrowerType(val);
+            if (val === 'outside') {
+              setCustomRate(((config?.loan_rate_bp ?? 200) / 100).toFixed(1));
+            }
+          }}
+          options={[
+            { value: 'member', label: 'Member Loan (Self)' },
+            { value: 'outside', label: 'Outside Borrower' },
+          ]}
+        />
+      </div>
+
       <div className="hero" style={{ padding: '18px' }}>
-        <div className="hero-label">You can borrow up to</div>
+        <div className="hero-label">
+          {borrowerType === 'outside' ? 'Maximum lendable amount' : 'You can borrow up to'}
+        </div>
         <div className="hero-amount" style={{ fontSize: 'clamp(2rem, 9vw, 2.6rem)' }}>
           {formatPaise(headroom)}
         </div>
         <div className="hero-meta">
-          <Chip>Your cap <b>{formatPaiseShort(cap)}</b></Chip>
+          <Chip>Loan cap <b>{formatPaiseShort(cap)}</b></Chip>
           {owed > 0 && <Chip tone="amber">Already owe <b>{formatPaiseShort(owed)}</b></Chip>}
           <Chip tone="violet">Fund has <b>{formatPaiseShort(available)}</b></Chip>
         </div>
@@ -121,8 +167,44 @@ export default function NewLoan() {
 
       <ErrorNote error={create.error} />
 
-      <Panel title="How much">
-        <AmountField value={amount} onChange={setAmount} autoFocus />
+      {borrowerType === 'outside' && (
+        <Panel title="Outside Borrower Info">
+          <Field label="Borrower full name *">
+            <input
+              value={outsideName}
+              onChange={(e) => setOutsideName(e.target.value)}
+              placeholder="e.g. Ramesh Kumar"
+              autoFocus
+            />
+          </Field>
+
+          <Field label="Phone number (optional)" hint="Used for payment reminders via WhatsApp">
+            <input
+              type="tel"
+              value={outsidePhone}
+              onChange={(e) => setOutsidePhone(e.target.value)}
+              placeholder="+91 98765 43210"
+            />
+          </Field>
+
+          <Field label="Address / notes (optional)">
+            <input
+              value={outsideAddress}
+              onChange={(e) => setOutsideAddress(e.target.value)}
+              placeholder="Address, village, reference…"
+            />
+          </Field>
+
+          <div style={{ marginTop: 12 }}>
+            <Notice tone="warn">
+              <strong>Member Guarantor:</strong> You (<strong>{member?.full_name}</strong>) will be recorded as the guarantor. You are responsible for follow-up and cannot vote on this loan.
+            </Notice>
+          </div>
+        </Panel>
+      )}
+
+      <Panel title="Loan Amount">
+        <AmountField value={amount} onChange={setAmount} autoFocus={borrowerType === 'member'} />
 
         <div className="seg-grid" style={{ marginTop: 14 }}>
           {[25, 50, 75, 100].map((p) => (
@@ -140,14 +222,14 @@ export default function NewLoan() {
           <div style={{ marginTop: 14 }}>
             <Notice tone="danger">
               {overCap
-                ? `That takes your borrowing to ${formatPaise(owed + wanted)}, above your ${formatPaise(cap)} limit.`
+                ? `That takes borrowing to ${formatPaise(owed + wanted)}, above the ${formatPaise(cap)} limit.`
                 : `Only ${formatPaise(available)} can be lent without breaking the reserve.`}
             </Notice>
           </div>
         )}
       </Panel>
 
-      <Panel title="Details">
+      <Panel title="Terms & Interest">
         <Field label="Pay back within">
           <select value={term} onChange={(e) => setTerm(e.target.value)}>
             {Array.from({ length: config?.max_loan_months ?? 6 }, (_v, i) => i + 1).map((m) => (
@@ -156,20 +238,33 @@ export default function NewLoan() {
           </select>
         </Field>
 
-        <Field label="Who will vouch for you" hint="A member who agrees to cover it if you cannot pay back">
-          <select value={guarantor} onChange={(e) => setGuarantor(e.target.value)}>
-            <option value="">Choose a member…</option>
-            {Array.from(new Map((membersQ.data ?? []).filter((m) => m.id !== member?.id).map((m) => [m.id, m])).values()).map((m) => (
-              <option key={m.id} value={m.id}>{m.full_name}</option>
-            ))}
-          </select>
-        </Field>
+        {borrowerType === 'outside' ? (
+          <Field label="Interest rate (% per month)" hint={`Group default is ${((config?.loan_rate_bp ?? 200) / 100).toFixed(1)}%/mo`}>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={customRate}
+              onChange={(e) => setCustomRate(e.target.value)}
+              placeholder="e.g. 2.5"
+            />
+          </Field>
+        ) : (
+          <Field label="Who will vouch for you" hint="An active member who agrees to cover it if you cannot pay back">
+            <select value={guarantor} onChange={(e) => setGuarantor(e.target.value)}>
+              <option value="">Choose a member…</option>
+              {Array.from(new Map((membersQ.data ?? []).filter((m) => m.id !== member?.id).map((m) => [m.id, m])).values()).map((m) => (
+                <option key={m.id} value={m.id}>{m.full_name}</option>
+              ))}
+            </select>
+          </Field>
+        )}
 
         <Field label="What is it for (optional)">
           <input
             value={purpose}
             onChange={(e) => setPurpose(e.target.value)}
-            placeholder="Medical, education, business…"
+            placeholder="Medical, agriculture, business, personal…"
           />
         </Field>
 
@@ -212,8 +307,8 @@ export default function NewLoan() {
       <p className="dim">
         {(config?.loan_required_approvals && config.loan_required_approvals > 0)
           ? `${config.loan_required_approvals} members must approve.`
-          : `Majority of members (${Math.max(2, Math.floor((((membersQ.data ?? []).filter(m => m.id !== member?.id).length) / 2) + 1))}) must approve.`}{' '}
-        You cannot vote on your own request.
+          : `Majority of active members must approve.`}{' '}
+        The guarantor cannot vote on this request.
       </p>
 
       <div className="btn-row stack" style={{ paddingBottom: 12 }}>

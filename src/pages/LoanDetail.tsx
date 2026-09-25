@@ -89,13 +89,15 @@ export default function LoanDetail() {
   if (loanQ.loading && !loan) return <Screen title="Loan" onBack={() => nav('/loans')}><Loading /></Screen>;
   if (!loan) return <Screen title="Loan" onBack={() => nav('/loans')}><div className="empty">Not found.</div></Screen>;
 
-  const isBorrower = member?.id === loan.borrower_id;
+  const isBorrower = Boolean(loan.borrower_id && member?.id === loan.borrower_id);
+  const isGuarantor = member?.id === loan.guarantor_id;
+  const canCancel = isBorrower || isOfficer || (Boolean(loan.is_outside_borrower) && isGuarantor);
   const dueInterest = Math.max(
     0, loan.accrued_interest_paise + loan.accrued_penalty_paise - loan.interest_paid_paise);
 
   const handleWhatsAppReminder = () => {
     haptic(10);
-    const borrowerPhone = borrowerQ.data?.phone;
+    const borrowerPhone = loan.is_outside_borrower ? (loan.outside_borrower_phone ?? borrowerQ.data?.phone) : borrowerQ.data?.phone;
     const cleanPhone = borrowerPhone ? borrowerPhone.replace(/[^\d+]/g, '') : '';
     const dueAmt = loan.arrears_paise > 0 ? loan.arrears_paise : loan.total_due_paise;
     const text = `Hi ${loan.borrower_name},\n\n` +
@@ -137,7 +139,8 @@ export default function LoanDetail() {
                   : `${loan.days_overdue} days overdue`
                 : labelForStatus(loan.status, loan.withdrawn_by_requester)}
             </Tag>
-            <Tag>{(loan.rate_bp / 100).toFixed(0)}% / month</Tag>
+            {loan.is_outside_borrower && <Tag tone="amber">Outside Borrower</Tag>}
+            <Tag>{(loan.rate_bp / 100).toFixed(loan.rate_bp % 100 === 0 ? 0 : 1)}% / month</Tag>
             <Tag>{loan.term_months} months</Tag>
           </div>
         </div>
@@ -260,7 +263,7 @@ export default function LoanDetail() {
         {loan.status === 'requested' && (
           <>
             <VotePanel loan={loan} isBorrower={isBorrower} votes={votesQ.data ?? []} />
-            {(isBorrower || isOfficer) && (
+            {canCancel && (
               <div className="btn-row stack">
                 <button
                   className="subtle"
@@ -314,11 +317,28 @@ export default function LoanDetail() {
               s={loan.next_due_on ? `last one ${fmtDate(loan.due_on)}` : 'final payment'}
             />
           </div>
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <p className="dim" style={{ margin: 0 }}>
               Vouched by <strong style={{ color: 'var(--text-2)' }}>{loan.guarantor_name}</strong>
               {loan.purpose ? <> · {loan.purpose}</> : null}
             </p>
+            {loan.is_outside_borrower && (
+              <div style={{ fontSize: '0.84rem', color: 'var(--text-2)', background: 'var(--surface-sunken)', padding: '10px 12px', borderRadius: 'var(--r-sm)', marginTop: 4 }}>
+                <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>Outside Borrower Details</div>
+                <div><strong>Full Name:</strong> {loan.outside_borrower_name}</div>
+                {loan.outside_borrower_phone && (
+                  <div style={{ marginTop: 3 }}>
+                    <strong>Phone:</strong>{' '}
+                    <a href={`tel:${loan.outside_borrower_phone}`} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+                      {loan.outside_borrower_phone}
+                    </a>
+                  </div>
+                )}
+                {loan.outside_borrower_address && (
+                  <div style={{ marginTop: 3 }}><strong>Address / Details:</strong> {loan.outside_borrower_address}</div>
+                )}
+              </div>
+            )}
           </div>
         </Panel>
 

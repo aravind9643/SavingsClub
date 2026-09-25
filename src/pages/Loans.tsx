@@ -6,7 +6,7 @@ import { useQuery } from '../hooks/useQuery';
 import { formatPaiseShort } from '../lib/money';
 import { useSession } from '../context/SessionContext';
 import {
-  List, Row, Empty, SkeletonList, Segments, Notice, initials, fmtDate, toneForStatus, labelForStatus,
+  List, Row, Empty, SkeletonList, Segments, Notice, Tag, initials, fmtDate, toneForStatus, labelForStatus,
 } from '../components/ui';
 import { IconPlus, IconLoans } from '../components/icons';
 import type { LoanRow } from '../lib/types';
@@ -80,7 +80,12 @@ export default function Loans() {
                   icon={initials(l.borrower_name)}
                   iconTone={l.is_overdue ? 'coral'
                     : toneForStatus(l.status, l.withdrawn_by_requester)}
-                  title={l.borrower_name}
+                  title={
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span>{l.borrower_name}</span>
+                      {l.is_outside_borrower && <Tag tone="amber">Outside</Tag>}
+                    </span>
+                  }
                   sub={
                     isDisbursed ? (
                       <div>
@@ -90,6 +95,7 @@ export default function Loans() {
                               ? `${formatPaiseShort(l.arrears_paise)} behind`
                               : `Overdue by ${l.days_overdue} days`
                             : `Next ${fmtDate(l.next_due_on ?? l.due_on)} · ${repaidPct}% repaid`}
+                          {l.is_outside_borrower && ` · Vouched by ${l.guarantor_name}`}
                         </span>
                         <div
                           style={{
@@ -115,8 +121,8 @@ export default function Loans() {
                         </div>
                       </div>
                     ) : l.status === 'requested'
-                      ? `${l.approvals} of ${l.required_approvals} approvals${l.can_i_vote ? ' · your vote needed' : ''}`
-                      : labelForStatus(l.status, l.withdrawn_by_requester)
+                      ? `${l.approvals} of ${l.required_approvals} approvals${l.can_i_vote ? ' · your vote needed' : ''}${l.is_outside_borrower ? ` · Vouched by ${l.guarantor_name}` : ''}`
+                      : `${labelForStatus(l.status, l.withdrawn_by_requester)}${l.is_outside_borrower ? ` · Vouched by ${l.guarantor_name}` : ''}`
                   }
                   amount={formatPaiseShort(
                     isDisbursed ? l.outstanding_principal_paise : l.principal_paise,

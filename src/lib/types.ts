@@ -101,8 +101,12 @@ export interface MemberPosition {
 
 export interface LoanRow {
   id: string;
-  borrower_id: string;
+  borrower_id: string | null;
   borrower_name: string;
+  is_outside_borrower?: boolean;
+  outside_borrower_name?: string | null;
+  outside_borrower_phone?: string | null;
+  outside_borrower_address?: string | null;
   guarantor_id: string;
   guarantor_name: string;
   principal_paise: number;
