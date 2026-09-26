@@ -280,7 +280,7 @@ export default function Settings() {
           }}
         >
           <IconHelp width={17} height={17} />
-          User Guide & Feature Tutorials
+          How this works
         </button>
       </div>
 

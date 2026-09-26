@@ -240,8 +240,8 @@ export default function Dashboard() {
               haptic(10);
               nav('/help');
             }}
-            aria-label="User Guide & Tutorials"
-            title="User Guide & Tutorials"
+            aria-label="How this works"
+            title="How this works"
           >
             <IconHelp width={17} height={17} />
           </button>

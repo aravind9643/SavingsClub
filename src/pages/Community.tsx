@@ -339,8 +339,8 @@ export default function Community() {
             <Row
               icon={<IconHelp width={18} height={18} />}
               iconTone="mint"
-              title="User Guide & Tutorials"
-              sub="Step-by-step help, feature walkthroughs & rules"
+              title="How this works"
+              sub="How the group runs, and what each job does"
               onClick={() => {
                 haptic(10);
                 nav('/help');

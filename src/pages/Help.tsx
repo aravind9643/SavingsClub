@@ -84,17 +84,17 @@ const GUIDES: GuideSection[] = [
     iconTone: 'mint',
     steps: [
       {
-        title: 'Generate an Invite Code',
+        title: 'Make an invite code',
         description:
           'An officer opens Settings or Community and taps "Share Invite". This generates a 12-letter secure code valid for 7 days.',
       },
       {
-        title: 'Friend Signs In & Submits Code',
+        title: 'They sign in and enter it',
         description:
           'The friend taps the link or enters the code in the app. They enter their name, phone number, and optional nominee details.',
       },
       {
-        title: 'Officer Approval Required',
+        title: 'Someone lets them in',
         description:
           'A code alone does NOT reveal the group books! When someone enters a code, they enter "Pending" state. An officer must tap "Approve" in the Members tab. This prevents leaked WhatsApp links from exposing your financial ledger.',
         tip: 'Once approved, the new member can see group totals, start contributing, and vote on loans.',
@@ -116,23 +116,23 @@ const GUIDES: GuideSection[] = [
     badge: 'Monthly Routine',
     steps: [
       {
-        title: '1. Start the Month',
+        title: 'Open the month',
         description:
           'At the beginning of each calendar month, an officer taps "Start this month" on the Deposits screen. This creates the collection period with the configured due date and grace date.',
       },
       {
-        title: '2. Members Pay by Bank, UPI or Cash',
+        title: 'People pay',
         description:
           'Members pay their monthly contribution. The Cashier or Accountant selects the member, enters the amount paid, chooses Bank or Cash, and enters the UPI reference / cheque number.',
         tip: 'Part-payments are fully supported! If a monthly fee is ₹1,000, a member can pay ₹500 today and ₹500 next week.',
       },
       {
-        title: '3. Late Fee Protection',
+        title: 'Paying late',
         description:
           'If payment arrives after the grace date, the app adds the group late fee. Important: The late fee is charged exactly once per member per period, so paying the remainder in a second instalment will never charge an extra fee.',
       },
       {
-        title: '4. Instant WhatsApp Receipts & Reminders',
+        title: 'Receipts and reminders',
         description:
           'After recording, tap "Send Receipt on WhatsApp" to generate a clean, formatted receipt slip with paid amount, date, reference, and current group fund total. For unpaid members, tap their name to send a friendly reminder.',
       },
@@ -153,24 +153,24 @@ const GUIDES: GuideSection[] = [
     badge: 'Popular',
     steps: [
       {
-        title: '1. Ask for a loan',
+        title: 'Ask for a loan',
         description:
           'Any active member taps "Request Loan" on the Loans tab, enters the required amount, repayment term (in months), plan (monthly instalment or end of term), and purpose.',
         tip: 'One member can borrow only so much — 30% of the fund to start with, though your group can change it in Settings.',
       },
       {
-        title: '2. The group votes',
+        title: 'The group votes',
         description:
           'The request appears for all active members. Members vote "Approve" or "Reject". Neither the borrower nor their guarantor may vote on the request.',
         tip: 'More than half the members must say yes. The app counts the votes for you.',
       },
       {
-        title: '3. The money is paid out',
+        title: 'The money is paid out',
         description:
           'Once the group agrees, the cashier or accountant pays the money out. It is still the group’s money — it is just out on loan now.',
       },
       {
-        title: '4. Interest and paying back',
+        title: 'Interest and paying back',
         description:
           'Interest is charged each day on what is still owed — so as the loan comes down, so does the interest. When someone repays, the cashier enters how much of it is the loan and how much is interest. Paying early genuinely costs less.',
       },
@@ -191,18 +191,18 @@ const GUIDES: GuideSection[] = [
     iconTone: 'amber',
     steps: [
       {
-        title: '1. Select "Outside Borrower"',
+        title: 'Choose someone outside the group',
         description:
           'On the New Loan screen, toggle "Lending to someone outside the group". Enter the borrower’s full name, phone number, and address.',
       },
       {
-        title: '2. Active Member Guarantor',
+        title: 'A member vouches for them',
         description:
           'Every outside loan requires an active member to stand as Guarantor. The guarantor vouches for the borrower and agrees to assist in recovery if payment is delayed.',
         tip: 'The guarantor cannot vote on this loan request to maintain fairness and impartiality.',
       },
       {
-        title: '3. Group Democratic Voting',
+        title: 'The group votes',
         description:
           'The group reviews the borrower details and guarantor endorsement before voting to approve the request.',
       },
@@ -223,18 +223,18 @@ const GUIDES: GuideSection[] = [
     badge: 'Financial Control',
     steps: [
       {
-        title: '1. Two Fund Numbers That Differ',
+        title: 'Two totals that are not the same',
         description:
           'What the group is worth = everything paid in, plus interest earned, minus what was spent. What should be in the bank = that, minus what is out on loan, minus the cash someone is holding.',
         tip: 'This is what should actually be sitting in your group bank account right now.',
       },
       {
-        title: '2. Checking the bank each month',
+        title: 'Checking the bank each month',
         description:
           'Once a month, the Accountant checks the bank statement and records the actual balance in the Bank tab. The app immediately compares it against the ledger. A difference of ₹0 gives a green "Balanced" badge; any mismatch is highlighted.',
       },
       {
-        title: '3. A limit on cash in hand',
+        title: 'A limit on cash in hand',
         description:
           'The Cashier holds cash for day-to-day operations up to the configured limit (e.g. ₹5,000). When cash exceeds this limit, the app alerts the Cashier to deposit the excess into the bank.',
       },
@@ -254,18 +254,18 @@ const GUIDES: GuideSection[] = [
     iconTone: 'coral',
     steps: [
       {
-        title: '1. Propose an Expense',
+        title: 'Ask to spend',
         description:
           'Any member or officer can propose spending money for group trips, celebrations, snacks, or stationery from the Treasury -> Expenses tab.',
       },
       {
-        title: '2. Voting on Expenses',
+        title: 'The group votes',
         description:
           'Ordinary spending needs the group’s agreement before the money goes out.',
         tip: 'Bank charges and minor admin expenses proposed by officers can be auto-approved, provided they fall within the annual discretionary spending cap.',
       },
       {
-        title: '3. Payment & Accounting',
+        title: 'Paying and recording it',
         description:
           'Once approved, the expense is paid via Bank or Cash. The amount is deducted from the fund and recorded in the immutable audit log.',
       },
@@ -285,18 +285,18 @@ const GUIDES: GuideSection[] = [
     iconTone: 'mint',
     steps: [
       {
-        title: '1. Accumulated Interest Pool',
+        title: 'The interest the group earned',
         description:
           'As borrowers repay loans, interest accumulates in the fund. The app automatically calculates the distributable profit (total interest minus group expenses and previous payouts).',
       },
       {
-        title: '2. Someone proposes the split',
+        title: 'Someone proposes the split',
         description:
           'An officer opens Treasury -> Profit Share, selects "Yearly profit share (Bonus)" or "Final group share-out", and enters the amount to distribute.',
         tip: 'The app splits it by how much each person has saved — save more, get more.',
       },
       {
-        title: '3. A second person agrees it',
+        title: 'A second person agrees it',
         description:
           'A single leader CANNOT pay out money alone. Another officer (Cashier, Accountant, or Admin) must review the calculation and tap "Approve & Pay Out".',
       },
@@ -316,17 +316,17 @@ const GUIDES: GuideSection[] = [
     iconTone: 'amber',
     steps: [
       {
-        title: '1. Hold the Monthly Meeting',
+        title: 'Hold the meeting',
         description:
           'During the group gathering, an officer opens Community -> Monthly Meetings and records attendance.',
       },
       {
-        title: '2. Mark Present, Absent, or Excused',
+        title: 'Mark who came',
         description:
           'Each member is marked Present, Absent (unexcused), or Excused (pre-notified leave).',
       },
       {
-        title: '3. Automatic Fine Application',
+        title: 'Fines for missing it',
         description:
           'If the group has a configured meeting absence fine (e.g. ₹50), members marked unexcused absent are automatically charged. Fines flow into the group fund.',
       },
@@ -347,17 +347,17 @@ const GUIDES: GuideSection[] = [
     badge: 'Security',
     steps: [
       {
-        title: 'Immutable Append-Only Audit',
+        title: 'Every change is written down',
         description:
           'Every financial action (deposit, loan, repayment, cash movement, role assignment) triggers a database audit entry recording exactly who did it, what changed, and the precise timestamp.',
       },
       {
-        title: 'Cannot Be Deleted or Edited',
+        title: 'Nothing can be erased',
         description:
           'Even the database administrator cannot update or delete entries in the audit table. Database triggers prevent any UPDATE or DELETE operations.',
       },
       {
-        title: 'Integer Paise Mathematics',
+        title: 'Counted in whole paise',
         description:
           'Every amount is counted in whole paise, never in decimals. That is why the totals always add up exactly instead of drifting by a rupee here and there.',
       },
@@ -377,7 +377,7 @@ const GUIDES: GuideSection[] = [
     iconTone: 'mint',
     steps: [
       {
-        title: 'Two-Man Rule (Dual Officer Control)',
+        title: 'Two people, never one',
         description:
           'The cashier holds the cash; the accountant checks the bank. The app will not let one person do both.',
       },
@@ -387,7 +387,7 @@ const GUIDES: GuideSection[] = [
           'Neither the Admin, Cashier, nor Accountant can issue a loan or pay a discretionary expense on their own. Members must vote to approve loans and expenses.',
       },
       {
-        title: 'No Backdating or Erasing Entries',
+        title: 'No back-dating, no rubbing out',
         description:
           'Closed months cannot receive late entries, and the append-only audit log records every single modification permanently.',
       },
@@ -397,22 +397,22 @@ const GUIDES: GuideSection[] = [
     id: 'faq-interest',
     category: 'faq',
     title: 'How is loan interest calculated?',
-    subtitle: 'Simple reducing-balance interest explained',
+    subtitle: 'Why it gets cheaper as you pay back',
     icon: <IconHelp width={18} height={18} />,
     iconTone: 'amber',
     steps: [
       {
-        title: 'Reducing Balance',
+        title: 'Interest falls as you repay',
         description:
           'Interest is charged only on what you still owe, not on what you originally borrowed. Pay some back and next month’s interest is smaller.',
       },
       {
-        title: 'Per-Day Simple Interest',
+        title: 'Charged by the day',
         description:
           'Interest is calculated per day over a standard 30-day month based on your group monthly rate (e.g. 2% per month = 24% annual).',
       },
       {
-        title: 'Overdue Penalty Only on Late Days',
+        title: 'Extra charge only for late days',
         description:
           'If a loan passes its due date, the higher overdue interest rate applies ONLY to the days after the due date — never retroactively to the whole loan term.',
       },
@@ -427,17 +427,17 @@ const GUIDES: GuideSection[] = [
     iconTone: 'coral',
     steps: [
       {
-        title: '1. Clear any loan first',
+        title: 'Clear any loan first',
         description:
           'Nobody can leave while they still owe the group money — the loan and its interest have to be cleared first.',
       },
       {
-        title: '2. Pro-Rata Share Calculation',
+        title: 'Working out your share',
         description:
           'The app calculates the member’s net entitlement: their total contributions + accumulated interest share - any previous payouts received.',
       },
       {
-        title: '3. Handing Over Offices',
+        title: 'Passing on your job',
         description:
           'If the leaving member is the Admin, Cashier, or Accountant, they must hand over their office to another member before leaving.',
       },
@@ -523,7 +523,7 @@ export default function Help() {
 
   return (
     <Screen
-      title="User Guide & Tutorials"
+      title="How this works"
       sub="How the group works, step by step"
       onBack={() => nav('/community')}
     >
@@ -657,7 +657,7 @@ export default function Help() {
       <Panel
         title={
           selectedCategory === 'all'
-            ? 'Feature Tutorials & Guides'
+            ? 'Pick a topic'
             : CATEGORIES.find((c) => c.id === selectedCategory)?.label
         }
         flush
@@ -711,7 +711,7 @@ export default function Help() {
                   {isExpanded && (
                     <div
                       style={{
-                        padding: '4px 16px 18px 52px',
+                        padding: '2px 14px 16px',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 14,
@@ -730,8 +730,29 @@ export default function Help() {
                               border: '1px solid var(--hairline)',
                             }}
                           >
-                            <div style={{ fontWeight: 650, fontSize: '0.88rem', marginBottom: 4 }}>
-                              {step.title}
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'baseline',
+                                gap: 8,
+                                marginBottom: 4,
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  color: 'var(--text-3)',
+                                  fontWeight: 700,
+                                  fontSize: '0.78rem',
+                                  fontVariantNumeric: 'tabular-nums',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {idx + 1}
+                              </span>
+                              <span style={{ fontWeight: 650, fontSize: '0.88rem' }}>
+                                {step.title}
+                              </span>
                             </div>
                             <div
                               style={{
