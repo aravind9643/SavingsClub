@@ -9,6 +9,7 @@ import { Panel, Field, Busy, ErrorNote, Notice, Loading, Sheet } from '../compon
 import { haptic } from '../lib/haptics';
 import { today } from '../lib/dates';
 import type { GroupInvite, Member } from '../lib/types';
+import { IconShare } from '../components/icons';
 import {
   type GroupExportData,
   exportContributionsCSV,
@@ -298,7 +299,7 @@ export default function Settings() {
  * reaches for when a code has spread further than they meant.
  */
 function InvitePanel() {
-  const { currentGroupId } = useSession();
+  const { currentGroupId, group } = useSession();
 
   const inviteQ = useQuery<GroupInvite | null>('invite', async () => {
     // The group filter matters more here than elsewhere: this takes the FIRST
@@ -378,16 +379,55 @@ function InvitePanel() {
           </Notice>
 
           <div className="btn-row stack">
-            <Busy pending={create.pending} onClick={() => void create.run()}>
-              New code
-            </Busy>
-            <Busy
-              className="ghost"
-              pending={revoke.pending}
-              onClick={() => void revoke.run(invite.code)}
+            <button
+              type="button"
+              className="primary lg"
+              style={{
+                background: '#25D366',
+                borderColor: '#25D366',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+              onClick={() => {
+                haptic(10);
+                const link = `${window.location.origin}/join?code=${invite.code}`;
+                const text = `👋 Join our savings group *${group?.name || 'SavingsClub'}*!\n\n` +
+                  `Use this invite link:\n${link}\n\n` +
+                  `Or enter code in the app: *${invite.code}*\n` +
+                  `(Code expires in 7 days)`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+              }}
             >
-              Cancel this code
-            </Busy>
+              <IconShare width={16} height={16} />
+              Share invite on WhatsApp
+            </button>
+            <button
+              type="button"
+              className="subtle"
+              onClick={() => {
+                haptic(10);
+                const link = `${window.location.origin}/join?code=${invite.code}`;
+                void copy(link);
+              }}
+            >
+              {copied ? 'Link copied to clipboard!' : 'Copy invite link'}
+            </button>
+            <div className="btn-row" style={{ marginTop: 6 }}>
+              <Busy style={{ flex: 1 }} pending={create.pending} onClick={() => void create.run()}>
+                New code
+              </Busy>
+              <Busy
+                className="ghost"
+                style={{ flex: 1 }}
+                pending={revoke.pending}
+                onClick={() => void revoke.run(invite.code)}
+              >
+                Cancel code
+              </Busy>
+            </div>
           </div>
         </>
       ) : (

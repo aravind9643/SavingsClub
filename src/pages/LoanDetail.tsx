@@ -23,6 +23,7 @@ interface VoteRow {
 interface RepaymentRow {
   id: string; paid_on: string; principal_paise: number;
   interest_paise: number; penalty_paise: number; method: PaymentMethod;
+  note: string | null; created_at?: string;
 }
 
 export default function LoanDetail() {
@@ -66,7 +67,7 @@ export default function LoanDetail() {
     let q = supabase
       .from('loan_repayments').select('*').eq('loan_id', id);
     if (currentGroupId) q = q.eq('group_id', currentGroupId);
-    const { data, error } = await q.order('paid_on');
+    const { data, error } = await q.order('paid_on', { ascending: false }).order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []) as RepaymentRow[];
   });
@@ -368,7 +369,7 @@ export default function LoanDetail() {
                     icon={<IconArrowDown width={17} height={17} />}
                     iconTone="mint"
                     title={formatPaise(r.principal_paise + r.interest_paise + r.penalty_paise)}
-                    sub={`${fmtDate(r.paid_on)} · ${r.method.toUpperCase()} · tap for receipt`}
+                    sub={`${fmtDate(r.paid_on)} · ${r.method.toUpperCase()}${r.note ? ` · ${r.note}` : ''} · tap for receipt`}
                     note={
                       r.interest_paise + r.penalty_paise > 0
                         ? `${formatPaiseShort(r.interest_paise + r.penalty_paise)} interest`
@@ -388,6 +389,7 @@ export default function LoanDetail() {
                         feeLabel: 'Interest & Charges',
                         paidOn: r.paid_on,
                         method: r.method,
+                        notes: r.note,
                       });
                     }}
                     chevron

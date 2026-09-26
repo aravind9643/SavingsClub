@@ -46,6 +46,7 @@ export function PaymentReceiptSheet({
         : '') +
       `*Date*: ${fmtDate(receipt.paidOn)}\n` +
       `*Method*: ${(receipt.method || 'CASH').toUpperCase()}\n` +
+      (receipt.notes ? `*Note*: ${receipt.notes}\n` : '') +
       `*Status*: ✅ VERIFIED & RECORDED\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `_Official transaction record from SavingsClub_`;
@@ -137,6 +138,13 @@ export function PaymentReceiptSheet({
                 {receipt.method || 'CASH'}
               </span>
             </div>
+
+            {receipt.notes ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span className="dim">Note</span>
+                <span style={{ fontWeight: 600, color: 'var(--text-2)' }}>{receipt.notes}</span>
+              </div>
+            ) : null}
 
             {receipt.feeOrInterestPaise && receipt.feeOrInterestPaise > 0 ? (
               <>

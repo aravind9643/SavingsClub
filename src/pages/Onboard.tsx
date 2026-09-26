@@ -26,14 +26,17 @@ export default function Onboard({
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const queryMode = searchParams.get('mode') as Mode | null;
+  const queryCode = searchParams.get('code') || undefined;
+  const queryMode = (searchParams.get('mode') as Mode | null) || (queryCode ? 'join' : undefined);
   const [mode, setMode] = useState<Mode>(queryMode || initialMode || 'choose');
 
   useEffect(() => {
-    if (queryMode && (queryMode === 'create' || queryMode === 'join' || queryMode === 'choose')) {
+    if (queryCode) {
+      setMode('join');
+    } else if (queryMode && (queryMode === 'create' || queryMode === 'join' || queryMode === 'choose')) {
       setMode(queryMode);
     }
-  }, [queryMode]);
+  }, [queryMode, queryCode]);
 
   const inApp = groups.length > 0;
   const back = () => {
@@ -140,16 +143,16 @@ export default function Onboard({
         )}
 
         {mode === 'create' && <CreateGroup onBack={back} onDone={handleDone} />}
-        {mode === 'join' && <JoinGroup onBack={back} onDone={handleDone} />}
+        {mode === 'join' && <JoinGroup onBack={back} onDone={handleDone} initialCode={queryCode} />}
       </div>
     </div>
   );
 }
 
 function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void }) {
-  const { refresh } = useSession();
+  const { refresh, session, member } = useSession();
   const [groupName, setGroupName] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [fullName, setFullName] = useState(() => member?.full_name ?? (session?.user.user_metadata?.full_name as string | undefined) ?? '');
   const [phone, setPhone] = useState('');
 
   const create = useMutation(
@@ -160,6 +163,10 @@ function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => vo
         p_phone: phone.trim() || null,
       });
       if (error) throw error;
+      const created = data as { id?: string } | undefined;
+      if (created?.id) {
+        try { localStorage.setItem('sanchay:last_group', created.id); } catch { /* private window */ }
+      }
       await supabase.auth.refreshSession();
       return data;
     },
@@ -169,7 +176,12 @@ function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => vo
   const ok = Boolean(groupName.trim() && fullName.trim());
 
   return (
-    <>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (ok && !create.pending) void create.run();
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <button
           type="button"
@@ -227,33 +239,52 @@ function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => vo
 
       <div className="btn-row stack" style={{ marginTop: 18 }}>
         <Busy
+          type="submit"
           className="primary lg"
           pending={create.pending}
           disabled={!ok}
-          onClick={() => void create.run()}
         >
           Create group
         </Busy>
       </div>
-    </>
+    </form>
   );
 }
 
-/** Codes are shown as ABCD-EFGH-JKLM; normalises whatever is typed. */
+/** Codes are shown as ABCD-EFGH-JKLM; normalises whatever is typed or pasted. */
+function extractOrFormatCode(raw: string): string {
+  const matchParam = /[?&]code=([A-Za-z0-9-]+)/i.exec(raw);
+  if (matchParam) {
+    return formatCode(matchParam[1]);
+  }
+  const matchPattern = /\b([A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4})\b/.exec(raw);
+  if (matchPattern) {
+    return formatCode(matchPattern[1]);
+  }
+  return formatCode(raw);
+}
+
 function formatCode(raw: string): string {
   const clean = raw.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 12);
   return clean.replace(/(.{4})(?=.)/g, '$1-');
 }
 
-function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void }) {
-  const { refresh } = useSession();
-  const [code, setCode] = useState('');
-  const [fullName, setFullName] = useState('');
+function JoinGroup({
+  onBack, onDone, initialCode,
+}: {
+  onBack: () => void;
+  onDone?: () => void;
+  initialCode?: string;
+}) {
+  const { refresh, session, member } = useSession();
+  const [code, setCode] = useState(() => initialCode ? extractOrFormatCode(initialCode) : '');
+  const [fullName, setFullName] = useState(() => member?.full_name ?? (session?.user.user_metadata?.full_name as string | undefined) ?? '');
   const [preview, setPreview] = useState<InvitePreview | null>(null);
 
   const check = useMutation(
-    async () => {
-      const { data, error } = await supabase.rpc('preview_invite', { p_code: code });
+    async (codeOverride?: string) => {
+      const c = codeOverride || code;
+      const { data, error } = await supabase.rpc('preview_invite', { p_code: c });
       if (error) throw error;
       const row = (Array.isArray(data) ? data[0] : data) as InvitePreview | undefined;
       return row ?? null;
@@ -263,11 +294,14 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
 
   const join = useMutation(
     async () => {
-      const { error } = await supabase.rpc('join_group_with_code', {
+      const { data, error } = await supabase.rpc('join_group_with_code', {
         p_code: code,
         p_full_name: fullName.trim(),
       });
       if (error) throw error;
+      if (typeof data === 'string') {
+        try { localStorage.setItem('sanchay:last_group', data); } catch { /* private window */ }
+      }
       await supabase.auth.refreshSession();
     },
     { onSuccess: () => { refresh(); onDone?.(); } },
@@ -275,8 +309,24 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
 
   const ready = code.replace(/-/g, '').length === 12;
 
+  // Auto-check code when 12 characters are ready
+  useEffect(() => {
+    if (ready && !preview && !check.pending) {
+      void check.run(code);
+    }
+  }, [code, ready]);
+
   return (
-    <>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (preview?.valid) {
+          if (fullName.trim() && !join.pending) void join.run();
+        } else if (ready && !check.pending) {
+          void check.run(code);
+        }
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <button
           type="button"
@@ -304,7 +354,7 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
           <input
             value={code}
             onChange={(e) => {
-              setCode(formatCode(e.target.value));
+              setCode(extractOrFormatCode(e.target.value));
               setPreview(null);
             }}
             placeholder="ABCD-EFGH-JKLM"
@@ -380,25 +430,25 @@ function JoinGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void
       <div className="btn-row stack" style={{ marginTop: 18 }}>
         {preview?.valid ? (
           <Busy
+            type="submit"
             className="primary lg"
             pending={join.pending}
             disabled={!fullName.trim()}
-            onClick={() => void join.run()}
           >
             Request to join
           </Busy>
         ) : (
           <Busy
+            type="submit"
             className="primary lg"
             pending={check.pending}
             disabled={!ready}
-            onClick={() => void check.run()}
           >
             Check the code
           </Busy>
         )}
       </div>
-    </>
+    </form>
   );
 }
 
@@ -410,6 +460,14 @@ export function AwaitingApproval() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const others = groups.filter((g) => g.status === 'active');
+
+  // Periodically check if an officer approved the join request
+  useEffect(() => {
+    const timer = setInterval(() => {
+      refresh();
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [refresh]);
 
   async function go(id: string) {
     setError(null);
