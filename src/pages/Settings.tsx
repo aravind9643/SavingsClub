@@ -9,7 +9,7 @@ import { Panel, Field, Busy, ErrorNote, Notice, Loading, Sheet } from '../compon
 import { haptic } from '../lib/haptics';
 import { today } from '../lib/dates';
 import type { GroupInvite, Member } from '../lib/types';
-import { IconShare } from '../components/icons';
+import { IconShare, IconHelp } from '../components/icons';
 import {
   type GroupExportData,
   exportContributionsCSV,
@@ -268,6 +268,21 @@ export default function Settings() {
           </Field>
         </div>
       </Panel>
+
+      <div style={{ marginTop: 4, marginBottom: 14 }}>
+        <button
+          type="button"
+          className="subtle lg"
+          style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 8 }}
+          onClick={() => {
+            haptic(10);
+            nav('/help');
+          }}
+        >
+          <IconHelp width={17} height={17} />
+          User Guide & Feature Tutorials
+        </button>
+      </div>
 
       <InstallAppPanel />
 

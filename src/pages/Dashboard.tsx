@@ -14,7 +14,7 @@ import {
 } from '../components/ui';
 import {
   IconInbox, IconCheck, IconShare, IconWallet, IconDeposits, IconLoans, IconExpenses,
-  IconTreasury, IconMeeting,
+  IconTreasury, IconMeeting, IconHelp,
 } from '../components/icons';
 import type {
   MemberPosition, LoanRow, AuditRow, UnpaidRow, FundSummary,
@@ -232,6 +232,20 @@ export default function Dashboard() {
       <Screen
         title="Overview"
         sub={homeSub}
+        action={
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => {
+              haptic(10);
+              nav('/help');
+            }}
+            aria-label="User Guide & Tutorials"
+            title="User Guide & Tutorials"
+          >
+            <IconHelp width={17} height={17} />
+          </button>
+        }
       >
         {/* ======================================= 1. PERSONAL STANDING CARD */}
         {myPosition && (

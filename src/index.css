@@ -1213,6 +1213,141 @@ button.tag:active { transform: scale(0.96); }
   box-shadow: 0 10px 24px -4px color-mix(in srgb, var(--mint) 40%, transparent);
 }
 
+/* ── Animated auth tab switcher ────────────────────────────────────── */
+.auth-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  position: relative;
+  background: var(--surface-2);
+  padding: 3px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--hairline-soft);
+  margin-bottom: 20px;
+  isolation: isolate;
+}
+/* Sliding pill indicator */
+.auth-switcher::before {
+  content: '';
+  position: absolute;
+  top: 3px; bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: var(--r-full);
+  background: var(--accent);
+  box-shadow:
+    0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent) inset;
+  transition: transform 0.35s var(--swift);
+  z-index: 0;
+}
+.auth-switcher[data-active='right']::before {
+  transform: translateX(100%);
+}
+
+.auth-switcher-tab {
+  position: relative;
+  z-index: 1;
+  padding: 8px 0;
+  text-align: center;
+  width: 100%;
+  border-radius: var(--r-full);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 600;
+  font-family: var(--body);
+  color: var(--text-3);
+  transition: color 0.25s var(--ease), transform 0.15s var(--spring);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.auth-switcher-tab:active { transform: scale(0.96); }
+.auth-switcher-tab.active {
+  color: var(--on-accent);
+  font-weight: 650;
+}
+
+/* Collapsible signup field — animates height without JS measurement */
+.auth-extra-field {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.35s var(--swift),
+    opacity 0.25s var(--ease),
+    margin 0.35s var(--swift);
+  margin-bottom: 0;
+}
+.auth-extra-field > * {
+  overflow: hidden;
+}
+.auth-extra-field.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: 0; /* Field component has its own spacing */
+}
+
+/* ── Auth footer (forgot password / magic link toggle) ──────────── */
+.auth-footer {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  justify-content: center;
+}
+.auth-footer-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.auth-footer-hint {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  letter-spacing: 0.01em;
+}
+.auth-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--hairline-soft);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 0.82rem;
+  font-weight: 550;
+  font-family: var(--body);
+  cursor: pointer;
+  transition:
+    background 0.2s var(--ease),
+    border-color 0.2s var(--ease),
+    color 0.2s var(--ease),
+    transform 0.15s var(--spring),
+    box-shadow 0.2s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.auth-footer-btn:hover {
+  background: var(--surface-3);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--hairline));
+  color: var(--text);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
+}
+.auth-footer-btn:active {
+  transform: scale(0.97);
+}
+.auth-footer-ico {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-full);
+  background: var(--mint-ghost);
+  color: var(--mint);
+  flex: none;
+}
+
 /* Choice cards for onboarding */
 .onboard-card {
   display: flex;

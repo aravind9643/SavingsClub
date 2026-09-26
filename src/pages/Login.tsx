@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, friendlyError } from '../lib/supabase';
 import { ErrorNote, Field, Busy, Notice } from '../components/ui';
-import { IconEye, IconEyeSlash, IconEmail, IconVault } from '../components/icons';
+import { IconEye, IconEyeSlash, IconEmail, IconVault, IconKey } from '../components/icons';
 import { haptic } from '../lib/haptics';
 
 type Mode = 'signin' | 'signup' | 'magic';
 
-export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }) {
+export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -24,8 +24,7 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
 
   const [mode, setMode] = useState<Mode>(() => {
     if (location.pathname === '/signup') return 'signup';
-    if (location.pathname === '/login') return 'signin';
-    return initialMode;
+    return 'signin';
   });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,14 +34,6 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (location.pathname === '/signup' && mode !== 'signup') {
-      setMode('signup');
-    } else if (location.pathname === '/login' && mode !== 'signin' && mode !== 'magic') {
-      setMode('signin');
-    }
-  }, [location.pathname, mode]);
 
   async function submit() {
     setBusy(true);
@@ -180,28 +171,17 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
 
         {/* Tab switch between Sign In and Sign Up */}
         {mode !== 'magic' ? (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              background: 'var(--surface-2)',
-              padding: 3,
-              borderRadius: 'var(--r-full)',
-              border: '1px solid var(--hairline-soft)',
-              marginBottom: 18,
-            }}
-          >
+          <div className="auth-switcher" data-active={mode === 'signup' ? 'right' : 'left'}>
             <button
               type="button"
-              className={`seg${mode === 'signin' ? ' on' : ''}`}
-              style={{ padding: '7px 0', textAlign: 'center', width: '100%', borderRadius: 'var(--r-full)' }}
+              className={`auth-switcher-tab${mode === 'signin' ? ' active' : ''}`}
               onClick={() => {
                 haptic(10);
                 setMode('signin');
                 setError(null);
                 setInfo(null);
                 if (location.pathname !== '/login') {
-                  navigate('/login');
+                  navigate('/login', { replace: true });
                 }
               }}
             >
@@ -209,15 +189,14 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
             </button>
             <button
               type="button"
-              className={`seg${mode === 'signup' ? ' on' : ''}`}
-              style={{ padding: '7px 0', textAlign: 'center', width: '100%', borderRadius: 'var(--r-full)' }}
+              className={`auth-switcher-tab${mode === 'signup' ? ' active' : ''}`}
               onClick={() => {
                 haptic(10);
                 setMode('signup');
                 setError(null);
                 setInfo(null);
                 if (location.pathname !== '/signup') {
-                  navigate('/signup');
+                  navigate('/signup', { replace: true });
                 }
               }}
             >
@@ -255,7 +234,8 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
             </div>
           )}
 
-          {mode === 'signup' && (
+          {/* Animated collapsible name field for signup */}
+          <div className={`auth-extra-field${mode === 'signup' ? ' open' : ''}`}>
             <Field label="Your full name">
               <input
                 type="text"
@@ -263,10 +243,10 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
                 autoComplete="name"
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="e.g. Aravind Merugu"
-                autoFocus
+                autoFocus={mode === 'signup'}
               />
             </Field>
-          )}
+          </div>
 
           {/* Email Field */}
           <Field label="Email address">
@@ -339,46 +319,43 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
         </form>
 
         {/* Secondary options */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: 12,
-            marginTop: 18,
-            paddingTop: 16,
-            borderTop: '1px solid var(--hairline)',
-          }}
-        >
+        <div className="auth-footer">
           {mode === 'magic' ? (
             <button
               type="button"
-              className="sec-link"
-              style={{ fontSize: '0.84rem' }}
+              className="auth-footer-btn"
               onClick={() => {
                 haptic(10);
                 setMode('signin');
                 setError(null);
                 if (location.pathname !== '/login') {
-                  navigate('/login');
+                  navigate('/login', { replace: true });
                 }
               }}
             >
-              Sign in with password
+              <span className="auth-footer-ico">
+                <IconKey width={13} height={13} />
+              </span>
+              <span>Sign in with password instead</span>
             </button>
           ) : (
-            <button
-              type="button"
-              className="sec-link"
-              style={{ fontSize: '0.84rem', color: 'var(--text-3)' }}
-              onClick={() => {
-                setMode('magic');
-                setError(null);
-              }}
-            >
-              <IconEmail width={14} height={14} style={{ marginRight: 6 }} />
-              Forgot password? Email me a sign-in link
-            </button>
+            <div className="auth-footer-stack">
+              <span className="auth-footer-hint">Can&apos;t remember your password?</span>
+              <button
+                type="button"
+                className="auth-footer-btn"
+                onClick={() => {
+                  haptic(10);
+                  setMode('magic');
+                  setError(null);
+                }}
+              >
+                <span className="auth-footer-ico">
+                  <IconEmail width={13} height={13} />
+                </span>
+                <span>Email me a sign-in link</span>
+              </button>
+            </div>
           )}
         </div>
       </div>

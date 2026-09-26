@@ -10,7 +10,7 @@ import {
   Segments, fmtDate, SkeletonList,
 } from '../components/ui';
 import {
-  IconSettings, IconAudit, IconShare, IconMeeting,
+  IconSettings, IconAudit, IconShare, IconMeeting, IconHelp,
 } from '../components/icons';
 import type {
   GroupInvite, PendingMember, Meeting, AttendanceSummary, Attendance, Member, MemberPosition,
@@ -337,8 +337,19 @@ export default function Community() {
         <Panel title="Governance & Meetings" flush>
           <List>
             <Row
-              icon={<IconMeeting width={18} height={18} />}
+              icon={<IconHelp width={18} height={18} />}
               iconTone="mint"
+              title="User Guide & Tutorials"
+              sub="Step-by-step help, feature walkthroughs & rules"
+              onClick={() => {
+                haptic(10);
+                nav('/help');
+              }}
+              chevron
+            />
+            <Row
+              icon={<IconMeeting width={18} height={18} />}
+              iconTone="violet"
               title="Monthly Meetings"
               sub={latestMeeting ? `Last held on ${fmtDate(latestMeeting.held_on)}` : 'Attendance, fines & meeting records'}
               onClick={() => {

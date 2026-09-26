@@ -26,6 +26,7 @@ const Audit = lazy(() => import('./pages/Audit'));
 const Settings = lazy(() => import('./pages/Settings'));
 const MoneyHub = lazy(() => import('./pages/MoneyHub'));
 const Community = lazy(() => import('./pages/Community'));
+const Help = lazy(() => import('./pages/Help'));
 
 /** Five intuitive destinations for community savings groups */
 const TABS = [
@@ -193,6 +194,8 @@ function Shell() {
           <Route path="/members" element={<Members />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit" element={<Audit />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/guide" element={<Navigate to="/help" replace />} />
           <Route path="/more" element={<Community />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -218,16 +221,14 @@ function Gate() {
   const navigate = useNavigate();
   useTheme();
 
-  // Unauthenticated: dedicated /login and /signup routes
+  // Unauthenticated: a single <Login> instance handles /login, /signup, /join.
+  // Using one Route avoids remounting (which replayed the pop-in animation and
+  // reset form state — the "glitch" when toggling sign-in / create-account).
   if (!session) {
     if (loading) return <div className="auth"><Loading what="Signing in" /></div>;
     return (
       <Routes>
-        <Route path="/login" element={<Login initialMode="signin" />} />
-        <Route path="/signup" element={<Login initialMode="signup" />} />
-        <Route path="/join" element={<Login initialMode="signup" />} />
-        <Route path="/onboard" element={<Login initialMode="signup" />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Login />} />
       </Routes>
     );
   }
