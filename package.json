@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
-    "db:test": "psql \"$SUPABASE_DB_URL\" -v ON_ERROR_STOP=1 -f supabase/tests/assertions.sql -f supabase/tests/isolation.sql"
+    "db:test": "psql \"$SUPABASE_DB_URL\" -v ON_ERROR_STOP=1 -f supabase/tests/assertions.sql -f supabase/tests/isolation.sql",
+    "test:scenarios": "node scripts/test-scenarios.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.3.1",
@@ -29,6 +30,7 @@
     "oxlint": "^1.81.0",
     "playwright": "^1.63.0",
     "typescript": "~6.0.2",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "pg": "^8.13.0"
   }
 }
