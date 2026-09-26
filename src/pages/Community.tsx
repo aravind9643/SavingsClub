@@ -97,9 +97,11 @@ export default function Community() {
   const handleShareInvite = () => {
     haptic(10);
     if (!inviteQ.data) return;
-    const text = `Join our savings group *${group?.name || 'SavingsClub'}*!\n` +
-      `Use invite code: *${inviteQ.data.code}*\n` +
-      `Valid for 7 days. Open the app to join.`;
+    const link = `${window.location.origin}/join?code=${inviteQ.data.code}`;
+    const text = `👋 Join our savings group *${group?.name || 'SavingsClub'}*!\n\n` +
+      `Use this invite link:\n${link}\n\n` +
+      `Or enter code in the app: *${inviteQ.data.code}*\n` +
+      `(Code expires in 7 days)`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 

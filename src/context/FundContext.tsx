@@ -137,6 +137,17 @@ export function FundProvider({ children }: { children: ReactNode }) {
     return (data ?? []) as { role: string }[];
   });
 
+  const memberCountQ = useQuery<number>(enabled ? `${FUND_KEY}:membercount` : null, async () => {
+    let q = supabase
+      .from('members')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active');
+    if (currentGroupId) q = q.eq('group_id', currentGroupId);
+    const { count, error } = await q;
+    if (error) throw error;
+    return count ?? 0;
+  });
+
   const alerts: Alert[] = [];
   const fund = fundQ.data;
 
@@ -225,9 +236,18 @@ export function FundProvider({ children }: { children: ReactNode }) {
   }
 
   // Until both money offices are filled, contributions, loans and cash cannot
-  // be recorded at all -- the RPCs require one of those roles. Worth saying on
-  // the dashboard rather than letting people discover it as a failed save.
-  if (offices.data) {
+  // be recorded at all -- the RPCs require one of those roles.
+  // But if there is only 1 member (the creator), they cannot fill both offices yet
+  // because cashier and accountant must be different people. Prompt them to invite members first!
+  const memberCount = memberCountQ.data;
+  if (memberCount !== undefined && memberCount <= 1) {
+    alerts.push({
+      id: 'invite',
+      severity: 'warn',
+      message: 'Invite members to join — you need at least 2 members to assign cashier and accountant',
+      to: '/settings',
+    });
+  } else if (offices.data) {
     const has = (r: string) => offices.data!.some((o) => o.role === r);
     if (!has('cashier') || !has('accountant')) {
       alerts.push({
@@ -240,7 +260,7 @@ export function FundProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  if (group && !group.setup_complete && !alerts.some((a) => a.id === 'offices')) {
+  if (group && !group.setup_complete) {
     alerts.push({
       id: 'setup',
       severity: 'warn',

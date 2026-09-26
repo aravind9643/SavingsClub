@@ -95,11 +95,25 @@ export default function Members() {
     });
   }, [positions.data, search, byId]);
 
+  const activeCount = (positions.data ?? []).filter((p) => p.is_active).length;
+
   return (
     <>
       <Screen
         title="Members"
-        sub={`${(positions.data ?? []).filter((p) => p.is_active).length} active`}
+        sub={`${activeCount} active`}
+        action={
+          isOfficer ? (
+            <button
+              type="button"
+              className="chip"
+              onClick={() => nav('/settings')}
+              style={{ gap: 6, fontWeight: 600, fontSize: '0.8rem' }}
+            >
+              <span>+ Invite</span>
+            </button>
+          ) : undefined
+        }
         onBack={() => nav('/community')}
       >
         {clash && (
@@ -108,9 +122,15 @@ export default function Members() {
           </Notice>
         )}
         {missing && !clash && (
-          <Notice tone="danger">
-            No cashier or accountant yet — no money can be recorded until both are picked.
-          </Notice>
+          activeCount <= 1 ? (
+            <Notice tone="warn" onClick={() => nav('/settings')}>
+              You are the only member in this group. Tap here to invite members from Settings so you can assign cashier and accountant.
+            </Notice>
+          ) : (
+            <Notice tone="danger">
+              No cashier or accountant yet — no money can be recorded until both are picked.
+            </Notice>
+          )
         )}
         {unlinked.length > 0 && (
           <Notice tone="warn" onClick={() => nav('/settings')}>

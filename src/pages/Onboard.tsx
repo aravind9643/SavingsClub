@@ -26,7 +26,17 @@ export default function Onboard({
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const queryCode = searchParams.get('code') || undefined;
+  const queryCode = searchParams.get('code')
+    || (() => {
+      try {
+        const stored = sessionStorage.getItem('sanchay:pending_invite_code');
+        if (stored) {
+          sessionStorage.removeItem('sanchay:pending_invite_code');
+          return stored;
+        }
+      } catch { /* private window */ }
+      return undefined;
+    })();
   const queryMode = (searchParams.get('mode') as Mode | null) || (queryCode ? 'join' : undefined);
   const [mode, setMode] = useState<Mode>(queryMode || initialMode || 'choose');
 
@@ -150,10 +160,13 @@ export default function Onboard({
 }
 
 function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => void }) {
+  const navigate = useNavigate();
   const { refresh, session, member } = useSession();
   const [groupName, setGroupName] = useState('');
-  const [fullName, setFullName] = useState(() => member?.full_name ?? (session?.user.user_metadata?.full_name as string | undefined) ?? '');
-  const [phone, setPhone] = useState('');
+  const [fullName, setFullName] = useState(
+    () => member?.full_name ?? (session?.user.user_metadata?.full_name as string | undefined) ?? nameFromEmail(session?.user.email),
+  );
+  const [phone, setPhone] = useState(() => member?.phone ?? '');
 
   const create = useMutation(
     async () => {
@@ -170,7 +183,13 @@ function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => vo
       await supabase.auth.refreshSession();
       return data;
     },
-    { onSuccess: () => { refresh(); onDone?.(); } },
+    {
+      onSuccess: () => {
+        refresh();
+        if (onDone) onDone();
+        navigate('/', { replace: true });
+      },
+    },
   );
 
   const ok = Boolean(groupName.trim() && fullName.trim());
@@ -269,6 +288,16 @@ function formatCode(raw: string): string {
   return clean.replace(/(.{4})(?=.)/g, '$1-');
 }
 
+/** Formats a plausible person name from an email username like 'john.doe' -> 'John Doe' */
+function nameFromEmail(email?: string | null): string {
+  if (!email) return '';
+  const prefix = email.split('@')[0] || '';
+  return prefix
+    .replace(/[._+-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
 function JoinGroup({
   onBack, onDone, initialCode,
 }: {
@@ -276,9 +305,12 @@ function JoinGroup({
   onDone?: () => void;
   initialCode?: string;
 }) {
+  const navigate = useNavigate();
   const { refresh, session, member } = useSession();
   const [code, setCode] = useState(() => initialCode ? extractOrFormatCode(initialCode) : '');
-  const [fullName, setFullName] = useState(() => member?.full_name ?? (session?.user.user_metadata?.full_name as string | undefined) ?? '');
+  const [fullName, setFullName] = useState(
+    () => member?.full_name ?? (session?.user.user_metadata?.full_name as string | undefined) ?? nameFromEmail(session?.user.email),
+  );
   const [preview, setPreview] = useState<InvitePreview | null>(null);
 
   const check = useMutation(
@@ -304,7 +336,13 @@ function JoinGroup({
       }
       await supabase.auth.refreshSession();
     },
-    { onSuccess: () => { refresh(); onDone?.(); } },
+    {
+      onSuccess: () => {
+        refresh();
+        if (onDone) onDone();
+        navigate('/awaiting-approval', { replace: true });
+      },
+    },
   );
 
   const ready = code.replace(/-/g, '').length === 12;
@@ -459,7 +497,14 @@ export function AwaitingApproval() {
   const { group, session, signOut, refresh, groups, switchGroup } = useSession();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
   const others = groups.filter((g) => g.status === 'active');
+
+  const handleCheck = () => {
+    setChecking(true);
+    refresh();
+    setTimeout(() => setChecking(false), 800);
+  };
 
   // Periodically check if an officer approved the join request
   useEffect(() => {
@@ -501,9 +546,9 @@ export function AwaitingApproval() {
         <ErrorNote error={error} />
 
         <div className="btn-row stack">
-          <button type="button" className="primary lg" onClick={() => refresh()}>
+          <Busy type="button" className="primary lg" pending={checking} onClick={handleCheck}>
             Check approval status
-          </button>
+          </Busy>
           {others.map((g) => (
             <button key={g.id} type="button" className="lg" onClick={() => void go(g.id)}>
               Go to {g.name}

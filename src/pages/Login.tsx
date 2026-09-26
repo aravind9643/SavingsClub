@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, friendlyError } from '../lib/supabase';
-import { ErrorNote, Field, Busy } from '../components/ui';
+import { ErrorNote, Field, Busy, Notice } from '../components/ui';
 import { IconEye, IconEyeSlash, IconEmail, IconVault } from '../components/icons';
 import { haptic } from '../lib/haptics';
 
@@ -10,6 +10,17 @@ type Mode = 'signin' | 'signup' | 'magic';
 export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+
+  const [inviteCode] = useState<string | null>(() => {
+    const q = searchParams.get('code');
+    if (q) {
+      try { sessionStorage.setItem('sanchay:pending_invite_code', q); } catch { /* private window */ }
+      return q;
+    }
+    try { return sessionStorage.getItem('sanchay:pending_invite_code'); } catch { /* private window */ }
+    return null;
+  });
 
   const [mode, setMode] = useState<Mode>(() => {
     if (location.pathname === '/signup') return 'signup';
@@ -18,6 +29,7 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
   });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [sent, setSent] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
@@ -38,25 +50,40 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
     setInfo(null);
     try {
       if (mode === 'magic') {
+        const redirectTo = inviteCode
+          ? `${window.location.origin}/join?code=${encodeURIComponent(inviteCode)}`
+          : window.location.origin;
         const { error: e } = await supabase.auth.signInWithOtp({
           email: email.trim(),
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: redirectTo },
         });
         if (e) throw e;
         setSent(true);
         return;
       }
       if (mode === 'signup') {
+        const redirectTo = inviteCode
+          ? `${window.location.origin}/join?code=${encodeURIComponent(inviteCode)}`
+          : window.location.origin;
         const { data, error: e } = await supabase.auth.signUp({
           email: email.trim(),
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: {
+            data: fullName.trim() ? { full_name: fullName.trim() } : undefined,
+            emailRedirectTo: redirectTo,
+          },
         });
         if (e) throw e;
         if (!data.session) {
           setInfo('Account created! Please check your email to confirm, then sign in.');
           setMode('signin');
           navigate('/login', { replace: true });
+        } else {
+          if (inviteCode) {
+            navigate(`/join?code=${encodeURIComponent(inviteCode)}`, { replace: true });
+          } else {
+            navigate('/', { replace: true });
+          }
         }
         return;
       }
@@ -65,7 +92,11 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
         password,
       });
       if (e) throw e;
-      navigate('/');
+      if (inviteCode) {
+        navigate(`/join?code=${encodeURIComponent(inviteCode)}`, { replace: true });
+      } else {
+        navigate('/', { replace: true });
+      }
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -139,6 +170,14 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
           </div>
         </div>
 
+        {inviteCode && (
+          <div style={{ marginBottom: 14 }}>
+            <Notice tone="good">
+              You&apos;ve been invited to join a savings group. Sign in or create an account to continue.
+            </Notice>
+          </div>
+        )}
+
         {/* Tab switch between Sign In and Sign Up */}
         {mode !== 'magic' ? (
           <div
@@ -196,90 +235,108 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
           </div>
         )}
 
-        <ErrorNote error={error} />
-        {info && (
-          <div
-            className="error"
-            style={{
-              background: 'var(--mint-ghost)',
-              color: 'var(--mint)',
-              borderColor: 'color-mix(in srgb, var(--mint) 30%, transparent)',
-            }}
-          >
-            {info}
-          </div>
-        )}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (ok && !busy) void submit();
+          }}
+        >
+          <ErrorNote error={error} />
+          {info && (
+            <div
+              className="error"
+              style={{
+                background: 'var(--mint-ghost)',
+                color: 'var(--mint)',
+                borderColor: 'color-mix(in srgb, var(--mint) 30%, transparent)',
+              }}
+            >
+              {info}
+            </div>
+          )}
 
-        {/* Email Field */}
-        <Field label="Email address">
-          <div className="input-with-action">
-            <input
-              type="email"
-              value={email}
-              autoComplete="email"
-              inputMode="email"
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && ok) void submit(); }}
-              placeholder="you@example.com"
-              autoFocus
-            />
-          </div>
-        </Field>
+          {mode === 'signup' && (
+            <Field label="Your full name">
+              <input
+                type="text"
+                value={fullName}
+                autoComplete="name"
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="e.g. Aravind Merugu"
+                autoFocus
+              />
+            </Field>
+          )}
 
-        {/* Password Field */}
-        {mode !== 'magic' && (
-          <Field
-            label="Password"
-            hint={
-              mode === 'signup' ? (
-                <span style={{ color: password.length >= 6 ? 'var(--mint)' : 'var(--text-3)' }}>
-                  {password.length >= 6 ? '✓ Strong enough' : 'At least 6 characters'}
-                </span>
-              ) : undefined
-            }
-          >
+          {/* Email Field */}
+          <Field label="Email address">
             <div className="input-with-action">
               <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && ok) void submit(); }}
-                placeholder="••••••••"
+                type="email"
+                value={email}
+                autoComplete="email"
+                inputMode="email"
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoFocus={mode !== 'signup'}
               />
-              <button
-                type="button"
-                tabIndex={-1}
-                className="input-action-btn"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  haptic(10);
-                  setShowPassword((prev) => !prev);
-                }}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                title={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <IconEyeSlash width={16} height={16} /> : <IconEye width={16} height={16} />}
-              </button>
             </div>
           </Field>
-        )}
 
-        {/* Submit Button */}
-        <div className="btn-row stack" style={{ marginTop: 18 }}>
-          <Busy
-            className="primary lg"
-            pending={busy}
-            disabled={!ok}
-            onClick={() => void submit()}
-          >
-            {mode === 'signup'
-              ? 'Create account'
-              : mode === 'magic'
-              ? 'Send magic link'
-              : 'Sign in'}
-          </Busy>
-        </div>
+          {/* Password Field */}
+          {mode !== 'magic' && (
+            <Field
+              label="Password"
+              hint={
+                mode === 'signup' ? (
+                  <span style={{ color: password.length >= 6 ? 'var(--mint)' : 'var(--text-3)' }}>
+                    {password.length >= 6 ? '✓ Strong enough' : 'At least 6 characters'}
+                  </span>
+                ) : undefined
+              }
+            >
+              <div className="input-with-action">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className="input-action-btn"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    haptic(10);
+                    setShowPassword((prev) => !prev);
+                  }}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <IconEyeSlash width={16} height={16} /> : <IconEye width={16} height={16} />}
+                </button>
+              </div>
+            </Field>
+          )}
+
+          {/* Submit Button */}
+          <div className="btn-row stack" style={{ marginTop: 18 }}>
+            <Busy
+              type="submit"
+              className="primary lg"
+              pending={busy}
+              disabled={!ok}
+            >
+              {mode === 'signup'
+                ? 'Create account'
+                : mode === 'magic'
+                ? 'Send magic link'
+                : 'Sign in'}
+            </Busy>
+          </div>
+        </form>
 
         {/* Secondary options */}
         <div
@@ -320,7 +377,7 @@ export default function Login({ initialMode = 'signin' }: { initialMode?: Mode }
               }}
             >
               <IconEmail width={14} height={14} style={{ marginRight: 6 }} />
-              Email me a sign-in link
+              Forgot password? Email me a sign-in link
             </button>
           )}
         </div>

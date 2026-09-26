@@ -225,6 +225,8 @@ function Gate() {
       <Routes>
         <Route path="/login" element={<Login initialMode="signin" />} />
         <Route path="/signup" element={<Login initialMode="signup" />} />
+        <Route path="/join" element={<Login initialMode="signup" />} />
+        <Route path="/onboard" element={<Login initialMode="signup" />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -234,11 +236,13 @@ function Gate() {
   if (noGroups) {
     return (
       <Routes>
-        <Route path="/onboard" element={<Onboard />} />
-        <Route path="/join" element={<Onboard initialMode="join" />} />
-        <Route path="/login" element={<Navigate to="/onboard" replace />} />
-        <Route path="/signup" element={<Navigate to="/onboard" replace />} />
-        <Route path="*" element={<Navigate to="/onboard" replace />} />
+        <Route path="/join" element={<Onboard initialMode="join" onDone={() => refresh()} />} />
+        <Route path="/onboard" element={<Onboard onDone={() => refresh()} />} />
+        <Route path="/awaiting-approval" element={<div className="auth"><Loading what="Joining group" /></div>} />
+        <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route path="/signup" element={<Navigate to="/" replace />} />
+        <Route path="/" element={<Onboard onDone={() => refresh()} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
   }
