@@ -260,7 +260,7 @@ begin
   return v_loan;
 end $$;
 
--- 6. Update write_off_loan for counterparty naming
+-- 6. Update write_off_loan for counterparty naming and status = 'paid'
 create or replace function write_off_loan(
   p_loan_id uuid,
   p_reason text default null
@@ -311,10 +311,11 @@ begin
     )
     values (
       v_group, 'other',
-      'Loan written off: ' || coalesce(v_name, 'unknown borrower'),
+      'Loan written off: ' || coalesce(v_name, 'unknown member')
+        || coalesce(' — ' || p_reason, ''),
       v_lost, current_date, 'bank',
       false, fn_fund_total_paise(v_group), 0,
-      0, v_actor, 'approved', now(), current_date,
+      active_member_count(v_group), v_actor, 'paid', now(), current_date,
       true
     );
   end if;
@@ -322,10 +323,12 @@ begin
   return v_loan;
 end $$;
 
--- 7. Update recover_writeoff for outside borrower naming
-create or replace function recover_writeoff(
+-- 7. Update record_recovery for outside borrower naming
+drop function if exists recover_writeoff(uuid, bigint, bigint, date, payment_method_enum, text);
+
+create or replace function record_recovery(
   p_loan_id uuid,
-  p_principal_paise bigint,
+  p_principal_paise bigint default 0,
   p_interest_paise bigint default 0,
   p_paid_on date default current_date,
   p_method payment_method_enum default 'bank',
@@ -337,13 +340,16 @@ declare
   v_actor uuid := fn_assert_active_member();
   v_loan  loans;
   v_lost  bigint;
-  v_row   loan_repayments;
+  v_back  bigint;
   v_name  text;
+  v_row   loan_repayments;
 begin
   if current_role_of() not in ('cashier', 'accountant') then
-    raise exception 'Only the cashier or accountant may record recovery'
+    raise exception 'Only the cashier or accountant may record money coming back'
       using errcode = 'insufficient_privilege';
   end if;
+
+  perform 1 from groups where id = v_group for no key update;
 
   select * into v_loan from loans
   where id = p_loan_id and group_id = v_group for update;
@@ -352,11 +358,11 @@ begin
     raise exception 'Loan not found' using errcode = 'no_data_found';
   end if;
   if v_loan.status <> 'written_off' then
-    raise exception 'Only a written-off loan can be recovered (this one is %)', v_loan.status
+    raise exception 'This loan was not written off - record a normal repayment instead'
       using errcode = 'check_violation';
   end if;
   if p_principal_paise < 0 or p_interest_paise < 0 then
-    raise exception 'Amounts cannot be negative' using errcode = 'check_violation';
+    raise exception 'An amount cannot be less than zero' using errcode = 'check_violation';
   end if;
   if p_principal_paise + p_interest_paise <= 0 then
     raise exception 'Enter an amount' using errcode = 'check_violation';
@@ -391,21 +397,144 @@ begin
     )
     values (
       v_group, 'other',
-      'Recovery on written-off loan: ' || coalesce(v_name, 'unknown borrower'),
+      'Recovered from ' || coalesce(v_name, 'borrower')
+        || ' on a loan written off earlier',
       -p_principal_paise, p_paid_on, p_method,
       false, fn_fund_total_paise(v_group), 0,
-      0, v_actor, 'approved', now(), p_paid_on,
+      active_member_count(v_group), v_actor, 'paid', now(), p_paid_on,
       false, true
     );
   end if;
 
-  if loan_outstanding_principal_paise(p_loan_id) = 0 then
+  if p_method = 'cash' then
+    insert into cash_ledger (group_id, direction, amount_paise, occurred_at,
+                             purpose, counterparty, recorded_by,
+                             reported_at, reported_by)
+    values (v_group, 'in', p_principal_paise + p_interest_paise,
+            p_paid_on::timestamptz, 'Recovered on a written-off loan',
+            v_name, v_actor, now(), v_actor);
+  end if;
+
+  v_back := loan_outstanding_principal_paise(p_loan_id);
+  if v_back = 0 then
     update loans set status = 'closed', closed_on = p_paid_on
     where id = p_loan_id;
   end if;
 
   return v_row;
 end $$;
+
+-- 7b. Update record_repayment for outside borrower counterparty in cash_ledger
+create or replace function record_repayment(
+  p_loan_id uuid,
+  p_principal_paise bigint,
+  p_interest_paise bigint default 0,
+  p_penalty_paise bigint default 0,
+  p_paid_on date default current_date,
+  p_method payment_method_enum default 'bank',
+  p_note text default null
+) returns loan_repayments
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_group uuid := current_group_id();
+  v_actor uuid := fn_assert_active_member();
+  v_loan  loans;
+  v_out   bigint;
+  v_row   loan_repayments;
+  v_remaining bigint;
+  v_accrued   bigint;
+  v_paid_int  bigint;
+  v_owed_int  bigint;
+  v_name      text;
+begin
+  if current_role_of() not in ('cashier', 'accountant') then
+    raise exception 'Only the cashier or accountant may record a repayment'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  if p_principal_paise < 0 then
+    raise exception 'Principal repayment cannot be negative'
+      using errcode = 'check_violation';
+  end if;
+  if p_interest_paise < 0 then
+    raise exception 'Interest amount cannot be negative'
+      using errcode = 'check_violation';
+  end if;
+  if p_penalty_paise < 0 then
+    raise exception 'Penalty amount cannot be negative'
+      using errcode = 'check_violation';
+  end if;
+  if p_principal_paise = 0 and p_interest_paise = 0 and p_penalty_paise = 0 then
+    raise exception 'At least one amount must be greater than zero'
+      using errcode = 'check_violation';
+  end if;
+  if p_paid_on > current_date then
+    raise exception 'A repayment cannot be dated in the future'
+      using errcode = 'check_violation';
+  end if;
+
+  select * into v_loan from loans
+  where id = p_loan_id and group_id = v_group for update;
+  if v_loan.id is null then
+    raise exception 'Loan not found' using errcode = 'no_data_found';
+  end if;
+  if v_loan.status <> 'disbursed' then
+    raise exception 'Only a disbursed loan can be repaid (this one is %)', v_loan.status
+      using errcode = 'check_violation';
+  end if;
+  if p_paid_on < v_loan.disbursed_on then
+    raise exception 'A repayment cannot predate the disbursal (%)', v_loan.disbursed_on
+      using errcode = 'check_violation';
+  end if;
+
+  v_out := loan_outstanding_principal_paise(p_loan_id);
+  if p_principal_paise > v_out then
+    raise exception 'Principal repayment Rs.% exceeds the outstanding Rs.%',
+      fmt_rupees(p_principal_paise), fmt_rupees(v_out)
+      using errcode = 'check_violation';
+  end if;
+
+  insert into loan_repayments (group_id, loan_id, paid_on, principal_paise,
+                               interest_paise, penalty_paise, method, note, recorded_by)
+  values (v_group, p_loan_id, p_paid_on, p_principal_paise, p_interest_paise,
+          p_penalty_paise, p_method, p_note, v_actor)
+  returning * into v_row;
+
+  if p_method = 'cash' then
+    v_name := coalesce(v_loan.outside_borrower_name, (select full_name from members where id = v_loan.borrower_id));
+    insert into cash_ledger (group_id, direction, amount_paise, occurred_at, purpose,
+                             counterparty, recorded_by, reported_at, reported_by)
+    values (v_group, 'in', p_principal_paise + p_interest_paise + p_penalty_paise,
+            p_paid_on::timestamptz, 'Loan repayment received in cash',
+            v_name,
+            v_actor, now(), v_actor);
+  end if;
+
+  -- Close only when nothing is left on EITHER side.
+  v_remaining := loan_outstanding_principal_paise(p_loan_id);
+  if v_remaining = 0 then
+    select coalesce(a.interest_paise + a.penalty_paise, 0) into v_accrued
+    from loan_accrued_interest_paise(p_loan_id, p_paid_on) a;
+
+    select coalesce(sum(r.interest_paise + r.penalty_paise), 0)::bigint
+    into v_paid_int
+    from loan_repayments r where r.loan_id = p_loan_id;
+
+    v_owed_int := greatest(0, v_accrued - v_paid_int);
+
+    if v_owed_int = 0 then
+      update loans set status = 'closed', closed_on = p_paid_on
+      where id = p_loan_id;
+    else
+      raise notice
+        'Principal cleared but Rs.% interest is still owed; loan stays open',
+        fmt_rupees(v_owed_int);
+    end if;
+  end if;
+
+  return v_row;
+end $$;
+
 
 -- 8. Rebuild v_loan_status and v_reminders
 drop view if exists v_reminders;
@@ -532,3 +661,19 @@ revoke all on v_reminders from anon;
 
 revoke execute on function request_outside_loan(text, bigint, int, text, text, int, uuid, text, text) from public, anon;
 grant execute on function request_outside_loan(text, bigint, int, text, text, int, uuid, text, text) to authenticated;
+
+revoke execute on function record_repayment(uuid, bigint, bigint, bigint, date, payment_method_enum, text) from public, anon;
+grant execute on function record_repayment(uuid, bigint, bigint, bigint, date, payment_method_enum, text) to authenticated;
+
+revoke execute on function record_recovery(uuid, bigint, bigint, date, payment_method_enum, text) from public, anon;
+grant execute on function record_recovery(uuid, bigint, bigint, date, payment_method_enum, text) to authenticated;
+
+revoke execute on function disburse_loan(uuid, date, payment_method_enum) from public, anon;
+grant execute on function disburse_loan(uuid, date, payment_method_enum) to authenticated;
+
+revoke execute on function write_off_loan(uuid, text) from public, anon;
+grant execute on function write_off_loan(uuid, text) to authenticated;
+
+revoke execute on function cancel_loan_request(uuid) from public, anon;
+grant execute on function cancel_loan_request(uuid) to authenticated;
+

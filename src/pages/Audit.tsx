@@ -90,6 +90,18 @@ export default function Audit() {
     return map;
   });
 
+  const periods = useQuery<Record<string, string>>('periods:months', async () => {
+    let query = supabase.from('contribution_periods').select('id, period_month');
+    if (currentGroupId) query = query.eq('group_id', currentGroupId);
+    const { data, error } = await query;
+    if (error) throw error;
+    const map: Record<string, string> = {};
+    for (const p of (data ?? []) as { id: string; period_month: string }[]) {
+      map[p.id] = fmtMonth(p.period_month);
+    }
+    return map;
+  });
+
   return (
     <Screen title="History" sub="Every change, and who made it" onBack={() => nav('/community')}>
       <Segments<Filter>
@@ -154,7 +166,11 @@ export default function Audit() {
 
       {open !== null && (
         <Sheet open title="What changed" onClose={() => setOpen(null)}>
-          <Detail row={activeRows.find((r) => r.id === open)} />
+          <Detail
+            row={activeRows.find((r) => r.id === open)}
+            memberNames={names.data}
+            periodNames={periods.data}
+          />
         </Sheet>
       )}
 
@@ -165,18 +181,128 @@ export default function Audit() {
   );
 }
 
-function Detail({ row }: { row: AuditRow | undefined }) {
+const HIDDEN_KEYS = new Set([
+  'id',
+  'group_id',
+  'created_at',
+  'updated_at',
+  'instance_id',
+  'borrower_role_at_request',
+]);
+
+const KEY_LABELS: Record<string, string> = {
+  amount_paise: 'Amount',
+  late_fee_paise: 'Late fee',
+  principal_paise: 'Principal',
+  interest_paise: 'Interest',
+  penalty_paise: 'Late penalty',
+  closing_balance_paise: 'Closing balance',
+  fund_total_at_request_paise: 'Fund reserve at request',
+  member_id: 'Member',
+  recorded_by: 'Recorded by',
+  borrower_id: 'Borrower',
+  guarantor_id: 'Guarantor',
+  voter_id: 'Voter',
+  created_by: 'Created by',
+  proposed_by: 'Proposed by',
+  period_id: 'Contribution period',
+  loan_id: 'Loan reference',
+  rate_bp: 'Monthly interest rate',
+  overdue_rate_bp: 'Overdue interest rate',
+  term_months: 'Term duration',
+  outside_borrower_name: 'Borrower name',
+  outside_borrower_phone: 'Borrower phone',
+  outside_borrower_address: 'Borrower address',
+  paid_on: 'Payment date',
+  due_on: 'Due date',
+  incurred_on: 'Date incurred',
+  occurred_at: 'Date & time',
+  method: 'Payment method',
+  status: 'Status',
+  purpose: 'Purpose / Note',
+  description: 'Description',
+  category: 'Category',
+  full_name: 'Full name',
+  phone: 'Phone number',
+  email: 'Email address',
+  nominee_name: 'Family contact',
+  nominee_phone: 'Family contact phone',
+  note: 'Note',
+  direction: 'Direction',
+  counterparty: 'Counterparty',
+};
+
+const MEMBER_ID_KEYS = new Set([
+  'member_id',
+  'recorded_by',
+  'borrower_id',
+  'guarantor_id',
+  'voter_id',
+  'created_by',
+  'proposed_by',
+]);
+
+const PRIORITY_ORDER = [
+  'full_name',
+  'member_id',
+  'borrower_id',
+  'outside_borrower_name',
+  'outside_borrower_phone',
+  'guarantor_id',
+  'amount_paise',
+  'principal_paise',
+  'interest_paise',
+  'late_fee_paise',
+  'penalty_paise',
+  'period_id',
+  'paid_on',
+  'due_on',
+  'method',
+  'status',
+  'category',
+  'description',
+  'purpose',
+  'note',
+  'counterparty',
+  'recorded_by',
+  'created_by',
+  'rate_bp',
+  'term_months',
+];
+
+function Detail({
+  row,
+  memberNames,
+  periodNames,
+}: {
+  row: AuditRow | undefined;
+  memberNames?: Record<string, string>;
+  periodNames?: Record<string, string>;
+}) {
   if (!row) return null;
-  const keys = (row.changed_keys && row.changed_keys.length > 0)
+  const rawKeys = (row.changed_keys && row.changed_keys.length > 0)
     ? row.changed_keys
     : Object.keys(row.new_data ?? row.old_data ?? {});
+
+  const displayKeys: string[] = rawKeys
+    .filter((k) => !HIDDEN_KEYS.has(k));
+  displayKeys.sort((a, b) => {
+    const ia = PRIORITY_ORDER.indexOf(a);
+    const ib = PRIORITY_ORDER.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+  const visibleKeys = displayKeys.slice(0, 16);
+
   return (
     <>
       <p className="dim" style={{ marginTop: 0, marginBottom: 14 }}>
         {row.table_name.replace(/_/g, ' ')} · {row.action.toLowerCase()} · {fmtDateTime(row.occurred_at)}
       </p>
       <div style={{ display: 'grid', gap: 8 }}>
-        {keys.filter((k) => k !== 'id' && k !== 'created_at').slice(0, 16).map((k) => (
+        {visibleKeys.map((k) => (
           <div
             key={k}
             style={{
@@ -190,16 +316,18 @@ function Detail({ row }: { row: AuditRow | undefined }) {
             }}
           >
             <span className="dim" style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-              {k.replace(/_/g, ' ')}
+              {KEY_LABELS[k] ?? k.replace(/_/g, ' ')}
             </span>
             <span style={{ minWidth: 0, wordBreak: 'break-word', fontWeight: 550 }}>
               {row.action === 'UPDATE' && row.old_data ? (
                 <>
-                  <s style={{ color: 'var(--text-3)', marginRight: 6 }}>{fmt(k, row.old_data[k])}</s>
+                  <s style={{ color: 'var(--text-3)', marginRight: 6 }}>
+                    {fmt(k, row.old_data[k], memberNames, periodNames)}
+                  </s>
                   <span style={{ color: 'var(--mint)', marginRight: 6 }}>→</span>
                 </>
               ) : null}
-              {fmt(k, row.new_data?.[k])}
+              {fmt(k, row.new_data?.[k], memberNames, periodNames)}
             </span>
           </div>
         ))}
@@ -210,13 +338,61 @@ function Detail({ row }: { row: AuditRow | undefined }) {
 
 const MONEY = /_paise$/;
 
-function fmt(key: string, value: unknown): string {
-  if (value === null || value === undefined) return '—';
+function fmt(
+  key: string,
+  value: unknown,
+  memberNames?: Record<string, string>,
+  periodNames?: Record<string, string>,
+): string {
+  if (value === null || value === undefined || value === '') return '—';
+
+  // Member names lookup
+  if (MEMBER_ID_KEYS.has(key) && typeof value === 'string') {
+    if (memberNames && memberNames[value]) {
+      return memberNames[value];
+    }
+  }
+
+  // Contribution periods lookup
+  if (key === 'period_id' && typeof value === 'string') {
+    if (periodNames && periodNames[value]) {
+      return periodNames[value];
+    }
+  }
+
+  // Money fields
   if (MONEY.test(key) && (typeof value === 'number' || typeof value === 'string')) {
     return formatPaise(value);
   }
+
+  // Interest rates (basis points)
+  if ((key === 'rate_bp' || key === 'overdue_rate_bp') && (typeof value === 'number' || typeof value === 'string')) {
+    const num = Number(value);
+    return `${(num / 100).toFixed(num % 100 === 0 ? 0 : 1)}% / month`;
+  }
+
+  // Repayment terms
+  if (key === 'term_months' && (typeof value === 'number' || typeof value === 'string')) {
+    return `${value} month${Number(value) > 1 ? 's' : ''}`;
+  }
+
+  // Payment method
+  if (key === 'method' && typeof value === 'string') {
+    return value.toUpperCase();
+  }
+
+  // Booleans
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No';
+  }
+
   const s = String(value);
-  return s.length > 48 ? `${s.slice(0, 48)}…` : s;
+  // Shorten raw UUIDs if unresolved
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) {
+    return `#${s.slice(0, 8)}`;
+  }
+
+  return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 }
 
 function fmtMonth(d: unknown): string {
@@ -253,26 +429,33 @@ function describe(r: AuditRow, memberNames?: Record<string, string>): string {
       return `Updated period${label}`;
     }
     case 'loans': {
-      const who = memberName();
+      const who = d.outside_borrower_name ? String(d.outside_borrower_name) : memberName('borrower_id');
       if (r.action === 'INSERT') {
         return `Loan asked for ${amt('principal_paise')}${who ? ` · ${who}` : ''}`;
       }
       return `Loan ${labelForStatus(String(d.status ?? 'changed'))}${who ? ` · ${who}` : ''}`;
     }
-    case 'loan_votes':
-      return `Voted ${String(d.vote ?? '')} on loan`;
+    case 'loan_votes': {
+      const who = memberName('voter_id');
+      return `Voted ${String(d.vote ?? '')} on loan${who ? ` · ${who}` : ''}`;
+    }
     case 'loan_repayments': {
-      const who = memberName();
-      return `Paid back ${amt('principal_paise')}${who ? ` · ${who}` : ''}`;
+      const who = memberName('recorded_by');
+      return `Paid back ${amt('principal_paise')}${who ? ` · recorded by ${who}` : ''}`;
     }
     case 'loan_instalments':
       return 'Loan repayment schedule set';
     case 'expenses':
       return `${String(d.description ?? 'Expense')} ${amt('amount_paise')}`;
-    case 'expense_votes':
-      return `Voted ${String(d.vote ?? '')} on expense`;
-    case 'cash_ledger':
-      return `Cash ${d.direction === 'in' ? 'in' : 'out'} ${amt('amount_paise')}`;
+    case 'expense_votes': {
+      const who = memberName('voter_id');
+      return `Voted ${String(d.vote ?? '')} on expense${who ? ` · ${who}` : ''}`;
+    }
+    case 'cash_ledger': {
+      const cp = d.counterparty ? String(d.counterparty) : '';
+      const purpose = d.purpose ? ` (${String(d.purpose)})` : '';
+      return `Cash ${d.direction === 'in' ? 'in' : 'out'} ${amt('amount_paise')}${cp ? ` · ${cp}${purpose}` : ''}`;
+    }
     case 'bank_statements':
       return `Bank checked ${amt('closing_balance_paise')}`;
     case 'members': {

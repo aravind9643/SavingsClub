@@ -758,15 +758,19 @@ function describe(r: AuditRow): string {
   switch (r.table_name) {
     case 'contributions':
       return `${amt('amount_paise')} paid in`;
-    case 'loans':
-      if (r.action === 'INSERT') return `Loan asked for — ${amt('principal_paise')}`;
-      return `Loan ${labelForStatus(String(d.status ?? 'updated'))}`;
+    case 'loans': {
+      const borrower = d.outside_borrower_name ? ` · ${String(d.outside_borrower_name)}` : '';
+      if (r.action === 'INSERT') return `Loan asked for — ${amt('principal_paise')}${borrower}`;
+      return `Loan ${labelForStatus(String(d.status ?? 'updated'))}${borrower}`;
+    }
     case 'loan_repayments':
       return `${amt('principal_paise')} paid back`;
     case 'expenses':
       return `${String(d.description ?? 'Expense')} — ${amt('amount_paise')}`;
-    case 'cash_ledger':
-      return `Cash ${d.direction === 'in' ? 'in' : 'out'} ${amt('amount_paise')}`;
+    case 'cash_ledger': {
+      const cp = d.counterparty ? ` · ${String(d.counterparty)}` : '';
+      return `Cash ${d.direction === 'in' ? 'in' : 'out'} ${amt('amount_paise')}${cp}`;
+    }
     // A table name is not a sentence. Anything unmapped says something true
     // and plain rather than printing 'loan_votes update' at the reader.
     default:

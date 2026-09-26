@@ -50,6 +50,14 @@ export default function NewLoan() {
     },
   );
 
+  // Sync default rate when group config arrives
+  const [rateTouched, setRateTouched] = useState(false);
+  useMemo(() => {
+    if (!rateTouched && config?.loan_rate_bp != null) {
+      setCustomRate((config.loan_rate_bp / 100).toFixed(1));
+    }
+  }, [config?.loan_rate_bp, rateTouched]);
+
   const create = useMutation(
     async () => {
       if (borrowerType === 'outside') {
@@ -245,7 +253,10 @@ export default function NewLoan() {
               step="0.1"
               min="0"
               value={customRate}
-              onChange={(e) => setCustomRate(e.target.value)}
+              onChange={(e) => {
+                setRateTouched(true);
+                setCustomRate(e.target.value);
+              }}
               placeholder="e.g. 2.5"
             />
           </Field>

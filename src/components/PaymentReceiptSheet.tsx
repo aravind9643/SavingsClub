@@ -28,6 +28,9 @@ export function PaymentReceiptSheet({
   const code = receipt.id.replace(/-/g, '').slice(0, 8).toUpperCase();
   const totalPaid = receipt.amountPaise + (receipt.feeOrInterestPaise || 0);
 
+  const isLoanReceipt = receipt.title.toLowerCase().includes('loan');
+  const personLabel = isLoanReceipt ? 'Borrower' : 'Member';
+
   const handleShareWhatsApp = () => {
     haptic(10);
     const cleanPhone = receipt.memberPhone ? receipt.memberPhone.replace(/[^\d+]/g, '') : '';
@@ -35,7 +38,7 @@ export function PaymentReceiptSheet({
       `🧾 *PAYMENT RECEIPT — ${receipt.groupName || 'SavingsClub'}*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `*Receipt No*: #REC-${code}\n` +
-      `*Member*: ${receipt.memberName}\n` +
+      `*${personLabel}*: ${receipt.memberName}\n` +
       `*Purpose*: ${receipt.title} (${receipt.periodOrDetail})\n` +
       `*Amount Paid*: ${formatPaise(receipt.amountPaise)}\n` +
       (receipt.feeOrInterestPaise && receipt.feeOrInterestPaise > 0
@@ -109,7 +112,7 @@ export function PaymentReceiptSheet({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span className="dim">Member Name</span>
+              <span className="dim">{personLabel} Name</span>
               <span style={{ fontWeight: 650, color: 'var(--text)' }}>{receipt.memberName}</span>
             </div>
 

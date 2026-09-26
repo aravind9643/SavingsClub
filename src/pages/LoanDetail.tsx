@@ -262,7 +262,7 @@ export default function LoanDetail() {
 
         {loan.status === 'requested' && (
           <>
-            <VotePanel loan={loan} isBorrower={isBorrower} votes={votesQ.data ?? []} />
+            <VotePanel loan={loan} isBorrower={isBorrower} isGuarantor={isGuarantor} votes={votesQ.data ?? []} />
             {canCancel && (
               <div className="btn-row stack">
                 <button
@@ -463,8 +463,8 @@ export default function LoanDetail() {
 }
 
 function VotePanel({
-  loan, isBorrower, votes,
-}: { loan: LoanRow; isBorrower: boolean; votes: VoteRow[] }) {
+  loan, isBorrower, isGuarantor, votes,
+}: { loan: LoanRow; isBorrower: boolean; isGuarantor?: boolean; votes: VoteRow[] }) {
   const [note, setNote] = useState('');
   const vote = useMutation(
     async (v: Vote) => {
@@ -498,7 +498,7 @@ function VotePanel({
       </div>
       <p className="dim" style={{ marginTop: 8, marginBottom: 0 }}>
         {need > 0 ? `${need} more needed` : 'Threshold reached'} ·
-        {' '}{loan.eligible_voter_count} can vote (never the borrower)
+        {' '}{loan.eligible_voter_count} can vote ({loan.is_outside_borrower ? 'excluding guarantor' : 'excluding borrower & guarantor'})
       </p>
 
       <ErrorNote error={vote.error} />
@@ -506,6 +506,10 @@ function VotePanel({
       {isBorrower ? (
         <div style={{ marginTop: 14 }}>
           <Notice tone="warn">This is your own loan — you cannot vote on it.</Notice>
+        </div>
+      ) : isGuarantor ? (
+        <div style={{ marginTop: 14 }}>
+          <Notice tone="warn">You vouched as guarantor for this loan — you cannot vote on it.</Notice>
         </div>
       ) : loan.can_i_vote || loan.my_vote ? (
         <>
