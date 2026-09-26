@@ -17,6 +17,7 @@ export default function Loans() {
   const nav = useNavigate();
   const { currentGroupId } = useSession();
   const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
 
   const q = useQuery<LoanRow[]>('loans', async () => {
     let query = supabase
@@ -36,6 +37,16 @@ export default function Loans() {
   const shown =
     filter === 'voting' ? voting : filter === 'active' ? active : filter === 'done' ? done : all;
 
+  const qClean = search.trim().toLowerCase();
+  const filtered = shown.filter((l) => {
+    if (!qClean) return true;
+    const nameMatch = l.borrower_name?.toLowerCase().includes(qClean);
+    const outsideMatch = l.is_outside_borrower && l.outside_borrower_name?.toLowerCase().includes(qClean);
+    const guarantorMatch = l.guarantor_name?.toLowerCase().includes(qClean);
+    const purposeMatch = l.purpose?.toLowerCase().includes(qClean);
+    return Boolean(nameMatch || outsideMatch || guarantorMatch || purposeMatch);
+  });
+
   return (
     <>
       <Screen title="Loans" sub={`${active.length} running`}>
@@ -50,25 +61,79 @@ export default function Loans() {
           ]}
         />
 
+        {/* Search input */}
+        <div style={{ position: 'relative', margin: '10px 0 6px' }}>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search loan by borrower or guarantor..."
+            style={{
+              paddingLeft: 36,
+              paddingRight: search ? 36 : 14,
+              minHeight: 40,
+              fontSize: '0.86rem',
+              borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--hairline)',
+              background: 'var(--surface)',
+            }}
+          />
+          <span
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--text-3)',
+              pointerEvents: 'none',
+              fontSize: '0.88rem',
+            }}
+          >
+            🔍
+          </span>
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              style={{
+                position: 'absolute',
+                right: 8,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'transparent',
+                border: 0,
+                padding: '4px 8px',
+                color: 'var(--text-3)',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
         {voting.some((l) => l.can_i_vote) && filter !== 'done' && (
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 8 }}>
             <Notice tone="warn" onClick={() => nav(`/loans/${voting.find((l) => l.can_i_vote)!.id}`)}>
-              <strong>Action needed:</strong> You have {voting.filter((l) => l.can_i_vote).length} loan request waiting for your vote.
+              <strong>Action needed:</strong> You have {voting.filter((l) => l.can_i_vote).length === 1 ? '1 loan request waiting for your vote' : `${voting.filter((l) => l.can_i_vote).length} loan requests waiting for your vote`}.
             </Notice>
           </div>
         )}
 
         {q.loading && !q.data ? (
           <SkeletonList rows={5} />
-        ) : shown.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <Empty icon={<IconLoans width={22} height={22} />}>
-            {filter === 'all'
+            {search
+              ? `No loans match "${search}"`
+              : filter === 'all'
               ? 'No loans yet. Tap the button below to request one.'
               : 'Nothing here right now.'}
           </Empty>
         ) : (
           <List>
-            {shown.map((l) => {
+            {filtered.map((l) => {
               const repaidPct = l.principal_paise > 0
                 ? Math.min(100, Math.max(0, Math.round((l.principal_paid_paise / l.principal_paise) * 100)))
                 : 0;

@@ -10,7 +10,7 @@ import {
   SkeletonList, initials, roleLabel, Stat, Tag, fmtDate,
 } from '../components/ui';
 import { IconPlus } from '../components/icons';
-import type { MemberPosition, Member, Role, PendingMember } from '../lib/types';
+import type { MemberPosition, Member, Role, PendingMember, LoanRow } from '../lib/types';
 import { today } from '../lib/dates';
 
 interface RoleRow {
@@ -483,7 +483,24 @@ function MemberDetailSheet({
   isOfficer: boolean;
   onClose: () => void;
 }) {
+  const { currentGroupId } = useSession();
   const [confirmExit, setConfirmExit] = useState(false);
+
+  const guaranteedQ = useQuery<LoanRow[]>(
+    position.is_active ? `loans:guaranteed:${position.member_id}` : null,
+    async () => {
+      let q = supabase
+        .from('v_loan_status')
+        .select('*')
+        .eq('guarantor_id', position.member_id)
+        .in('status', ['approved', 'disbursed']);
+      if (currentGroupId) q = q.eq('group_id', currentGroupId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as LoanRow[];
+    },
+  );
+  const isGuarantorForRunning = (guaranteedQ.data ?? []).length > 0;
 
   const remove = useMutation(
     async () => {
@@ -596,6 +613,11 @@ function MemberDetailSheet({
             <Notice tone="warn">
               This member still owes {formatPaise(position.outstanding_paise)}.
               The loan must be settled before they can leave.
+            </Notice>
+          ) : isGuarantorForRunning ? (
+            <Notice tone="warn">
+              This member vouched as guarantor for {(guaranteedQ.data ?? []).length} active loan{guaranteedQ.data?.length === 1 ? '' : 's'}.
+              Someone else must take that on or the loan must be settled before they can leave.
             </Notice>
           ) : owedShare ? (
             /* The money has to go back before the person is marked gone.

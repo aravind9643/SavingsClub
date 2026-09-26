@@ -410,6 +410,15 @@ export default function LoanDetail() {
           </div>
         )}
 
+        {loan.status === 'written_off' && (
+          <Notice tone="danger">
+            This loan was written off as uncollectable.
+            {role === 'cashier' || role === 'accountant'
+              ? ' If any money is recovered from the borrower, record it below.'
+              : ' Any money recovered by the cashier or accountant will be credited back to the fund.'}
+          </Notice>
+        )}
+
         {loan.status === 'written_off' && (role === 'cashier' || role === 'accountant') && (
           <div className="btn-row stack" style={{ marginTop: 14 }}>
             <button
@@ -553,6 +562,10 @@ function VotePanel({
             </Busy>
           </div>
         </>
+      ) : !loan.can_i_vote && !loan.my_vote ? (
+        <div style={{ marginTop: 14 }}>
+          <Notice>You are not eligible to vote on this loan.</Notice>
+        </div>
       ) : null}
 
       {votes.length > 0 && (
@@ -647,7 +660,13 @@ function RepaySheet({
 
       <div className="field-row" style={{ marginTop: 14 }}>
         <Field label="Paid on">
-          <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
+          <input
+            type="date"
+            value={paidOn}
+            min={loan.disbursed_on ?? undefined}
+            max={today()}
+            onChange={(e) => setPaidOn(e.target.value)}
+          />
         </Field>
         <Field label="Paid by">
           <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
@@ -693,7 +712,13 @@ function DisburseSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }
       <ErrorNote error={go.error} />
       <div className="field-row">
         <Field label="Paid out on">
-          <input type="date" value={on} onChange={(e) => setOn(e.target.value)} />
+          <input
+            type="date"
+            value={on}
+            min={loan.requested_at ? loan.requested_at.slice(0, 10) : undefined}
+            max={today()}
+            onChange={(e) => setOn(e.target.value)}
+          />
         </Field>
         <Field label="Paid by">
           <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
@@ -756,7 +781,7 @@ function WriteOffSheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }
     <Sheet open title="Give up on this loan" onClose={onClose}>
       <Notice tone="danger">
         Writing off means the group accepts this {formatPaise(loan.outstanding_principal_paise)} will
-        never be repaid. The fund total stays the same, but the outstanding balance drops to zero.
+        not be repaid. This books an expense that reduces the fund balance and sets the loan balance to zero.
       </Notice>
       <ErrorNote error={writeOff.error} />
       <Field label="Reason">
@@ -815,7 +840,13 @@ function RecoverySheet({ loan, onClose }: { loan: LoanRow; onClose: () => void }
       </Field>
       <div className="field-row">
         <Field label="Payment date">
-          <input type="date" value={paidOn} max={today()} onChange={(e) => setPaidOn(e.target.value)} />
+          <input
+            type="date"
+            value={paidOn}
+            min={loan.disbursed_on ?? undefined}
+            max={today()}
+            onChange={(e) => setPaidOn(e.target.value)}
+          />
         </Field>
         <Field label="Paid via">
           <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>

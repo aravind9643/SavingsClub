@@ -157,6 +157,14 @@ export default function Dashboard() {
     });
   }, [pastPeriodsQ.data, fund?.total_fund_paise]);
 
+  const memberNames = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of positions.data ?? []) {
+      map.set(p.member_id, p.full_name);
+    }
+    return map;
+  }, [positions.data]);
+
   if (loading && !fund) {
     return (
       <Screen title="Home">
@@ -678,7 +686,7 @@ export default function Dashboard() {
                               : row.table_name === 'expenses' ? 'amber'
                                 : 'coral'
                       }
-                      title={describe(row)}
+                      title={describe(row, memberNames)}
                       sub={ago(row.occurred_at)}
                       chevron
                       onClick={() => {
@@ -748,23 +756,32 @@ export default function Dashboard() {
 }
 
 /** A feed line a member can read, rather than a table name and a row id. */
-function describe(r: AuditRow): string {
+function describe(r: AuditRow, memberNames?: Map<string, string>): string {
   const d = (r.new_data ?? r.old_data ?? {}) as Record<string, unknown>;
   const amt = (k: string) => {
     const v = d[k];
     return typeof v === 'number' || typeof v === 'string' ? formatPaise(v) : '';
   };
+  const memberName = (k = 'member_id') => {
+    const id = d[k];
+    return id && memberNames ? memberNames.get(String(id)) : undefined;
+  };
 
   switch (r.table_name) {
-    case 'contributions':
-      return `${amt('amount_paise')} paid in`;
-    case 'loans': {
-      const borrower = d.outside_borrower_name ? ` · ${String(d.outside_borrower_name)}` : '';
-      if (r.action === 'INSERT') return `Loan asked for — ${amt('principal_paise')}${borrower}`;
-      return `Loan ${labelForStatus(String(d.status ?? 'updated'))}${borrower}`;
+    case 'contributions': {
+      const who = memberName();
+      return who ? `${amt('amount_paise')} paid in · ${who}` : `${amt('amount_paise')} paid in`;
     }
-    case 'loan_repayments':
-      return `${amt('principal_paise')} paid back`;
+    case 'loans': {
+      const who = d.outside_borrower_name ? String(d.outside_borrower_name) : memberName('borrower_id');
+      const suffix = who ? ` · ${who}` : '';
+      if (r.action === 'INSERT') return `Loan asked for — ${amt('principal_paise')}${suffix}`;
+      return `Loan ${labelForStatus(String(d.status ?? 'updated'))}${suffix}`;
+    }
+    case 'loan_repayments': {
+      const who = memberName('recorded_by');
+      return who ? `${amt('principal_paise')} paid back · by ${who}` : `${amt('principal_paise')} paid back`;
+    }
     case 'expenses':
       return `${String(d.description ?? 'Expense')} — ${amt('amount_paise')}`;
     case 'cash_ledger': {
