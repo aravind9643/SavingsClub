@@ -205,7 +205,7 @@ const KEY_LABELS: Record<string, string> = {
   voter_id: 'Voter',
   created_by: 'Created by',
   proposed_by: 'Proposed by',
-  period_id: 'Contribution period',
+  period_id: 'Monthly collection',
   loan_id: 'Loan reference',
   rate_bp: 'Monthly interest rate',
   overdue_rate_bp: 'Overdue interest rate',
@@ -353,7 +353,7 @@ function fmt(
     }
   }
 
-  // Contribution periods lookup
+  // Monthly collections lookup
   if (key === 'period_id' && typeof value === 'string') {
     if (periodNames && periodNames[value]) {
       return periodNames[value];

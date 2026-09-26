@@ -164,7 +164,7 @@ export default function NewLoan() {
 
       <div className="hero" style={{ padding: '18px' }}>
         <div className="hero-label">
-          {borrowerType === 'outside' ? 'Maximum lendable amount' : 'You can borrow up to'}
+          {borrowerType === 'outside' ? 'Most you can borrow' : 'You can borrow up to'}
         </div>
         <div className="hero-amount" style={{ fontSize: 'clamp(2rem, 9vw, 2.6rem)' }}>
           {formatPaise(headroom)}

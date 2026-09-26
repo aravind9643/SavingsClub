@@ -65,7 +65,7 @@ export function exportContributionsCSV(data: GroupExportData, groupName: string)
 
   const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
   const safeName = (groupName || 'SavingsClub').replace(/\s+/g, '_');
-  downloadCSV(`${safeName}_Contributions_${today()}.csv`, csv);
+  downloadCSV(`${safeName}_Payments_${today()}.csv`, csv);
 }
 
 export function exportLoansCSV(data: GroupExportData, groupName: string) {
@@ -82,12 +82,12 @@ export function exportLoansCSV(data: GroupExportData, groupName: string) {
   const headers = [
     'Borrower',
     'Guarantor',
-    'Principal (Rs.)',
-    'Repaid Principal (Rs.)',
-    'Outstanding Principal (Rs.)',
+    'Loan amount (Rs.)',
+    'Repaid so far (Rs.)',
+    'Still to repay (Rs.)',
     'Total Interest Paid (Rs.)',
     'Monthly Rate (%)',
-    'Tenure (Months)',
+    'Months',
     'Status',
     'Requested On',
     'Due Date',
@@ -131,5 +131,5 @@ export function exportTreasuryCSV(data: GroupExportData, groupName: string) {
 
   const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
   const safeName = (groupName || 'SavingsClub').replace(/\s+/g, '_');
-  downloadCSV(`${safeName}_Cash_Ledger_${today()}.csv`, csv);
+  downloadCSV(`${safeName}_Cash_in_and_out_${today()}.csv`, csv);
 }

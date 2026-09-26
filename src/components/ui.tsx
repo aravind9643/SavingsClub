@@ -102,6 +102,7 @@ export function List({ children }: { children: ReactNode }) {
 
 export function Row({
   icon, iconTone, title, sub, amount, amountTone, note, onClick, chevron,
+  expanded, ariaLabel,
 }: {
   icon?: ReactNode;
   iconTone?: Tone;
@@ -112,6 +113,12 @@ export function Row({
   note?: ReactNode;
   onClick?: () => void;
   chevron?: boolean;
+  /** Set on a row that opens and closes something, so a screen reader can
+      say which it is. Omitted on rows that simply navigate. */
+  expanded?: boolean;
+  /** When the visible title is not enough on its own to say what the row
+      does -- an icon-only or glyph-only row. */
+  ariaLabel?: string;
 }) {
   const inner = (
     <>
@@ -135,7 +142,17 @@ export function Row({
   );
 
   if (!onClick) return <div className="row static">{inner}</div>;
-  return <button type="button" className="row" onClick={onClick}>{inner}</button>;
+  return (
+    <button
+      type="button"
+      className="row"
+      onClick={onClick}
+      aria-expanded={expanded}
+      aria-label={ariaLabel}
+    >
+      {inner}
+    </button>
+  );
 }
 
 /* ---------------------------------------------------------------- notices -- */

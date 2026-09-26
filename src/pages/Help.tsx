@@ -43,29 +43,29 @@ const GUIDES: GuideSection[] = [
   {
     id: 'group-roles',
     category: 'basics',
-    title: 'The 3 Offices & Duties',
-    subtitle: 'Why Cashier and Accountant must always be different people',
+    title: 'The three jobs',
+    subtitle: 'Why the cashier and the accountant are never the same person',
     icon: <IconMembers width={18} height={18} />,
     iconTone: 'violet',
     badge: 'Core Concept',
     steps: [
       {
-        title: 'Admin (Governance & Rules)',
+        title: 'Admin — keeps the rules',
         description:
           'The group creator starts as Admin. The Admin configures rules (monthly contribution, interest rate, reserve cap), invites members, and approves membership requests. Crucially, the Admin cannot handle money alone.',
-        tip: 'The Admin keeps the peace, enforces group agreements, and assigns offices to members.',
+        tip: 'The admin settles disagreements and decides who does which job.',
       },
       {
-        title: 'Cashier (Handles Cash in Hand)',
+        title: 'Cashier — holds the cash',
         description:
-          'The Cashier holds the physical cash float, collects cash contributions, disburses loans in cash/bank, and records cash movements into the cash ledger.',
-        tip: 'Cash held is strictly limited by the group cash safety limit to prevent holding excess money.',
+          'The cashier holds the group’s cash, takes payments in, pays loans out, and writes down every rupee that moves.',
+        tip: 'The group sets a limit on how much cash one person may hold. Anything over it goes to the bank.',
       },
       {
-        title: 'Accountant (Verifies the Bank)',
+        title: 'Accountant — checks the bank',
         description:
-          'The Accountant reconciles bank account statements against the app books once a month, records contributions and repayments, and ensures expected bank balances match reality to the exact rupee.',
-        tip: 'Dual control: The Cashier and Accountant MUST be two distinct individuals. A database constraint strictly prevents one person from holding both offices.',
+          'Once a month the accountant compares the bank’s figure with the app’s. They must agree to the rupee. The accountant also records payments and loan repayments.',
+        tip: 'One person must never both take the money in and keep the record of it. The app refuses to give both jobs to the same person.',
       },
     ],
     rules: [
@@ -78,8 +78,8 @@ const GUIDES: GuideSection[] = [
   {
     id: 'joining-inviting',
     category: 'basics',
-    title: 'Inviting & Joining Members',
-    subtitle: 'How to bring friends in and why invite codes alone are not enough',
+    title: 'Bringing people in',
+    subtitle: 'Invite codes, and why a code alone is not enough',
     icon: <IconShare width={18} height={18} />,
     iconTone: 'mint',
     steps: [
@@ -109,8 +109,8 @@ const GUIDES: GuideSection[] = [
   {
     id: 'monthly-deposits',
     category: 'deposits',
-    title: 'Monthly Deposits (Chanda / Bachat)',
-    subtitle: 'Opening the month, part-payments, late fees, and WhatsApp slips',
+    title: 'Paying in each month',
+    subtitle: 'Starting the month, paying in parts, late fees, and receipts',
     icon: <IconDeposits width={18} height={18} />,
     iconTone: 'mint',
     badge: 'Monthly Routine',
@@ -146,38 +146,38 @@ const GUIDES: GuideSection[] = [
   {
     id: 'loans-and-voting',
     category: 'loans',
-    title: 'Member Loans & Group Voting',
-    subtitle: 'Democratic approvals, borrowing caps, reducing interest, and repayments',
+    title: 'Borrowing from the group',
+    subtitle: 'Asking, voting, limits, interest and paying back',
     icon: <IconLoans width={18} height={18} />,
     iconTone: 'coral',
     badge: 'Popular',
     steps: [
       {
-        title: '1. Request a Loan',
+        title: '1. Ask for a loan',
         description:
           'Any active member taps "Request Loan" on the Loans tab, enters the required amount, repayment term (in months), plan (monthly instalment or end of term), and purpose.',
-        tip: 'The app checks the loan against the group borrow cap (e.g. max 50% of the lendable fund) and group reserve limits.',
+        tip: 'One member can borrow only so much — 30% of the fund to start with, though your group can change it in Settings.',
       },
       {
-        title: '2. Democratic Group Vote',
+        title: '2. The group votes',
         description:
           'The request appears for all active members. Members vote "Approve" or "Reject". Neither the borrower nor their guarantor may vote on the request.',
-        tip: 'A quorum of approvals is required (typically a simple majority) before the loan is approved.',
+        tip: 'More than half the members must say yes. The app counts the votes for you.',
       },
       {
-        title: '3. Disbursal by Cashier or Accountant',
+        title: '3. The money is paid out',
         description:
-          'Once approved, the Cashier or Accountant disburses the money. The money leaves the fund and moves to outstanding loan principal.',
+          'Once the group agrees, the cashier or accountant pays the money out. It is still the group’s money — it is just out on loan now.',
       },
       {
-        title: '4. Reducing Balance Interest & Repayments',
+        title: '4. Interest and paying back',
         description:
-          'Interest is simple interest computed per-day on the reducing balance over a 30-day month. When repayments arrive, interest is cleared first, then overdue penalties, then principal. Paying early saves money!',
+          'Interest is charged each day on what is still owed — so as the loan comes down, so does the interest. When someone repays, the cashier enters how much of it is the loan and how much is interest. Paying early genuinely costs less.',
       },
     ],
     rules: [
-      'Borrowers cannot vote on their own loan requests.',
-      'Total loans cannot exceed the group reserve limit (e.g. 20% must stay in the bank/cash).',
+      'You cannot vote on your own loan, and neither can the person who vouched for you.',
+      'Some of the fund always stays put — 25% to start with — so the group is never lent out completely.',
       'Overdue rates apply only to days after the due date, never retroactively.',
     ],
     action: { label: 'View Loans', to: '/loans' },
@@ -185,8 +185,8 @@ const GUIDES: GuideSection[] = [
   {
     id: 'outside-borrowers',
     category: 'loans',
-    title: 'Outside Borrower Loans',
-    subtitle: 'Lending to trusted external contacts with a member guarantor',
+    title: 'Lending to someone outside the group',
+    subtitle: 'When a member vouches for someone who is not in the group',
     icon: <IconLoans width={18} height={18} />,
     iconTone: 'amber',
     steps: [
@@ -216,8 +216,8 @@ const GUIDES: GuideSection[] = [
   {
     id: 'treasury-bank-cash',
     category: 'treasury',
-    title: 'Treasury, Bank & Cash Float',
-    subtitle: 'Balancing the books, petty cash safety, and bank reconciliation',
+    title: 'The group’s money',
+    subtitle: 'Where the money sits, and how the group checks it is all there',
     icon: <IconTreasury width={18} height={18} />,
     iconTone: 'violet',
     badge: 'Financial Control',
@@ -225,31 +225,31 @@ const GUIDES: GuideSection[] = [
       {
         title: '1. Two Fund Numbers That Differ',
         description:
-          'Total Fund = all contributions received + interest received - expenses paid. Expected Bank Balance = Total Fund - outstanding loan principal - physical cash float in hand.',
+          'What the group is worth = everything paid in, plus interest earned, minus what was spent. What should be in the bank = that, minus what is out on loan, minus the cash someone is holding.',
         tip: 'This is what should actually be sitting in your group bank account right now.',
       },
       {
-        title: '2. Monthly Bank Reconciliation',
+        title: '2. Checking the bank each month',
         description:
           'Once a month, the Accountant checks the bank statement and records the actual balance in the Bank tab. The app immediately compares it against the ledger. A difference of ₹0 gives a green "Balanced" badge; any mismatch is highlighted.',
       },
       {
-        title: '3. Cash Float Safety Limit',
+        title: '3. A limit on cash in hand',
         description:
           'The Cashier holds cash for day-to-day operations up to the configured limit (e.g. ₹5,000). When cash exceeds this limit, the app alerts the Cashier to deposit the excess into the bank.',
       },
     ],
     rules: [
       'Cash movements require a recorded purpose and counterparty note.',
-      'Bank reconciliation must be recorded by the Accountant to preserve independence.',
+      'The accountant records the bank check — not the cashier, so nobody checks their own work.',
     ],
     action: { label: 'Open Treasury Hub', to: '/treasury' },
   },
   {
     id: 'expenses-and-spending',
     category: 'treasury',
-    title: 'Group Expenses & Spending',
-    subtitle: 'Proposing group expenses, member voting, and officer limits',
+    title: 'Spending the group’s money',
+    subtitle: 'Asking to spend, voting on it, and what officers may do alone',
     icon: <IconTreasury width={18} height={18} />,
     iconTone: 'coral',
     steps: [
@@ -261,7 +261,7 @@ const GUIDES: GuideSection[] = [
       {
         title: '2. Voting on Expenses',
         description:
-          'Regular expenses require democratic voting from group members before funds can be disbursed.',
+          'Ordinary spending needs the group’s agreement before the money goes out.',
         tip: 'Bank charges and minor admin expenses proposed by officers can be auto-approved, provided they fall within the annual discretionary spending cap.',
       },
       {
@@ -279,8 +279,8 @@ const GUIDES: GuideSection[] = [
   {
     id: 'profit-dividends',
     category: 'treasury',
-    title: 'Profit Sharing & Dividends',
-    subtitle: 'Distributing interest earnings back to members fairly',
+    title: 'Sharing out the profit',
+    subtitle: 'How the interest the group earned gets divided up',
     icon: <IconDeposits width={18} height={18} />,
     iconTone: 'mint',
     steps: [
@@ -290,13 +290,13 @@ const GUIDES: GuideSection[] = [
           'As borrowers repay loans, interest accumulates in the fund. The app automatically calculates the distributable profit (total interest minus group expenses and previous payouts).',
       },
       {
-        title: '2. Officer Proposes Payout',
+        title: '2. Someone proposes the split',
         description:
           'An officer opens Treasury -> Profit Share, selects "Yearly profit share (Bonus)" or "Final group share-out", and enters the amount to distribute.',
-        tip: 'The app automatically divides the money pro-rata based on each member’s savings balance.',
+        tip: 'The app splits it by how much each person has saved — save more, get more.',
       },
       {
-        title: '3. Second Officer Confirmation (Two-Man Rule)',
+        title: '3. A second person agrees it',
         description:
           'A single leader CANNOT pay out money alone. Another officer (Cashier, Accountant, or Admin) must review the calculation and tap "Approve & Pay Out".',
       },
@@ -310,8 +310,8 @@ const GUIDES: GuideSection[] = [
   {
     id: 'meetings-attendance',
     category: 'governance',
-    title: 'Monthly Meetings & Attendance',
-    subtitle: 'Tracking attendance and managing absence fines automatically',
+    title: 'Meetings and who came',
+    subtitle: 'Recording who was there, and fines for missing it',
     icon: <IconMeeting width={18} height={18} />,
     iconTone: 'amber',
     steps: [
@@ -340,8 +340,8 @@ const GUIDES: GuideSection[] = [
   {
     id: 'audit-log-security',
     category: 'governance',
-    title: 'Audit Log & Data Security',
-    subtitle: 'Why numbers in SavingsClub can never be tampered with',
+    title: 'The record nobody can change',
+    subtitle: 'Why a figure in this app cannot be quietly altered',
     icon: <IconAudit width={18} height={18} />,
     iconTone: 'violet',
     badge: 'Security',
@@ -359,7 +359,7 @@ const GUIDES: GuideSection[] = [
       {
         title: 'Integer Paise Mathematics',
         description:
-          'Money is never stored or computed as floating-point decimals. Every amount is calculated in integer paise (₹1 = 100 paise), eliminating rounding drift or hidden gaps.',
+          'Every amount is counted in whole paise, never in decimals. That is why the totals always add up exactly instead of drifting by a rupee here and there.',
       },
     ],
     rules: [
@@ -372,17 +372,17 @@ const GUIDES: GuideSection[] = [
     id: 'faq-security',
     category: 'faq',
     title: 'Can anyone run away with the money?',
-    subtitle: 'How the app architecture prevents fraud and embezzlement',
+    subtitle: 'What stops one person taking the group’s money',
     icon: <IconHelp width={18} height={18} />,
     iconTone: 'mint',
     steps: [
       {
         title: 'Two-Man Rule (Dual Officer Control)',
         description:
-          'The Cashier holds physical cash, while the Accountant controls and reconciles the bank statements. A database constraint ensures the Cashier and Accountant can never be the same person.',
+          'The cashier holds the cash; the accountant checks the bank. The app will not let one person do both.',
       },
       {
-        title: 'Democratic Voting for Disbursements',
+        title: 'The group votes before money goes out',
         description:
           'Neither the Admin, Cashier, nor Accountant can issue a loan or pay a discretionary expense on their own. Members must vote to approve loans and expenses.',
       },
@@ -404,7 +404,7 @@ const GUIDES: GuideSection[] = [
       {
         title: 'Reducing Balance',
         description:
-          'Interest is charged ONLY on the remaining outstanding principal, not the original borrowed amount. As you repay principal, your monthly interest decreases.',
+          'Interest is charged only on what you still owe, not on what you originally borrowed. Pay some back and next month’s interest is smaller.',
       },
       {
         title: 'Per-Day Simple Interest',
@@ -422,14 +422,14 @@ const GUIDES: GuideSection[] = [
     id: 'faq-exit',
     category: 'faq',
     title: 'What happens when a member leaves?',
-    subtitle: 'Member exit payouts and share settlements',
+    subtitle: 'Getting your savings back when you go',
     icon: <IconHelp width={18} height={18} />,
     iconTone: 'coral',
     steps: [
       {
-        title: '1. Settle Outstanding Loans First',
+        title: '1. Clear any loan first',
         description:
-          'A member with an outstanding debt cannot leave the group until their loan principal and accrued interest are settled in full.',
+          'Nobody can leave while they still owe the group money — the loan and its interest have to be cleared first.',
       },
       {
         title: '2. Pro-Rata Share Calculation',
@@ -444,6 +444,46 @@ const GUIDES: GuideSection[] = [
     ],
   },
 ];
+
+// The four banner steps were fourteen lines of identical inline CSS apiece,
+// differing only in colour, number and words.
+function HowStep({
+  n, tone, title, children,
+}: {
+  n: number;
+  tone: 'mint' | 'violet' | 'coral' | 'amber';
+  title: string;
+  children: React.ReactNode;
+}) {
+  // mint and amber are light, so they take dark text; violet and coral dark.
+  const fg = tone === 'mint' || tone === 'amber' ? '#000' : '#fff';
+  return (
+    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+      <span
+        aria-hidden="true"
+        style={{
+          background: `var(--${tone})`,
+          color: fg,
+          borderRadius: '50%',
+          width: 20,
+          height: 20,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '0.75rem',
+          fontWeight: 800,
+          flexShrink: 0,
+          marginTop: 2,
+        }}
+      >
+        {n}
+      </span>
+      <div style={{ fontSize: '0.85rem', lineHeight: 1.4 }}>
+        <strong>{title}:</strong> {children}
+      </div>
+    </div>
+  );
+}
 
 export default function Help() {
   const nav = useNavigate();
@@ -470,6 +510,12 @@ export default function Help() {
     });
   }, [selectedCategory, search]);
 
+  // With exactly one match, open it. Searching "late fee" and being handed a
+  // single collapsed row you still have to tap is a step that earns nothing.
+  const openId = filteredGuides.length === 1 && search.trim()
+    ? filteredGuides[0].id
+    : expandedId;
+
   const toggleExpand = (id: string) => {
     haptic(10);
     setExpandedId((prev) => (prev === id ? null : id));
@@ -478,7 +524,7 @@ export default function Help() {
   return (
     <Screen
       title="User Guide & Tutorials"
-      sub="Everything you need to know about running your group"
+      sub="How the group works, step by step"
       onBack={() => nav('/community')}
     >
       {/* Search Input */}
@@ -487,7 +533,7 @@ export default function Help() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search features (e.g. late fees, UPI, outside loan, cashier)..."
+          placeholder="Search — late fee, loan, cashier…"
           style={{
             paddingLeft: 38,
             paddingRight: search ? 36 : 14,
@@ -514,6 +560,7 @@ export default function Help() {
         {search && (
           <button
             type="button"
+            aria-label="Clear search"
             onClick={() => setSearch('')}
             style={{
               position: 'absolute',
@@ -550,6 +597,7 @@ export default function Help() {
             key={cat.id}
             type="button"
             className={`seg${selectedCategory === cat.id ? ' on' : ''}`}
+            aria-pressed={selectedCategory === cat.id}
             onClick={() => {
               haptic(10);
               setSelectedCategory(cat.id);
@@ -585,34 +633,22 @@ export default function Help() {
             </span>
             <div>
               <div style={{ fontWeight: 700, fontSize: '0.98rem' }}>How SavingsClub Works</div>
-              <div className="dim" style={{ fontSize: '0.82rem' }}>4 simple steps for trusted savings</div>
+              <div className="dim" style={{ fontSize: '0.82rem' }}>The whole idea in four steps</div>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginTop: 12 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ background: 'var(--mint)', color: '#000', borderRadius: '50%', width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, flexShrink: 0, marginTop: 2 }}>1</span>
-              <div style={{ fontSize: '0.85rem', lineHeight: 1.4 }}>
-                <strong>Save Monthly:</strong> All members pay their regular chanda before the due date via UPI or Cash.
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ background: 'var(--violet)', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, flexShrink: 0, marginTop: 2 }}>2</span>
-              <div style={{ fontSize: '0.85rem', lineHeight: 1.4 }}>
-                <strong>Borrow with Approval:</strong> Members borrow when they need funds. The group votes democrati­cally to approve.
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ background: 'var(--coral)', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, flexShrink: 0, marginTop: 2 }}>3</span>
-              <div style={{ fontSize: '0.85rem', lineHeight: 1.4 }}>
-                <strong>Grow Interest Pool:</strong> Simple reducing-balance interest on loans is paid back into the group treasury.
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ background: 'var(--amber)', color: '#000', borderRadius: '50%', width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, flexShrink: 0, marginTop: 2 }}>4</span>
-              <div style={{ fontSize: '0.85rem', lineHeight: 1.4 }}>
-                <strong>Share Profit Dividends:</strong> Accumulated interest is returned to members annually or upon group closure pro-rata.
-              </div>
-            </div>
+          <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+            <HowStep n={1} tone="mint" title="Everyone pays in">
+              the same amount each month, by UPI, bank or cash.
+            </HowStep>
+            <HowStep n={2} tone="violet" title="Members borrow">
+              anyone can ask for a loan, and the group votes on it.
+            </HowStep>
+            <HowStep n={3} tone="coral" title="The pot grows">
+              borrowers pay interest, and that interest belongs to everyone.
+            </HowStep>
+            <HowStep n={4} tone="amber" title="Everyone shares it">
+              the profit is split by how much each person saved.
+            </HowStep>
           </div>
         </div>
       )}
@@ -636,7 +672,7 @@ export default function Help() {
         ) : (
           <List>
             {filteredGuides.map((guide) => {
-              const isExpanded = expandedId === guide.id;
+              const isExpanded = openId === guide.id;
               return (
                 <div
                   key={guide.id}
@@ -655,6 +691,7 @@ export default function Help() {
                       </div>
                     }
                     sub={guide.subtitle}
+                    expanded={isExpanded}
                     onClick={() => toggleExpand(guide.id)}
                     note={
                       <span
