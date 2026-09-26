@@ -1,4 +1,4 @@
-# Sanchay — context for agents
+# SavingsClub — context for agents
 
 A multi-tenant web app for friends' savings groups (*sangam*, *chit fund*,
 *committee*): monthly contributions, member loans with group voting, expenses,

@@ -37,7 +37,14 @@ const Ctx = createContext<SessionValue | null>(null);
  * server re-derives it from profiles.last_group_id and validates it against
  * members on every single query, so a tampered value here buys nothing.
  */
-const LAST_GROUP = 'sanchay-group';
+// Exported because Onboard writes it too, right after creating or joining a
+// group. It used to write 'sanchay:last_group' -- a different string -- so the
+// write did nothing and the new group was not pre-selected. One name, one
+// place, and the compiler now catches a mismatch.
+//
+// The value is a convenience only: the server re-derives and re-validates it
+// on every request, so tampering buys nothing.
+export const LAST_GROUP = 'sanchay-group';
 
 function readLastGroup(): string | null {
   try {

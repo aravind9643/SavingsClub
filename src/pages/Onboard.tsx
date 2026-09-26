@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useMutation } from '../hooks/useQuery';
-import { useSession } from '../context/SessionContext';
+import { useSession, LAST_GROUP } from '../context/SessionContext';
 import { ErrorNote, Field, Busy, Notice } from '../components/ui';
 import {
   IconPlus, IconArrowLeft, IconKey, IconVault, IconCheck,
@@ -178,7 +178,7 @@ function CreateGroup({ onBack, onDone }: { onBack: () => void; onDone?: () => vo
       if (error) throw error;
       const created = data as { id?: string } | undefined;
       if (created?.id) {
-        try { localStorage.setItem('sanchay:last_group', created.id); } catch { /* private window */ }
+        try { localStorage.setItem(LAST_GROUP, created.id); } catch { /* private window */ }
       }
       await supabase.auth.refreshSession();
       return data;
@@ -332,7 +332,7 @@ function JoinGroup({
       });
       if (error) throw error;
       if (typeof data === 'string') {
-        try { localStorage.setItem('sanchay:last_group', data); } catch { /* private window */ }
+        try { localStorage.setItem(LAST_GROUP, data as string); } catch { /* private window */ }
       }
       await supabase.auth.refreshSession();
     },
