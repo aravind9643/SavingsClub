@@ -37,7 +37,7 @@ export function BankStatementSheet({ onClose }: { onClose: () => void }) {
       </Field>
       <ErrorNote error={submit.error} />
       <div className="btn-row stack">
-        <Busy className="primary lg" pending={submit.pending} onClick={() => void submit.run()}>
+        <Busy className="primary lg" pending={submit.pending} disabled={!balance} onClick={() => void submit.run()}>
           Record statement
         </Busy>
       </div>

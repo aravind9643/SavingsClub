@@ -604,6 +604,7 @@ function RepaySheet({
   const [principal, setPrincipal] = useState('');
   const [interest, setInterest] = useState('');
   const [penalty, setPenalty] = useState('');
+  const [note, setNote] = useState('');
   const [paidOn, setPaidOn] = useState(() => today());
   const [method, setMethod] = useState<PaymentMethod>('bank');
 
@@ -616,6 +617,7 @@ function RepaySheet({
         p_penalty_paise: rupeesToPaise(penalty || 0),
         p_paid_on: paidOn,
         p_method: method,
+        p_note: note.trim() || null,
       });
       if (error) throw error;
     },
@@ -677,6 +679,14 @@ function RepaySheet({
           </select>
         </Field>
       </div>
+
+      <Field label="Note / Reference (optional)">
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="UPI reference, cheque no. or note"
+        />
+      </Field>
 
       <div className="btn-row stack">
         <Busy

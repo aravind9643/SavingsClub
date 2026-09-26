@@ -29,7 +29,7 @@ export default function Deposits() {
   const [unpaidAction, setUnpaidAction] = useState<{ period: ContributionPeriod; member: Member } | null>(null);
   const [receiptData, setReceiptData] = useState<{
     memberName: string; amountPaise: number; lateFeePaise: number;
-    month: string; paidOn: string; method: string;
+    month: string; paidOn: string; method: string; note?: string | null;
   } | null>(null);
 
   const membersQ = useQuery<Member[]>('members', async () => {
@@ -198,16 +198,29 @@ export default function Deposits() {
           This month has not been started yet.
           {!hasMoneyOfficer ? (
             role === 'admin' ? (
-              <>
-                <p className="dim" style={{ marginTop: 8, maxWidth: 360, marginInline: 'auto' }}>
-                  Pick a cashier and an accountant first. Until then nobody can take money in.
-                </p>
-                <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
-                  <button type="button" className="primary lg" onClick={() => nav('/members')}>
-                    Choose who does what
-                  </button>
-                </div>
-              </>
+              allActiveMembers.length <= 1 ? (
+                <>
+                  <p className="dim" style={{ marginTop: 8, maxWidth: 360, marginInline: 'auto' }}>
+                    Invite members to your group first. Once members join, you can assign cashier and accountant roles to begin recording deposits.
+                  </p>
+                  <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
+                    <button type="button" className="primary lg" onClick={() => nav('/settings')}>
+                      Invite members
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="dim" style={{ marginTop: 8, maxWidth: 360, marginInline: 'auto' }}>
+                    Pick a cashier and an accountant first. Until then nobody can take money in.
+                  </p>
+                  <div className="btn-row stack" style={{ marginTop: 18, maxWidth: 320, marginInline: 'auto' }}>
+                    <button type="button" className="primary lg" onClick={() => nav('/members')}>
+                      Choose who does what
+                    </button>
+                  </div>
+                </>
+              )
             ) : (
               <p className="dim" style={{ marginTop: 8 }}>
                 The cashier will start this month when collection begins.
@@ -443,6 +456,7 @@ export default function Deposits() {
                           month: monthLabel(period.period_month),
                           paidOn: last.paid_on,
                           method: last.method,
+                          note: last.note,
                         });
                       } else if (isMoneyHandler && period && !period.closed_at) {
                         setUnpaidAction({ period, member: m });
@@ -547,12 +561,13 @@ function RecordSheet({
       once per member per period, so a second late instalment adds none. */
   feesAlreadyCharged: number;
   onClose: () => void;
-  onRecorded: (r: { memberName: string; amountPaise: number; lateFeePaise: number; month: string; paidOn: string; method: string }) => void;
+  onRecorded: (r: { memberName: string; amountPaise: number; lateFeePaise: number; month: string; paidOn: string; method: string; note?: string | null }) => void;
 }) {
   const { config } = useSession();
   const [amount, setAmount] = useState(String(paiseToRupees(defaultPaise)));
   const [paidOn, setPaidOn] = useState(() => today());
   const [method, setMethod] = useState<'bank' | 'cash'>('bank');
+  const [note, setNote] = useState('');
 
   // Past the grace date AND no fee charged for this month yet. The second
   // half matters: record_contribution charges the fee once per member per
@@ -572,6 +587,7 @@ function RecordSheet({
           p_amount_paise: rupeesToPaise(amount),
           p_paid_on: paidOn,
           p_method: method,
+          p_note: note.trim() || null,
         })
         .single<Contribution>();
       if (error) throw error;
@@ -594,6 +610,7 @@ function RecordSheet({
           month: monthLabel(period.period_month),
           paidOn: row?.paid_on ?? paidOn,
           method: row?.method ?? method,
+          note: row?.note ?? (note.trim() || null),
         });
       },
     },
@@ -634,6 +651,14 @@ function RecordSheet({
         </Field>
       </div>
 
+      <Field label="Note / Reference (optional)">
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="UPI reference, cheque no. or note"
+        />
+      </Field>
+
       {willCharge && (
         <div style={{ marginTop: 14 }}>
           <Notice tone="warn">
@@ -670,7 +695,7 @@ function ReceiptSheet({
 }: {
   receipt: {
     memberName: string; amountPaise: number; lateFeePaise: number;
-    month: string; paidOn: string; method: string;
+    month: string; paidOn: string; method: string; note?: string | null;
   };
   groupName: string;
   fundTotalPaise?: number;
@@ -682,7 +707,7 @@ function ReceiptSheet({
 *Name:* ${receipt.memberName}
 *Month:* ${receipt.month}
 *Paid:* ${formatPaise(receipt.amountPaise)} (${receipt.method.toUpperCase()})
-${receipt.lateFeePaise > 0 ? `*Late fee:* ${formatPaise(receipt.lateFeePaise)}\n` : ''}*On:* ${fmtDate(receipt.paidOn)}
+${receipt.note ? `*Note / Ref:* ${receipt.note}\n` : ''}${receipt.lateFeePaise > 0 ? `*Late fee:* ${formatPaise(receipt.lateFeePaise)}\n` : ''}*On:* ${fmtDate(receipt.paidOn)}
 ${fundTotalPaise !== undefined ? `*Total fund now:* ${formatPaise(fundTotalPaise)}\n` : ''}
 _Recorded on SavingsClub_`;
 
@@ -716,6 +741,7 @@ _Recorded on SavingsClub_`;
         <List>
           <Row title="Payment date" note={fmtDate(receipt.paidOn)} />
           <Row title="Method" note={receipt.method.toUpperCase()} />
+          {receipt.note && <Row title="Note / Ref" note={receipt.note} />}
           <Row title="Amount paid" amount={formatPaise(receipt.amountPaise)} />
           {receipt.lateFeePaise > 0 && (
             <Row title="Late fee" amount={`+${formatPaise(receipt.lateFeePaise)}`} amountTone="coral" />

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
@@ -50,13 +50,16 @@ export default function NewLoan() {
     },
   );
 
-  // Sync default rate when group config arrives
+  // Sync default rate and clamp term when group config arrives
   const [rateTouched, setRateTouched] = useState(false);
-  useMemo(() => {
+  useEffect(() => {
     if (!rateTouched && config?.loan_rate_bp != null) {
       setCustomRate((config.loan_rate_bp / 100).toFixed(1));
     }
-  }, [config?.loan_rate_bp, rateTouched]);
+    if (config?.max_loan_months && Number(term) > config.max_loan_months) {
+      setTerm(String(config.max_loan_months));
+    }
+  }, [config?.loan_rate_bp, config?.max_loan_months, rateTouched, term]);
 
   const create = useMutation(
     async () => {

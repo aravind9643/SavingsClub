@@ -75,7 +75,12 @@ export function CashMovementSheet({
 
       <ErrorNote error={submit.error} />
       <div className="btn-row stack">
-        <Busy className="primary lg" pending={submit.pending} onClick={() => void submit.run()}>
+        <Busy
+          className="primary lg"
+          pending={submit.pending}
+          disabled={!amount || !purpose.trim()}
+          onClick={() => void submit.run()}
+        >
           Record {direction === 'in' ? 'Cash Received' : 'Cash Paid'}
         </Busy>
       </div>

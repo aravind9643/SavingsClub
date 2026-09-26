@@ -183,6 +183,7 @@ export interface Contribution {
   late_fee_paise: number;
   paid_on: string;
   method: PaymentMethod;
+  note?: string | null;
 }
 
 export interface UnpaidRow {

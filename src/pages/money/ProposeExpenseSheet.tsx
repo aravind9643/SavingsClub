@@ -76,7 +76,12 @@ export function ProposeExpenseSheet({ onClose }: { onClose: () => void }) {
 
       <ErrorNote error={submit.error} />
       <div className="btn-row stack">
-        <Busy className="primary lg" pending={submit.pending} onClick={() => void submit.run()}>
+        <Busy
+          className="primary lg"
+          pending={submit.pending}
+          disabled={!amount || !description.trim()}
+          onClick={() => void submit.run()}
+        >
           Submit proposal
         </Busy>
       </div>

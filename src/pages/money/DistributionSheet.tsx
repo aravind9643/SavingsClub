@@ -65,7 +65,10 @@ export function DistributionSheet({ onClose }: { onClose: () => void }) {
 
   // 3. Fetch distributable profit available
   const profitQ = useQuery<number>(`distributable_${kind}`, async () => {
-    const { data, error } = await supabase.rpc('fn_distributable_paise', { p_kind: kind });
+    const { data, error } = await supabase.rpc('fn_distributable_paise', {
+      p_kind: kind,
+      ...(currentGroupId ? { p_group_id: currentGroupId } : {}),
+    });
     if (error) throw error;
     return Number(data ?? 0);
   });
@@ -268,7 +271,12 @@ export function DistributionSheet({ onClose }: { onClose: () => void }) {
                 <Busy
                   className="primary lg"
                   pending={propose.pending}
-                  disabled={maxDistributable <= 0}
+                  disabled={
+                    maxDistributable <= 0 ||
+                    !amountRupees ||
+                    rupeesToPaise(amountRupees) <= 0 ||
+                    rupeesToPaise(amountRupees) > maxDistributable
+                  }
                   onClick={() => void propose.run()}
                 >
                   Calculate & Propose Payout
