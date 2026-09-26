@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { Panel, List, Row, Notice, Tag } from '../components/ui';
@@ -489,7 +489,20 @@ export default function Help() {
   const nav = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [search, setSearch] = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>('group-roles');
+  // A SET, not a single id, and that is the whole fix for the scroll jump.
+  //
+  // As an accordion, opening B closed A. When A sat above B, the page lost
+  // A's height -- around 420px for a three-step guide -- so everything below
+  // shifted up and the row under the user's finger shot toward the top. It
+  // only happened when the open panel was above the tapped one, which is why
+  // it seemed intermittent.
+  //
+  // With several allowed open, nothing above ever collapses on a tap. The
+  // page only grows, so the tapped row cannot move. No scroll correction
+  // needed, because there is nothing to correct.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(
+    () => new Set(['group-roles']),
+  );
 
   const filteredGuides = useMemo(() => {
     let list = GUIDES;
@@ -512,13 +525,28 @@ export default function Help() {
 
   // With exactly one match, open it. Searching "late fee" and being handed a
   // single collapsed row you still have to tap is a step that earns nothing.
-  const openId = filteredGuides.length === 1 && search.trim()
+  //
+  // Done as an effect rather than a rendering rule, so the row is genuinely
+  // open rather than forced open -- otherwise tapping it shut would do
+  // nothing while the search still matched only it.
+  const soleMatch = filteredGuides.length === 1 && search.trim()
     ? filteredGuides[0].id
-    : expandedId;
+    : null;
+  useEffect(() => {
+    if (soleMatch) setExpandedIds((prev) => new Set(prev).add(soleMatch));
+  }, [soleMatch]);
 
   const toggleExpand = (id: string) => {
     haptic(10);
-    setExpandedId((prev) => (prev === id ? null : id));
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
 
   return (
@@ -672,7 +700,7 @@ export default function Help() {
         ) : (
           <List>
             {filteredGuides.map((guide) => {
-              const isExpanded = openId === guide.id;
+              const isExpanded = expandedIds.has(guide.id);
               return (
                 <div
                   key={guide.id}
