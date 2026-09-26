@@ -101,8 +101,8 @@ export default function NewLoan() {
   const overFund = wanted > 0 && wanted > available;
 
   const ok = borrowerType === 'outside'
-    ? Boolean(amount && outsideName.trim() && Number(term) > 0 && parseFloat(customRate) >= 0) && !overCap && !overFund
-    : Boolean(amount && guarantor && Number(term) > 0) && !overCap && !overFund;
+    ? Boolean(wanted > 0 && outsideName.trim() && Number(term) > 0 && parseFloat(customRate) >= 0) && !overCap && !overFund
+    : Boolean(wanted > 0 && guarantor && Number(term) > 0) && !overCap && !overFund;
 
   const [showSchedule, setShowSchedule] = useState(false);
 

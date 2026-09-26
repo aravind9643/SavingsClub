@@ -116,7 +116,7 @@ export default function LoanDetail() {
     <>
       <Screen
         title={loan.borrower_name}
-        sub={`Loan · ${loan.status}`}
+        sub={`Loan · ${labelForStatus(loan.status, loan.withdrawn_by_requester)}`}
         onBack={() => nav('/loans')}
       >
         <div className="hero">
@@ -352,7 +352,7 @@ export default function LoanDetail() {
           <Panel
             title="Repayments"
             action={
-              loan.status === 'disbursed' && isOfficer
+              loan.status === 'disbursed' && (role === 'cashier' || role === 'accountant')
                 ? <button className="sec-link" onClick={() => setSheet('repay')}>Add</button>
                 : undefined
             }
@@ -422,7 +422,7 @@ export default function LoanDetail() {
           </div>
         )}
 
-        {loan.status === 'approved' && isOfficer && !isBorrower && (
+        {loan.status === 'approved' && (role === 'cashier' || role === 'accountant') && !isBorrower && (
           <div className="btn-row stack">
             <button className="primary lg" onClick={() => setSheet('disburse')}>
               Pay out {formatPaise(loan.principal_paise)}
@@ -431,7 +431,12 @@ export default function LoanDetail() {
         )}
         {loan.status === 'approved' && isBorrower && (
           <Notice tone="warn">
-            You cannot pay out your own loan — the cashier or accountant must do it.
+            You cannot pay out your own loan — ask the other money office holder.
+          </Notice>
+        )}
+        {loan.status === 'approved' && !isBorrower && role !== 'cashier' && role !== 'accountant' && (
+          <Notice tone="good">
+            Approved by the group. Waiting for the cashier or accountant to pay out.
           </Notice>
         )}
       </Screen>
