@@ -665,12 +665,23 @@ input[type='checkbox'].superadmin-checkbox:checked:focus {
   line-height: 1.05;
   margin: 6px 0 2px;
 }
+/* An even grid, not a wrapping row: flex-wrap dropped whichever chip did not
+   fit onto a line of its own ("Reserve ₹500" alone under the other two), so
+   the three figures read as two groups. Equal columns keep them one set. */
 .hero-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  align-items: stretch;
+  gap: 8px;
   margin-top: 14px;
+}
+.hero-meta > .chip {
+  justify-content: center;
+  min-width: 0;
+  padding: 6px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chip {

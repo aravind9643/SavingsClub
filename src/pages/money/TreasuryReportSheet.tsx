@@ -1,10 +1,11 @@
-// Moved out of MoneyHub.tsx unchanged -- byte-identical to what was there,
-// verified rather than assumed. MoneyHub.tsx is the screen that uses it.
+// Moved out of MoneyHub.tsx, which is the screen that uses it. Its CSV now goes
+// through lib/export (exact paise, formula-safe cells, Blob not data: URI).
 import { useSession } from '../../context/SessionContext';
 import { useFund } from '../../context/FundContext';
 import { formatPaise, formatPaiseShort } from '../../lib/money';
 import { Sheet, Stat } from '../../components/ui';
 import { today } from '../../lib/dates';
+import { downloadCsv, paiseToCsv } from '../../lib/export';
 
 export function TreasuryReportSheet({ onClose }: { onClose: () => void }) {
   const { fund } = useFund();
@@ -12,23 +13,16 @@ export function TreasuryReportSheet({ onClose }: { onClose: () => void }) {
 
   const handleExportCSV = () => {
     if (!fund) return;
-    const rows = [
+    const safeName = (group?.name || 'SavingsClub').replace(/[^\p{L}\p{N}]+/gu, '_');
+    downloadCsv(`${safeName}_Treasury_${today()}.csv`, [
       ['Metric', 'Amount (Rs)'],
-      ['Total Group Fund', (fund.total_fund_paise / 100).toFixed(2)],
-      ['Expected in Bank', (fund.expected_bank_balance_paise / 100).toFixed(2)],
-      ['Cash in hand', (fund.cash_float_paise / 100).toFixed(2)],
-      ['Still out on loan', (fund.outstanding_paise / 100).toFixed(2)],
-      ['Safety Reserve Kept Back', (fund.reserve_paise / 100).toFixed(2)],
-      ['Total Expenses Paid', (fund.expenses_paise / 100).toFixed(2)],
-    ];
-    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${group?.name || 'SavingsClub'}_Treasury_${today()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      ['Total Group Fund', paiseToCsv(fund.total_fund_paise)],
+      ['Expected in Bank', paiseToCsv(fund.expected_bank_balance_paise)],
+      ['Cash in hand', paiseToCsv(fund.cash_float_paise)],
+      ['Still out on loan', paiseToCsv(fund.outstanding_paise)],
+      ['Safety Reserve Kept Back', paiseToCsv(fund.reserve_paise)],
+      ['Total Expenses Paid', paiseToCsv(fund.expenses_paise)],
+    ]);
   };
 
   const handleShareWhatsApp = () => {

@@ -21,6 +21,8 @@ import type {
   ContributionPeriod, Contribution, GroupInvite, Meeting,
 } from '../lib/types';
 import { FundGrowthChart } from '../components/FundGrowthChart';
+import { buildFundHistory, interestShare, type LedgerRows } from '../lib/fundHistory';
+import { downloadCsv, paiseToCsv } from '../lib/export';
 
 export default function Dashboard() {
   const nav = useNavigate();
@@ -50,7 +52,9 @@ export default function Dashboard() {
     let q = supabase
       .from('audit_log').select('*')
       .in('table_name', ['contributions', 'loans', 'loan_repayments', 'expenses', 'cash_ledger'])
-      .order('occurred_at', { ascending: false }).limit(6);
+      // Twice what is shown: pairs below fold into one line each, and the
+      // list should still come out six long.
+      .order('occurred_at', { ascending: false }).limit(12);
     if (currentGroupId) q = q.eq('group_id', currentGroupId);
     const { data, error } = await q;
     if (error) throw error;
@@ -103,16 +107,26 @@ export default function Dashboard() {
     return (data as GroupInvite) ?? null;
   });
 
-  const pastPeriodsQ = useQuery<ContributionPeriod[]>('periods:past', async () => {
-    let q = supabase
-      .from('contribution_periods')
-      .select('*')
-      .order('period_month', { ascending: true })
-      .limit(6);
-    if (currentGroupId) q = q.eq('group_id', currentGroupId);
-    const { data, error } = await q;
-    if (error) throw error;
-    return (data ?? []) as ContributionPeriod[];
+  // The ledger rows the fund is made of -- only the columns the history
+  // needs. Keyed under 'fund' so every mutation that moves money (they all
+  // invalidate 'fund') redraws the chart too.
+  const ledgerQ = useQuery<LedgerRows>(currentGroupId ? 'fund:ledger' : null, async () => {
+    const g = currentGroupId!;
+    const [o, c, r, e, p] = await Promise.all([
+      supabase.from('members').select('member_id:id, opening_balance_paise').eq('group_id', g),
+      supabase.from('contributions').select('member_id, amount_paise, late_fee_paise, paid_on').eq('group_id', g),
+      supabase.from('loan_repayments').select('interest_paise, penalty_paise, paid_on').eq('group_id', g),
+      supabase.from('expenses').select('amount_paise, status, paid_on').eq('group_id', g),
+      supabase.from('member_payouts').select('amount_paise, paid_on').eq('group_id', g),
+    ]);
+    for (const res of [o, c, r, e, p]) if (res.error) throw res.error;
+    return {
+      openings: (o.data ?? []) as LedgerRows['openings'],
+      contributions: (c.data ?? []) as LedgerRows['contributions'],
+      repayments: (r.data ?? []) as LedgerRows['repayments'],
+      expenses: (e.data ?? []) as LedgerRows['expenses'],
+      payouts: (p.data ?? []) as LedgerRows['payouts'],
+    };
   });
 
   const nextMeetingQ = useQuery<Meeting | null>('meetings:next', async () => {
@@ -128,27 +142,50 @@ export default function Dashboard() {
     return (data as Meeting) ?? null;
   });
 
-  const chartPoints = useMemo(() => {
-    const periods = [...(pastPeriodsQ.data ?? [])];
-    periods.sort((a: ContributionPeriod, b: ContributionPeriod) => a.period_month.localeCompare(b.period_month));
-    if (periods.length < 2) return [];
+  const history = useMemo(
+    () => (ledgerQ.data ? buildFundHistory(ledgerQ.data, today().slice(0, 7)) : null),
+    [ledgerQ.data],
+  );
 
-    const totalFund = fund?.total_fund_paise ?? 0;
-    const count = periods.length;
-    return periods.map((p: ContributionPeriod, idx: number) => {
-      const d = new Date(p.period_month);
-      const label = d.toLocaleDateString('en-US', { month: 'short' });
-      const factor = (idx + 1) / count;
-      const cap = Math.round(totalFund * factor);
-      const interest = Math.round(cap * 0.05);
+  // Drawn only when the rebuilt total equals the server's to the paise. A
+  // mismatch means the ledger moved between the two reads, or a definition
+  // here drifted from fn_fund_total_paise() -- either way the chart would
+  // contradict the headline figure above it, so it is left out rather than
+  // shown wrong.
+  const chartPoints = useMemo(() => {
+    if (!history || !fund || history.total !== fund.total_fund_paise) return [];
+    return history.points.slice(-12).map((p) => {
+      const [y, m] = p.month.split('-').map(Number);
       return {
-        label,
-        month: p.period_month.slice(0, 7),
-        capital: cap,
-        interest,
+        label: new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'short' }),
+        month: p.month,
+        capital: p.capital,
+        interest: p.interest,
       };
     });
-  }, [pastPeriodsQ.data, fund?.total_fund_paise]);
+  }, [history, fund]);
+
+  const myInterestPaise = history && member ? interestShare(history, member.id) : 0;
+
+  // A cash payment is two rows: the deposit (or repayment, or disbursal) and
+  // the cash-ledger entry its RPC writes alongside it. Both were listed, so
+  // every cash payment showed twice. They are written in one transaction, and
+  // audit_log.occurred_at defaults to now() -- the TRANSACTION's start time --
+  // so a companion shares its parent's timestamp exactly. Fold those; a cash
+  // entry with no parent (a manual cash-in, a payout) stays a line of its own.
+  const activity = useMemo(() => {
+    const rows = feed.data ?? [];
+    const parents = new Set(rows.filter((r) => r.table_name !== 'cash_ledger').map((r) => r.occurred_at));
+    const withCash = new Set<string>();
+    const out = rows.filter((r) => {
+      if (r.table_name === 'cash_ledger' && r.action === 'INSERT' && parents.has(r.occurred_at)) {
+        withCash.add(r.occurred_at);
+        return false;
+      }
+      return true;
+    });
+    return out.slice(0, 6).map((r) => ({ row: r, inCash: r.table_name !== 'cash_ledger' && withCash.has(r.occurred_at) }));
+  }, [feed.data]);
 
   const memberNames = useMemo(() => {
     const map = new Map<string, string>();
@@ -168,6 +205,12 @@ export default function Dashboard() {
   }
 
   const myPosition = (positions.data ?? []).find((p) => p.member_id === member?.id);
+  // A copy, so the cached array is untouched (toSorted needs ES2023; the
+  // project targets ES2022).
+  const topSavers = [...(positions.data ?? [])]
+    // oxlint-disable-next-line unicorn/no-array-sort
+    .sort((a, b) => b.contributed_paise - a.contributed_paise || a.full_name.localeCompare(b.full_name))
+    .slice(0, 5);
   const myUnpaid = (unpaidQ.data ?? []).find((u) => u.member_id === member?.id);
 
   let monthStat = {
@@ -201,7 +244,7 @@ export default function Dashboard() {
   // A query that failed must say so here. Left silent, a failed read renders
   // as an empty list or a zero -- and on this screen "nothing needs you" and
   // "we could not check" look identical unless they are told apart.
-  const homeQueries = [positions, unpaidQ, feed, latestPeriod, myPaidContrib, inviteQ, pastPeriodsQ, nextMeetingQ];
+  const homeQueries = [positions, unpaidQ, feed, latestPeriod, myPaidContrib, inviteQ, ledgerQ, nextMeetingQ];
   const loadErrors = [...new Set([
     ...alertErrors,
     ...homeQueries.map((q) => q.error).filter((e): e is string => Boolean(e)),
@@ -252,8 +295,14 @@ export default function Dashboard() {
           </button>
         }
       >
-        {/* ======================================= 1. PERSONAL STANDING CARD */}
-        {myPosition && (
+        {/* ======================================= 1. PERSONAL STANDING CARD
+            Always drawn for a member. It used to render only once
+            v_member_positions answered -- the slowest query on the screen,
+            since it works out every member's share -- so for that whole wait
+            the card and the subtitle simply were not there, and the screen
+            read as though the member had no account. Placeholders now hold
+            its place; a figure that never arrives says so. */}
+        {member && (
           <div
             className="panel"
             style={{
@@ -273,31 +322,52 @@ export default function Dashboard() {
                   {roleLabel(role)}
                 </span>
               </div>
-              <span className="dim" style={{ fontSize: '0.82rem' }}>
-                {Number(myPosition.share_pct).toFixed(1)}% group share
-              </span>
+              {myPosition && (
+                <span className="dim" style={{ fontSize: '0.82rem' }}>
+                  {Number(myPosition.share_pct).toFixed(1)}% group share
+                </span>
+              )}
             </div>
 
-            <div className="stats three" style={{ margin: 0 }}>
-              <Stat
-                k="You have saved"
-                v={formatPaiseShort(myPosition.contributed_paise)}
-                s="total accumulated"
-                tone="mint"
-              />
-              <Stat
-                k="This month"
-                v={monthStat.v}
-                s={monthStat.s}
-                tone={monthStat.tone}
-              />
-              <Stat
-                k="Active loan"
-                v={myPosition.outstanding_paise > 0 ? formatPaiseShort(myPosition.outstanding_paise) : 'None'}
-                s={myPosition.outstanding_paise > 0 ? 'to repay' : `can borrow up to ${formatPaiseShort(fund?.per_member_cap_paise ?? 0)}`}
-                tone={myPosition.outstanding_paise > 0 ? 'coral' : undefined}
-              />
-            </div>
+            {myPosition ? (
+              <div className="stats three" style={{ margin: 0 }}>
+                <Stat
+                  k="You have saved"
+                  v={formatPaiseShort(myPosition.contributed_paise)}
+                  s="total accumulated"
+                  tone="mint"
+                />
+                <Stat
+                  k="This month"
+                  v={monthStat.v}
+                  s={monthStat.s}
+                  tone={monthStat.tone}
+                />
+                <Stat
+                  k="Active loan"
+                  v={myPosition.outstanding_paise > 0 ? formatPaiseShort(myPosition.outstanding_paise) : 'None'}
+                  s={myPosition.outstanding_paise > 0 ? 'to repay' : `can borrow up to ${formatPaiseShort(fund?.per_member_cap_paise ?? 0)}`}
+                  tone={myPosition.outstanding_paise > 0 ? 'coral' : undefined}
+                />
+              </div>
+            ) : positions.loading || !positions.data ? (
+              <div className="stats three" style={{ margin: 0 }} aria-busy="true" aria-label="Loading your figures">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="stat">
+                    <span className="skeleton" style={{ height: 10, width: '60%' }} />
+                    <span className="skeleton" style={{ height: 22, width: '45%', marginTop: 8 }} />
+                    <span className="skeleton" style={{ height: 9, width: '70%', marginTop: 8 }} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              // Loaded, and this member is not in it. Rare (a membership
+              // changed under an open tab), but a blank card would be worse.
+              <button type="button" className="notice warn" onClick={() => { haptic(10); positions.refetch(); }}>
+                <span className="dot" />
+                <span style={{ flex: 1 }}>Your figures could not be found just now — tap to refresh.</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -310,7 +380,13 @@ export default function Dashboard() {
           {(loadErrors.length > 0 || alerts.length > 0) && (
             <div className="sec-head">
               <h2>Needs attention</h2>
-              <span className="dim" style={{ fontSize: '0.82rem' }}>
+              {/* A bare number at the far right read as a stray page number.
+                  A badge in the colour of the worst item says "count". */}
+              <span
+                className={`tag ${loadErrors.length || alerts.some((a) => a.severity === 'danger') ? 'coral'
+                  : alerts.some((a) => a.severity === 'warn') ? 'amber' : 'violet'}`}
+                aria-label={`${alerts.length + (loadErrors.length ? 1 : 0)} items`}
+              >
                 {alerts.length + (loadErrors.length ? 1 : 0)}
               </span>
             </div>
@@ -591,7 +667,7 @@ export default function Dashboard() {
 
         {/* Visual Fund Growth & Member Return Chart */}
         {chartPoints.length >= 2 && (
-          <FundGrowthChart points={chartPoints} mySharePct={myPosition?.share_pct} />
+          <FundGrowthChart points={chartPoints} myInterestPaise={myInterestPaise} />
         )}
 
         {/* ======================================= 3. GROUP VAULT (COMMUNITY FUND) */}
@@ -678,13 +754,13 @@ export default function Dashboard() {
                 </button>
               }
             >
-              {(feed.data ?? []).length === 0 ? (
+              {activity.length === 0 ? (
                 <Empty icon={<IconInbox width={22} height={22} />}>
                   No activity recorded yet.
                 </Empty>
               ) : (
                 <List>
-                  {(feed.data ?? []).map((row) => (
+                  {activity.map(({ row, inCash }) => (
                     <Row
                       key={row.id}
                       icon={
@@ -699,10 +775,14 @@ export default function Dashboard() {
                           : row.table_name === 'loans' ? 'violet'
                             : row.table_name === 'loan_repayments' ? 'mint'
                               : row.table_name === 'expenses' ? 'amber'
-                                : 'coral'
+                                // Cash IN was drawn coral, the colour this
+                                // app uses for "something is wrong". Only
+                                // money leaving is coral.
+                                : (row.new_data ?? row.old_data)?.direction === 'in' ? 'mint'
+                                  : 'coral'
                       }
                       title={describe(row, memberNames)}
-                      sub={ago(row.occurred_at)}
+                      sub={inCash ? `${ago(row.occurred_at)} · in cash` : ago(row.occurred_at)}
                       chevron
                       onClick={() => {
                         haptic(10);
@@ -736,7 +816,11 @@ export default function Dashboard() {
                 <Empty icon={<IconCheck width={22} height={22} />}>No members found.</Empty>
               ) : (
                 <List>
-                  {(positions.data ?? []).slice(0, 5).map((pos) => (
+                  {/* Sorted here, not trusted from the query: Members and
+                      Community cache the same 'positions' key ordered by
+                      name, so after visiting either, slice(0, 5) showed the
+                      first five alphabetically under "Member Savings". */}
+                  {topSavers.map((pos) => (
                     <Row
                       key={pos.member_id}
                       icon={initials(pos.full_name)}
@@ -873,38 +957,29 @@ _Sent from SavingsClub_`;
     }
   }
 
-  function downloadCsv() {
+  function downloadStatementCsv() {
     haptic(15);
-    const rows: string[][] = [
+    downloadCsv(`${groupName.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-')}-statement-${toDateString(now)}.csv`, [
       ['Group Financial Report', groupName],
       ['Date', now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })],
       [],
       ['What', 'Amount (Rupees)'],
-      ['Total fund', (fund.total_fund_paise / 100).toFixed(2)],
-      ['Should be in the bank', (fund.expected_bank_balance_paise / 100).toFixed(2)],
-      ['Cash in hand', (fund.cash_float_paise / 100).toFixed(2)],
-      ['Kept back as safety', (fund.reserve_paise / 100).toFixed(2)],
-      ['Money on loan', (fund.outstanding_paise / 100).toFixed(2)],
-      ['Can lend now', (fund.still_lendable_paise / 100).toFixed(2)],
+      ['Total fund', paiseToCsv(fund.total_fund_paise)],
+      ['Should be in the bank', paiseToCsv(fund.expected_bank_balance_paise)],
+      ['Cash in hand', paiseToCsv(fund.cash_float_paise)],
+      ['Kept back as safety', paiseToCsv(fund.reserve_paise)],
+      ['Money on loan', paiseToCsv(fund.outstanding_paise)],
+      ['Can lend now', paiseToCsv(fund.still_lendable_paise)],
       [],
       ['Member', 'Role', 'Saved (Rs)', 'Share of fund %', 'Still owes (Rs)'],
       ...positions.map((p) => [
-        `"${p.full_name.replace(/"/g, '""')}"`,
+        p.full_name,
         roleLabel(p.role),
-        (p.contributed_paise / 100).toFixed(2),
+        paiseToCsv(p.contributed_paise),
         `${Number(p.share_pct).toFixed(1)}%`,
-        (p.outstanding_paise / 100).toFixed(2),
+        paiseToCsv(p.outstanding_paise),
       ]),
-    ];
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${groupName.toLowerCase().replace(/\s+/g, '-')}-statement-${toDateString(now)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    ]);
   }
 
   return (
@@ -937,7 +1012,7 @@ _Sent from SavingsClub_`;
         <button type="button" className="subtle" onClick={() => void copy()}>
           {copied ? 'Copied to clipboard!' : 'Copy text statement'}
         </button>
-        <button type="button" className="subtle" onClick={downloadCsv}>
+        <button type="button" className="subtle" onClick={downloadStatementCsv}>
           Download Excel / CSV
         </button>
       </div>

@@ -82,6 +82,12 @@ export function FundProvider({ children }: { children: ReactNode }) {
         { event: '*', schema: 'public', table: 'bank_statements', filter: `group_id=eq.${currentGroupId}` },
         () => invalidate('fund', 'bank', 'feed'))
       .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'loan_repayments', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'loans', 'loan', 'positions', 'feed'))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'expense_votes', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'expenses'))
+      .on('postgres_changes',
         { event: '*', schema: 'public', table: 'contribution_periods', filter: `group_id=eq.${currentGroupId}` },
         () => invalidate('fund', 'periods'))
       .on('postgres_changes',
@@ -450,13 +456,24 @@ export function FundProvider({ children }: { children: ReactNode }) {
 
   // ---- reconciliation. A statement that does not match the books is the one
   // number in the app that says something is wrong with the others.
+  //
+  // It names both figures and the likeliest cause. "₹2,000 more than the
+  // books expect" left the officer to work out what to do; the usual cause
+  // of "bank has more" is cash that was paid in at the bank without the
+  // cash-to-bank move being recorded, so the books still think it is in hand.
   const bank = bankQ.data;
   if (bank && bank.difference_paise !== 0) {
+    const on = new Date(`${bank.as_of.slice(0, 10)}T00:00:00`)
+      .toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const more = bank.difference_paise > 0;
+    const hint = more && (fund?.cash_float_paise ?? 0) > 0
+      ? ' — if cash was paid into the bank, record it under Treasury → Cash'
+      : more ? '' : ' — look for a withdrawal or charge not yet recorded';
     alerts.push({
       id: 'bank-mismatch',
       severity: 'danger',
-      message: `Bank statement of ${fmtDate(bank.as_of)} is ${formatPaise(Math.abs(bank.difference_paise))} `
-        + `${bank.difference_paise > 0 ? 'more' : 'less'} than the books expect`,
+      message: `Bank shows ${formatPaise(bank.closing_balance_paise)} on ${on}, books expect `
+        + `${formatPaise(bank.expected_balance_paise)}${hint}`,
       to: '/bank',
     });
   }

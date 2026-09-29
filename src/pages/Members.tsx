@@ -35,7 +35,7 @@ export default function Members() {
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  const positions = useQuery<MemberPosition[]>('positions', async () => {
+  const positions = useQuery<MemberPosition[]>('positions:byname', async () => {
     let q = supabase
       .from('v_member_positions').select('*').order('full_name');
     if (currentGroupId) q = q.eq('group_id', currentGroupId);

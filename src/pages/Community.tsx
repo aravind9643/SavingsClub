@@ -40,7 +40,7 @@ export default function Community() {
   });
 
   // Member standings & positions query
-  const positionsQ = useQuery<MemberPosition[]>('positions', async () => {
+  const positionsQ = useQuery<MemberPosition[]>('positions:byname', async () => {
     let q = supabase.from('v_member_positions').select('*').order('full_name');
     if (currentGroupId) q = q.eq('group_id', currentGroupId);
     const { data, error } = await q;

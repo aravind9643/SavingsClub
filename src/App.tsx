@@ -5,11 +5,7 @@ import {
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { SessionProvider, useSession } from './context/SessionContext';
 import { FundProvider, useFund } from './context/FundContext';
-import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Deposits from './pages/Deposits';
-import Loans from './pages/Loans';
-import Onboard, { AwaitingApproval } from './pages/Onboard';
 import GroupSwitcher from './components/GroupSwitcher';
 import ProfileSheet from './components/ProfileSheet';
 import { Loading, initials, resetScrollLock } from './components/ui';
@@ -19,6 +15,15 @@ import {
 } from './components/icons';
 import { haptic } from './lib/haptics';
 
+// Only Home ships in the first bundle: it is the first screen a signed-in
+// member sees. Login and Onboard are needed only before that, by people who
+// are not yet in a group, and Deposits and Loans only once opened -- all five
+// used to load on every visit.
+const Login = lazy(() => import('./pages/Login'));
+const Onboard = lazy(() => import('./pages/Onboard'));
+const AwaitingApproval = lazy(() => import('./pages/Onboard').then((m) => ({ default: m.AwaitingApproval })));
+const Deposits = lazy(() => import('./pages/Deposits'));
+const Loans = lazy(() => import('./pages/Loans'));
 const LoanDetail = lazy(() => import('./pages/LoanDetail'));
 const NewLoan = lazy(() => import('./pages/NewLoan'));
 const Members = lazy(() => import('./pages/Members'));
@@ -298,7 +303,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <SessionProvider>
-        <Gate />
+        {/* For the lazy sign-in and onboarding screens, which Gate renders
+            outside Shell's own boundary. */}
+        <Suspense fallback={<div className="auth"><Loading /></div>}>
+          <Gate />
+        </Suspense>
       </SessionProvider>
     </BrowserRouter>
   );

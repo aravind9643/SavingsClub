@@ -397,7 +397,7 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                     </div>
                     {latestStatement ? (
                       <span className={`tag ${latestStatement.difference_paise === 0 ? 'mint' : 'coral'}`}>
-                        {latestStatement.difference_paise === 0 ? '✓ Balanced' : `Off by ${formatPaiseShort(Math.abs(latestStatement.difference_paise))}`}
+                        {latestStatement.difference_paise === 0 ? '✓ Balanced' : `Off by ${formatPaise(Math.abs(latestStatement.difference_paise))}`}
                       </span>
                     ) : (
                       <span className="tag amber">Unverified</span>
@@ -627,9 +627,11 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                 paise={expectedBankBalance}
                 meta={
                   <>
-                    <Chip>Fund <b>{formatPaiseShort(fund.total_fund_paise)}</b></Chip>
-                    <Chip tone="violet">− Loan <b>{formatPaiseShort(fund.outstanding_paise)}</b></Chip>
-                    <Chip tone="amber">− Cash float <b>{formatPaiseShort(fund.cash_float_paise)}</b></Chip>
+                    {/* This is a sum the reader checks -- fund, less loans,
+                        less cash -- so the parts are exact, not "₹2.0k". */}
+                    <Chip>Fund <b>{formatPaise(fund.total_fund_paise)}</b></Chip>
+                    <Chip tone="violet">− Loans <b>{formatPaise(fund.outstanding_paise)}</b></Chip>
+                    <Chip tone="amber">− Cash <b>{formatPaise(fund.cash_float_paise)}</b></Chip>
                   </>
                 }
               />
@@ -674,12 +676,14 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                       icon={<IconCheck width={17} height={17} />}
                       iconTone={s.difference_paise === 0 ? 'mint' : 'coral'}
                       title={fmtDate(s.as_of)}
-                      sub={s.note || `Books expected ${formatPaiseShort(s.expected_balance_paise)}`}
-                      amount={formatPaiseShort(s.closing_balance_paise)}
+                      // Reconciliation to the paise: a rounded "Off ₹1.0k"
+                      // cannot be matched against a bank passbook.
+                      sub={s.note || `Books expected ${formatPaise(s.expected_balance_paise)}`}
+                      amount={formatPaise(s.closing_balance_paise)}
                       note={
                         s.difference_paise === 0
                           ? 'Balanced'
-                          : `Off ${formatPaiseShort(Math.abs(s.difference_paise))}`
+                          : `Off ${formatPaise(Math.abs(s.difference_paise))}`
                       }
                       amountTone={s.difference_paise === 0 ? 'mint' : 'coral'}
                     />

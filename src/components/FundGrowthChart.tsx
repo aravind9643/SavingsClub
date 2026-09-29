@@ -10,10 +10,11 @@ export interface GrowthPoint {
 
 export function FundGrowthChart({
   points,
-  mySharePct,
+  myInterestPaise = 0,
 }: {
   points: GrowthPoint[];
-  mySharePct?: number;
+  /** This member's pro-rata slice of the interest earned (lib/fundHistory). */
+  myInterestPaise?: number;
 }) {
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
@@ -65,9 +66,6 @@ export function FundGrowthChart({
   const growthPaise = lastVal - firstVal;
   const growthPct = firstVal > 0 ? Math.round((growthPaise / firstVal) * 100) : 100;
 
-  // Calculate personal return if mySharePct is given
-  const totalInterest = data[data.length - 1]?.interest ?? 0;
-  const myEarnings = mySharePct ? Math.round((mySharePct / 100) * totalInterest) : 0;
 
   return (
     <div
@@ -181,8 +179,10 @@ export function FundGrowthChart({
         </svg>
       </div>
 
-      {/* Member Personal Return Badge */}
-      {mySharePct && myEarnings > 0 && (
+      {/* Split the way member_share_paise() splits it: by what each member
+          put in, not by share_pct (which is savings over the whole fund and
+          so understated everyone's slice once interest was in it). */}
+      {myInterestPaise > 0 && (
         <div
           style={{
             marginTop: 10,
@@ -196,10 +196,10 @@ export function FundGrowthChart({
           }}
         >
           <span style={{ color: 'var(--text-2)' }}>
-            Your Share of Fund Returns ({Number(mySharePct).toFixed(0)}%)
+            Your share of the interest earned
           </span>
           <span style={{ fontWeight: 700, color: 'var(--mint)' }}>
-            +{formatPaiseShort(myEarnings)}
+            +{formatPaise(myInterestPaise)}
           </span>
         </div>
       )}
