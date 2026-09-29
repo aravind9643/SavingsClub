@@ -50,10 +50,15 @@ declare
   v_tbl       text;
   v_leaked    text[] := '{}';
   v_checks    int := 0;
+  -- Every table with a group_id. This list stopped growing after 0012, so
+  -- the tables of 0025-0030 and 0046 were never checked; payment_claims is
+  -- seeded in both groups below so its check can actually fail.
   v_tables    text[] := array[
     'members','role_assignments','contribution_periods','contributions',
     'cash_ledger','loans','loan_votes','loan_repayments','expenses',
-    'expense_votes','bank_statements','audit_log'];
+    'expense_votes','bank_statements','audit_log','group_invites',
+    'member_payouts','distributions','distribution_lines','loan_instalments',
+    'meetings','meeting_attendance','payment_claims'];
 begin
   -- ==========================================================================
   -- SETUP. Done as the migration owner, before dropping to `authenticated`.
@@ -164,6 +169,12 @@ begin
                                uploaded_by)
   values (v_a, current_date, 100000, 100000, 0, v_mem_a),
          (v_b, current_date, 900000, 900000, 0, v_mem_b);
+
+  -- An "I've paid" claim in each group (0046), so the leak check on
+  -- payment_claims has a group B row to not see.
+  insert into payment_claims (group_id, period_id, member_id, amount_paise, paid_on, method, reference)
+  values (v_a, v_period_a, v_mem_a2, 10000, current_date, 'upi', 'ISO-A-UTR'),
+         (v_b, v_period_b, v_mem_b2, 90000, current_date, 'upi', 'ISO-B-UTR');
 
   insert into profiles (id, last_group_id) values (v_uid_a, v_a)
   on conflict (id) do update set last_group_id = excluded.last_group_id;

@@ -95,7 +95,7 @@ declare
 begin
   -- 5. Every business table must carry the audit trigger. The exclusions are
   --    exactly fn_attach_audit_triggers()'s (0045): the log itself, and the
-  --    two tables that are not group business. This check exempted only
+  --    tables that are not group business. This check exempted only
   --    audit_log, so it failed on profiles from 0012 on -- and nobody noticed
   --    the six money tables from 0025-0030 that were genuinely unaudited.
   select array_agg(c.relname order by c.relname) into v_missing
@@ -103,7 +103,7 @@ begin
   join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public'
     and c.relkind = 'r'
-    and c.relname not in ('audit_log', 'profiles', 'super_admins')
+    and c.relname not in ('audit_log', 'profiles', 'super_admins', 'push_subscriptions')
     and not exists (
       select 1 from pg_trigger t
       where t.tgrelid = c.oid and t.tgname = 'trg_audit'
