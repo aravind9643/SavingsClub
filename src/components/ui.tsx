@@ -160,7 +160,7 @@ export function Row({
 export function Notice({
   tone = 'good', children, onClick,
 }: {
-  tone?: 'good' | 'warn' | 'danger';
+  tone?: 'good' | 'warn' | 'danger' | 'info';
   children: ReactNode;
   onClick?: () => void;
 }) {
@@ -283,7 +283,7 @@ export function Sheet({
 
 export function Field({
   label, children, hint,
-}: { label: string; children: ReactNode; hint?: ReactNode }) {
+}: { label: ReactNode; children: ReactNode; hint?: ReactNode }) {
   return (
     <div className="field">
       <label>{label}</label>

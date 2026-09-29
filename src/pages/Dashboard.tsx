@@ -17,14 +17,14 @@ import {
   IconTreasury, IconMeeting, IconHelp,
 } from '../components/icons';
 import type {
-  MemberPosition, LoanRow, AuditRow, UnpaidRow, FundSummary,
+  MemberPosition, AuditRow, UnpaidRow, FundSummary,
   ContributionPeriod, Contribution, GroupInvite, Meeting,
 } from '../lib/types';
 import { FundGrowthChart } from '../components/FundGrowthChart';
 
 export default function Dashboard() {
   const nav = useNavigate();
-  const { fund, alerts, loading } = useFund();
+  const { fund, alerts, loading, errors: alertErrors, settled, retry } = useFund();
   const { member, config, group, currentGroupId, role } = useSession();
   const [reportOpen, setReportOpen] = useState(false);
 
@@ -44,15 +44,6 @@ export default function Dashboard() {
     const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as UnpaidRow[];
-  });
-
-  const pending = useQuery<LoanRow[]>('loans:pending', async () => {
-    let q = supabase
-      .from('v_loan_status').select('*').eq('status', 'requested');
-    if (currentGroupId) q = q.eq('group_id', currentGroupId);
-    const { data, error } = await q;
-    if (error) throw error;
-    return (data ?? []) as LoanRow[];
   });
 
   const feed = useQuery<AuditRow[]>('feed', async () => {
@@ -92,7 +83,9 @@ export default function Dashboard() {
       if (currentGroupId) {
         q = q.eq('group_id', currentGroupId);
       }
-      const { data, error } = await q.maybeSingle();
+      // A month can be paid in parts since 0026, so there may be several rows;
+      // maybeSingle() throws on the second one. Any row answers "paid in".
+      const { data, error } = await q.limit(1).maybeSingle();
       if (error) throw error;
       return (data as Contribution) ?? null;
     },
@@ -205,7 +198,19 @@ export default function Dashboard() {
     }
   }
 
-  const myVoteNeeded = (pending.data ?? []).filter((l) => l.can_i_vote);
+  // A query that failed must say so here. Left silent, a failed read renders
+  // as an empty list or a zero -- and on this screen "nothing needs you" and
+  // "we could not check" look identical unless they are told apart.
+  const homeQueries = [positions, unpaidQ, feed, latestPeriod, myPaidContrib, inviteQ, pastPeriodsQ, nextMeetingQ];
+  const loadErrors = [...new Set([
+    ...alertErrors,
+    ...homeQueries.map((q) => q.error).filter((e): e is string => Boolean(e)),
+  ])];
+  const retryAll = () => {
+    retry();
+    homeQueries.forEach((q) => q.refetch());
+  };
+  const allClear = settled && loadErrors.length === 0 && alerts.length === 0;
 
   // The subtitle carries the one thing worth knowing before you scroll: what
   // you owe this month, or that you are clear. A greeting went here before --
@@ -293,35 +298,41 @@ export default function Dashboard() {
                 tone={myPosition.outstanding_paise > 0 ? 'coral' : undefined}
               />
             </div>
-
-            {/* Quick contextual CTA */}
-            {dueThisMonth > 0 && (
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--hairline)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.86rem', color: myUnpaid?.is_overdue ? 'var(--coral)' : 'var(--amber)' }}>
-                  {myUnpaid?.is_overdue ? '⚠️ Payment overdue' : 'Payment due this month'}
-                </span>
-                <button
-                  type="button"
-                  className="sec-link"
-                  style={{
-                    background: 'var(--mint-ghost)',
-                    color: 'var(--mint)',
-                    padding: '5px 12px',
-                    borderRadius: 'var(--r-sm)',
-                    fontWeight: 600,
-                    fontSize: '0.82rem',
-                  }}
-                  onClick={() => {
-                    haptic(10);
-                    nav('/deposits');
-                  }}
-                >
-                  View Deposits →
-                </button>
-              </div>
-            )}
           </div>
         )}
+
+        {/* ======================================= 1A. NEEDS ATTENTION
+            Every error, pending action and waiting status in one place, worst
+            first, directly under the reader's own figures. These used to sit
+            below the meeting banner and the growth chart -- off the first
+            screen on a phone, which is where nobody looks. */}
+        <section aria-label="Needs attention" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(loadErrors.length > 0 || alerts.length > 0) && (
+            <div className="sec-head">
+              <h2>Needs attention</h2>
+              <span className="dim" style={{ fontSize: '0.82rem' }}>
+                {alerts.length + (loadErrors.length ? 1 : 0)}
+              </span>
+            </div>
+          )}
+          {loadErrors.length > 0 && (
+            <Notice tone="danger" onClick={() => { haptic(10); retryAll(); }}>
+              <strong>Some figures could not be loaded</strong> — {loadErrors[0]}. Tap to try again.
+            </Notice>
+          )}
+          {alerts.map((a) => (
+            <Notice
+              key={a.id}
+              tone={a.severity === 'danger' ? 'danger' : a.severity === 'warn' ? 'warn' : 'info'}
+              onClick={() => { haptic(10); nav(a.to); }}
+            >
+              {a.message}
+            </Notice>
+          ))}
+          {allClear && (
+            <Notice tone="good">All caught up — nothing needs you right now.</Notice>
+          )}
+        </section>
 
         {/* ======================================= 1B. QUICK ACTIONS BAR */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, margin: '2px 0' }}>
@@ -582,18 +593,6 @@ export default function Dashboard() {
         {chartPoints.length >= 2 && (
           <FundGrowthChart points={chartPoints} mySharePct={myPosition?.share_pct} />
         )}
-
-        {/* ======================================= 2. ACTION CENTER */}
-        {myVoteNeeded.length > 0 && (
-          <Notice tone="warn" onClick={() => { haptic(10); nav('/loans'); }}>
-            <strong>🗳️ {myVoteNeeded.length} loan request{myVoteNeeded.length > 1 ? 's' : ''}</strong> waiting for your approval vote — tap to review
-          </Notice>
-        )}
-        {alerts.map((a) => (
-          <Notice key={a.id} tone={a.severity === 'danger' ? 'danger' : 'warn'} onClick={() => { haptic(10); nav(a.to); }}>
-            {a.message}
-          </Notice>
-        ))}
 
         {/* ======================================= 3. GROUP VAULT (COMMUNITY FUND) */}
         {fund && (

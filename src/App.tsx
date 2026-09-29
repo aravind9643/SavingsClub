@@ -83,7 +83,7 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
     if (to === '/community') {
       return alerts.some((a) => a.severity === 'danger' && (a.to === '/members' || a.to === '/community'));
     }
-    return alerts.some((a) => a.severity === 'danger' && a.to === to);
+    return alerts.some((a) => a.severity === 'danger' && (a.to === to || a.to.startsWith(`${to}/`)));
   };
 
   const location = useLocation();

@@ -701,6 +701,24 @@ DEFINER, and RLS is exactly what SECURITY DEFINER turns off.
 `fn_assert_member_of()` is now the single home for the rule — and it checks
 **membership, not the claim**, because the attack *is* a forged claim.
 
+## The developer console (`/admin`) never holds a key
+
+`/admin` bypasses RLS, so it must not run in the browser with the
+service_role key. It used to: the key came from `VITE_SUPABASE_SERVICE_ROLE_KEY`
+— and Vite inlines every `VITE_` variable into the public bundle — behind a PIN
+compared in client JavaScript. The console now calls the `superadmin` Edge
+Function (`supabase/functions/superadmin`), which holds the key in its own
+environment and admits a request only from a signed-in Supabase Auth user
+listed in `super_admins` (0043), a table nothing but the service role can read.
+The developer signs in with email + password on `/admin` itself, through a
+separate client (own storage key, sessionStorage) so the console login never
+becomes the app's login: that account belongs to no group, and sharing the
+session would drop it into onboarding on `/`. Office changes go through
+`admin_assign_role()`, one transaction, never three REST calls.
+
+Never add a `VITE_` variable holding a secret. Never add a generic "run this
+query" action to that function: it accepts named actions on allowlisted tables.
+
 ## Deliberate decisions that look like omissions
 
 - **`supabase/seed.sql` is empty.** Groups are created from inside the app.

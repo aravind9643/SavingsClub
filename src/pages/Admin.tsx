@@ -2,24 +2,22 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
 import {
-  createSuperAdminClient,
-  getActiveServiceRoleKey,
-  setActiveServiceRoleKey,
-  isDeveloperUnlocked,
-  setDeveloperUnlocked,
-  getDeveloperPIN,
+  superAdmin, SuperAdminError, hasSuperAdminSession, superAdminSignIn, superAdminSignOut,
 } from '../lib/superAdmin';
-import { formatPaise, rupeesToPaise, paiseToRupees } from '../lib/money';
+import { formatPaise, rupeesToPaise } from '../lib/money';
+import { today, toDateString } from '../lib/dates';
 import { haptic } from '../lib/haptics';
 import {
-  Panel, Stat, List, Row, Tag, Sheet, Field, Notice,
+  Panel, Stat, List, Row, Tag, Sheet, Field, Notice, SkeletonList,
   Segments, initials, roleLabel, fmtDate, fmtDateTime, ago,
 } from '../components/ui';
 import {
-  IconShield, IconTrash, IconEdit, IconLock, IconKey,
+  IconShield, IconTrash, IconEdit, IconLock,
   IconDownload, IconWrench, IconBank, IconAudit, IconExpenses,
 } from '../components/icons';
 import type { Role, AuditRow } from '../lib/types';
+import { RowEditor } from './admin/RowEditor';
+import { TableBrowser } from './admin/TableBrowser';
 
 interface DbGroup {
   id: string;
@@ -35,11 +33,10 @@ interface DbMember {
   auth_user_id: string | null;
   full_name: string;
   phone: string | null;
-  is_active: boolean;
+  status: 'pending' | 'active' | 'left';
   joined_on: string;
   nominee_name: string | null;
   nominee_phone: string | null;
-  role?: string;
 }
 
 interface DbRoleAssignment {
@@ -54,11 +51,19 @@ interface DbRoleAssignment {
 interface DbLoan {
   id: string;
   group_id: string;
-  borrower_id: string;
+  borrower_id: string | null;
+  is_outside_borrower?: boolean;
+  outside_borrower_name?: string | null;
   principal_paise: number;
   status: string;
   purpose: string | null;
   requested_at: string;
+}
+
+interface DbRepayment {
+  id: string;
+  loan_id: string;
+  principal_paise: number;
 }
 
 interface DbContribution {
@@ -94,6 +99,25 @@ interface DbExpense {
   created_by: string;
 }
 
+type DbAudit = AuditRow & { group_id?: string | null };
+
+interface LoadResult {
+  groups: DbGroup[];
+  members: DbMember[];
+  role_assignments: DbRoleAssignment[];
+  loans: DbLoan[];
+  loan_repayments: DbRepayment[];
+  contributions: DbContribution[];
+  bank_statements: DbBankStatement[];
+  expenses: DbExpense[];
+  audit_log: DbAudit[];
+}
+
+const EMPTY: LoadResult = {
+  groups: [], members: [], role_assignments: [], loans: [], loan_repayments: [],
+  contributions: [], bank_statements: [], expenses: [], audit_log: [],
+};
+
 interface IntegrityIssue {
   severity: 'danger' | 'warn' | 'good';
   title: string;
@@ -101,639 +125,60 @@ interface IntegrityIssue {
   tenant?: string;
 }
 
-export default function Admin() {
-  const nav = useNavigate();
-  const { switchGroup, groups: userGroups } = useSession();
+type Tab = 'groups' | 'members' | 'loans' | 'contributions' | 'bank' | 'expenses' | 'audit' | 'health' | 'tables' | 'backup';
+type Section = 'tenants' | 'money' | 'audit' | 'data' | 'tools';
+/** Any table in the server's registry (supabase/functions/superadmin). */
+type Table = string;
 
-  // Authentication & Developer Verification
-  const [unlocked, setUnlocked] = useState(isDeveloperUnlocked);
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState<string | null>(null);
+// Nine tabs in one sideways-scrolling row put half of them off-screen on a
+// phone. Four sections, each with at most four tabs, fit.
+const SECTIONS: { value: Section; label: string; tabs: Tab[] }[] = [
+  { value: 'tenants', label: 'Tenants', tabs: ['groups', 'members'] },
+  { value: 'money', label: 'Money', tabs: ['loans', 'contributions', 'bank', 'expenses'] },
+  { value: 'audit', label: 'Audit', tabs: ['audit', 'health'] },
+  { value: 'data', label: 'Tables', tabs: ['tables'] },
+  { value: 'tools', label: 'Backup', tabs: ['backup'] },
+];
 
-  // Service role key
-  const [serviceKey, setServiceKey] = useState(getActiveServiceRoleKey);
-  const [keyInput, setKeyInput] = useState('');
-  const [keySheet, setKeySheet] = useState(false);
+const TAB_TABLE: Partial<Record<Tab, { table: Table; label: string }>> = {
+  groups: { table: 'groups', label: 'group' },
+  members: { table: 'members', label: 'member' },
+  loans: { table: 'loans', label: 'loan' },
+  contributions: { table: 'contributions', label: 'deposit' },
+  bank: { table: 'bank_statements', label: 'bank statement' },
+  expenses: { table: 'expenses', label: 'expense' },
+  audit: { table: 'audit_log', label: 'audit entry' },
+};
 
-  // Super Admin Client
-  const adminClient = useMemo(() => createSuperAdminClient(serviceKey), [serviceKey]);
+// What a delete does to the books, said before it happens. These rows are
+// history: nothing else in the app removes them, and every share, fund total
+// and reconciliation is computed from them.
+const GENERIC_CONSEQUENCE =
+  'Removes the row permanently. Anything computed from it — balances, shares, votes, schedules — is restated, and rows that point at it may block the delete or be removed with it.';
 
-  // Tab navigation
-  const [tab, setTab] = useState<'groups' | 'members' | 'loans' | 'contributions' | 'bank' | 'expenses' | 'audit' | 'health' | 'backup'>('groups');
-  const [search, setSearch] = useState('');
+const CONSEQUENCE: Record<Table, string> = {
+  groups: 'Deletes the group and everything recorded in it. The database may refuse if records still point at it.',
+  members: 'Removes the member row. The database refuses this if any money is recorded against them — mark them as left in the app instead.',
+  loans: 'Removes the loan from the books. Outstanding totals, lending capacity and the fund all change, and every figure computed from it is restated.',
+  contributions: 'Removes the deposit. The member’s savings, their share of the fund and the group total all drop by this amount. There is no reversal entry — the deposit disappears from history.',
+  bank_statements: 'Removes this reconciliation point. The group will no longer have a record of what the bank said on that date.',
+  expenses: 'Removes the expense. The fund goes up by this amount and the year’s spending cap is recalculated.',
+  audit_log: 'Removes the audit entries permanently. The audit log is meant to be append-only — only do this for test data.',
+};
 
-  // Data Collections
-  const [groups, setGroups] = useState<DbGroup[]>([]);
-  const [members, setMembers] = useState<DbMember[]>([]);
-  const [roles, setRoles] = useState<DbRoleAssignment[]>([]);
-  const [loans, setLoans] = useState<DbLoan[]>([]);
-  const [contributions, setContributions] = useState<DbContribution[]>([]);
-  const [bankStatements, setBankStatements] = useState<DbBankStatement[]>([]);
-  const [expenses, setExpenses] = useState<DbExpense[]>([]);
-  const [auditRows, setAuditRows] = useState<AuditRow[]>([]);
-  const [selectedAudit, setSelectedAudit] = useState<AuditRow | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+// Rows whose removal restates the group's money: type to confirm, not just OK.
+const TYPE_TO_CONFIRM = new Set<Table>(['groups', 'loans', 'contributions', 'bank_statements', 'expenses']);
 
-  // Filter Group ID
-  const [filterGroupId, setFilterGroupId] = useState<string>('all');
+interface PendingDelete {
+  table: Table;
+  ids: string[];
+  label: string;
+  what: string;
+  /** Text the operator must type to enable the button, or null for none. */
+  confirmText: string | null;
+}
 
-  // Edit / Create Sheets
-  const [editGroup, setEditGroup] = useState<DbGroup | null>(null);
-  const [editMember, setEditMember] = useState<DbMember | null>(null);
-  const [isNewGroup, setIsNewGroup] = useState(false);
-  const [isNewMember, setIsNewMember] = useState(false);
-
-  // Role Assignment Sheet
-  const [roleMember, setRoleMember] = useState<DbMember | null>(null);
-  const [selectedRole, setSelectedRole] = useState<Role>('member');
-
-  // Forms
-  const [groupForm, setGroupForm] = useState({ name: '', monthly_rupees: '1000' });
-  const [memberForm, setMemberForm] = useState({
-    group_id: '',
-    full_name: '',
-    phone: '',
-    nominee_name: '',
-    nominee_phone: '',
-  });
-
-  // Health Check State
-  const [healthIssues, setHealthIssues] = useState<IntegrityIssue[]>([]);
-  const [checkingHealth, setCheckingHealth] = useState(false);
-
-  // Verify PIN
-  const handleUnlockPin = (e: React.FormEvent) => {
-    e.preventDefault();
-    haptic(10);
-    const validPin = getDeveloperPIN();
-    if (pinInput.trim() === validPin) {
-      setDeveloperUnlocked(true);
-      setUnlocked(true);
-      setPinError(null);
-    } else {
-      setPinError('Invalid Developer PIN. Access denied.');
-    }
-  };
-
-  // Save Service Role Key
-  const handleSaveKey = () => {
-    haptic(10);
-    if (!keyInput.trim()) return;
-    setActiveServiceRoleKey(keyInput.trim());
-    setServiceKey(keyInput.trim());
-    setKeySheet(false);
-  };
-
-  // Load All System Data across database
-  const refreshAll = useCallback(async () => {
-    if (!adminClient) return;
-    setLoading(true);
-    setActionError(null);
-    try {
-      const [grpRes, memRes, roleRes, loanRes, conRes, bankRes, expRes, auditRes] = await Promise.all([
-        adminClient.from('groups').select('*').order('created_at', { ascending: false }),
-        adminClient.from('members').select('*').order('full_name'),
-        adminClient.from('role_assignments').select('*').is('end_date', null),
-        adminClient.from('loans').select('*').order('requested_at', { ascending: false }),
-        adminClient.from('contributions').select('*').order('paid_on', { ascending: false }),
-        adminClient.from('bank_statements').select('*').order('as_of', { ascending: false }),
-        adminClient.from('expenses').select('*').order('incurred_on', { ascending: false }),
-        adminClient.from('audit_log').select('*').order('occurred_at', { ascending: false }).limit(100),
-      ]);
-
-      if (grpRes.error) throw grpRes.error;
-      if (memRes.error) throw memRes.error;
-      if (roleRes.error) throw roleRes.error;
-      if (loanRes.error) throw loanRes.error;
-      if (conRes.error) throw conRes.error;
-
-      setGroups(grpRes.data || []);
-      setMembers(memRes.data || []);
-      setRoles(roleRes.data || []);
-      setLoans(loanRes.data || []);
-      setContributions(conRes.data || []);
-      setBankStatements(bankRes.data || []);
-      setExpenses(expRes.data || []);
-      setAuditRows((auditRes.data as AuditRow[]) || []);
-    } catch (err: any) {
-      setActionError(err.message || 'Error querying database with developer privileges.');
-    } finally {
-      setLoading(false);
-    }
-  }, [adminClient]);
-
-  useEffect(() => {
-    if (unlocked && adminClient) {
-      void refreshAll();
-    }
-  }, [unlocked, adminClient, refreshAll]);
-
-  // Lookup Maps
-  const groupMap = useMemo(() => new Map(groups.map((g) => [g.id, g.name])), [groups]);
-  const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m.full_name])), [members]);
-  const activeRolesMap = useMemo(() => {
-    const map = new Map<string, Role>();
-    roles.forEach((r) => map.set(`${r.group_id}:${r.member_id}`, r.role));
-    return map;
-  }, [roles]);
-
-  // Total calculated assets
-  const totalLentPaise = useMemo(
-    () => loans.filter((l) => l.status === 'disbursed').reduce((acc, l) => acc + (l.principal_paise || 0), 0),
-    [loans]
-  );
-  const totalContributionsPaise = useMemo(
-    () => contributions.reduce((acc, c) => acc + (c.amount_paise || 0), 0),
-    [contributions]
-  );
-
-  // Jump into a group (Impersonation / Tenant Switch)
-  const handleSwitchToGroup = async (groupId: string, groupName: string) => {
-    haptic(10);
-    setActionError(null);
-    try {
-      const userGroup = userGroups.find((g) => g.id === groupId);
-      if (!userGroup) {
-        setActionError(
-          `Your logged-in account is not a registered member of "${groupName}". To open its member dashboard, first add yourself to this group under "All Members".`
-        );
-        return;
-      }
-      await switchGroup(groupId);
-      nav('/');
-    } catch (err: any) {
-      setActionError(err.message || 'Could not switch tenant.');
-    }
-  };
-
-  // Integrity & Health Audit Runner
-  const runHealthAudit = useCallback(() => {
-    setCheckingHealth(true);
-    const issues: IntegrityIssue[] = [];
-
-    // 1. Check groups for dual Cashier / Accountant roles
-    groups.forEach((g) => {
-      const gRoles = roles.filter((r) => r.group_id === g.id);
-      const cashier = gRoles.find((r) => r.role === 'cashier');
-      const accountant = gRoles.find((r) => r.role === 'accountant');
-      const admin = gRoles.find((r) => r.role === 'admin');
-
-      if (!cashier) {
-        issues.push({
-          severity: 'warn',
-          title: 'Missing Cashier Office',
-          desc: `Group "${g.name}" has no active Cashier assigned. Periods and deposits cannot be processed.`,
-          tenant: g.name,
-        });
-      }
-      if (!accountant) {
-        issues.push({
-          severity: 'warn',
-          title: 'Missing Accountant Office',
-          desc: `Group "${g.name}" has no active Accountant assigned.`,
-          tenant: g.name,
-        });
-      }
-      if (cashier && accountant && cashier.member_id === accountant.member_id) {
-        issues.push({
-          severity: 'danger',
-          title: 'Dual-Role Clash Detected',
-          desc: `The same member (${memberMap.get(cashier.member_id)}) holds both Cashier and Accountant offices!`,
-          tenant: g.name,
-        });
-      }
-      if (!admin) {
-        issues.push({
-          severity: 'danger',
-          title: 'Missing Admin Office',
-          desc: `Group "${g.name}" has no Admin office holder! Handover required.`,
-          tenant: g.name,
-        });
-      }
-    });
-
-    // 2. Orphan check
-    loans.forEach((l) => {
-      if (!groupMap.has(l.group_id)) {
-        issues.push({
-          severity: 'danger',
-          title: 'Orphan Loan Record',
-          desc: `Loan ${l.id} belongs to a non-existent group ID ${l.group_id}.`,
-        });
-      }
-    });
-
-    if (issues.length === 0) {
-      issues.push({
-        severity: 'good',
-        title: 'All Systems Fully Healthy',
-        desc: 'All tenant constraints, office segregation rules, and foreign keys verified cleanly.',
-      });
-    }
-
-    setHealthIssues(issues);
-    setCheckingHealth(false);
-  }, [groups, roles, loans, groupMap, memberMap]);
-
-  useEffect(() => {
-    if (tab === 'health' && healthIssues.length === 0) {
-      runHealthAudit();
-    }
-  }, [tab, healthIssues.length, runHealthAudit]);
-
-  // Full Database JSON Backup Export
-  const handleExportBackup = () => {
-    haptic(10);
-    const dump = {
-      exported_at: new Date().toISOString(),
-      platform: 'Sanchay / SavingsClub Multi-Tenant',
-      groups,
-      members,
-      roles,
-      loans,
-      contributions,
-    };
-    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sanchay-superadmin-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setActionSuccess('Full database JSON export downloaded.');
-  };
-
-  // Multi-Selection State for Bulk Actions
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkDeleting, setBulkDeleting] = useState(false);
-
-  // Clear selections when switching tab or group filter
-  useEffect(() => {
-    setSelectedIds([]);
-  }, [tab, filterGroupId]);
-
-  // CRUD: Delete Group
-  const handleDeleteGroup = async (groupId: string, groupName: string) => {
-    if (!adminClient) return;
-    const confirmPrompt = window.confirm(
-      `⚠️ CRITICAL DEVELOPER ACTION:\n\nAre you sure you want to permanently DELETE group "${groupName}" (${groupId})?\n\nThis will cascade and remove all its members, ledger rows, and loans!`
-    );
-    if (!confirmPrompt) return;
-
-    haptic(20);
-    setLoading(true);
-    setActionError(null);
-    try {
-      const { error } = await adminClient.from('groups').delete().eq('id', groupId);
-      if (error) throw error;
-      setSelectedIds((prev) => prev.filter((id) => id !== groupId));
-      setActionSuccess(`Group "${groupName}" deleted successfully.`);
-      await refreshAll();
-    } catch (err: any) {
-      setActionError(err.message || 'Failed to delete group.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // CRUD: Delete Member
-  const handleDeleteMember = async (memberId: string, memberName: string) => {
-    if (!adminClient) return;
-    const confirmPrompt = window.confirm(
-      `⚠️ Delete Member "${memberName}"?\n\nThis removes the member directly from the database.`
-    );
-    if (!confirmPrompt) return;
-
-    haptic(20);
-    setLoading(true);
-    setActionError(null);
-    try {
-      const { error } = await adminClient.from('members').delete().eq('id', memberId);
-      if (error) throw error;
-      setSelectedIds((prev) => prev.filter((id) => id !== memberId));
-      setActionSuccess(`Member "${memberName}" removed.`);
-      await refreshAll();
-    } catch (err: any) {
-      setActionError(err.message || 'Failed to delete member.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // CRUD: Generic Bulk Delete
-  const handleBulkDelete = async (tableName: string, entityLabel: string) => {
-    if (!adminClient || selectedIds.length === 0) return;
-    const count = selectedIds.length;
-    const confirmPrompt = window.confirm(
-      `⚠️ BULK DELETE CONFIRMATION:\n\nAre you sure you want to permanently DELETE ${count} selected ${entityLabel}(s)?\n\nThis developer operation cannot be undone.`
-    );
-    if (!confirmPrompt) return;
-
-    haptic(30);
-    setBulkDeleting(true);
-    setActionError(null);
-    try {
-      if (tableName === 'audit_log') {
-        const idsToDelete = selectedIds.map(Number);
-        // audit_log is guarded by Postgres trigger trg_audit_immutable.
-        // We use the service_role RPC admin_delete_audit_logs which safely bypasses it.
-        const { error: rpcErr } = await adminClient.rpc('admin_delete_audit_logs', { p_ids: idsToDelete });
-        if (rpcErr) {
-          if (rpcErr.message?.includes('function admin_delete_audit_logs') || rpcErr.code === '42883') {
-            throw new Error(
-              'The "admin_delete_audit_logs" database function is not yet installed in Supabase. Please apply migration 0041_admin_delete_audit_logs.sql or run it in the Supabase SQL Editor.'
-            );
-          }
-          throw rpcErr;
-        }
-      } else {
-        const { error } = await adminClient.from(tableName).delete().in('id', selectedIds);
-        if (error) throw error;
-      }
-      setActionSuccess(`Bulk deleted ${count} ${entityLabel}(s) successfully.`);
-      setSelectedIds([]);
-      await refreshAll();
-    } catch (err: any) {
-      setActionError(err.message || `Failed to bulk delete ${entityLabel}(s).`);
-    } finally {
-      setBulkDeleting(false);
-    }
-  };
-
-  // Selection toggle helper
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
-
-  // Select all or none for visible items
-  const toggleSelectAll = (visibleIds: string[]) => {
-    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
-    if (allSelected) {
-      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
-    } else {
-      setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
-    }
-  };
-
-  // CRUD: Save / Update Group
-  const handleSaveGroup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminClient) return;
-    haptic(10);
-    setLoading(true);
-    setActionError(null);
-    try {
-      const payload: Partial<DbGroup> = {
-        name: groupForm.name.trim(),
-        monthly_contribution_paise: rupeesToPaise(groupForm.monthly_rupees),
-      };
-      if (isNewGroup) {
-        const { error } = await adminClient.from('groups').insert([payload]);
-        if (error) throw error;
-        setActionSuccess(`Group "${groupForm.name}" created.`);
-      } else if (editGroup) {
-        const { error } = await adminClient.from('groups').update(payload).eq('id', editGroup.id);
-        if (error) throw error;
-        setActionSuccess(`Group "${groupForm.name}" updated.`);
-      }
-      setEditGroup(null);
-      setIsNewGroup(false);
-      await refreshAll();
-    } catch (err: any) {
-      setActionError(err.message || 'Failed to save group.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // CRUD: Save / Update Member
-  const handleSaveMember = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminClient) return;
-    haptic(10);
-    setLoading(true);
-    setActionError(null);
-    try {
-      const payload: Partial<DbMember> = {
-        group_id: memberForm.group_id,
-        full_name: memberForm.full_name.trim(),
-        phone: memberForm.phone.trim() || null,
-        nominee_name: memberForm.nominee_name.trim() || null,
-        nominee_phone: memberForm.nominee_phone.trim() || null,
-      };
-      if (isNewMember) {
-        const { error } = await adminClient.from('members').insert([payload]);
-        if (error) throw error;
-        setActionSuccess(`Member "${memberForm.full_name}" created.`);
-      } else if (editMember) {
-        const { error } = await adminClient.from('members').update(payload).eq('id', editMember.id);
-        if (error) throw error;
-        setActionSuccess(`Member "${memberForm.full_name}" updated.`);
-      }
-      setEditMember(null);
-      setIsNewMember(false);
-      await refreshAll();
-    } catch (err: any) {
-      setActionError(err.message || 'Failed to save member.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Role Assignment Action
-  const handleAssignRole = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminClient || !roleMember) return;
-    haptic(10);
-    setLoading(true);
-    setActionError(null);
-    try {
-      // End previous role assignment for this office in this group if changing office holder
-      if (selectedRole !== 'member') {
-        await adminClient
-          .from('role_assignments')
-          .update({ end_date: new Date().toISOString().slice(0, 10) })
-          .eq('group_id', roleMember.group_id)
-          .eq('role', selectedRole)
-          .is('end_date', null);
-      }
-
-      // End member's existing role assignment
-      await adminClient
-        .from('role_assignments')
-        .update({ end_date: new Date().toISOString().slice(0, 10) })
-        .eq('group_id', roleMember.group_id)
-        .eq('member_id', roleMember.id)
-        .is('end_date', null);
-
-      // Insert new role if not ordinary member
-      if (selectedRole !== 'member') {
-        const { error: insErr } = await adminClient.from('role_assignments').insert([
-          {
-            group_id: roleMember.group_id,
-            member_id: roleMember.id,
-            role: selectedRole,
-            start_date: new Date().toISOString().slice(0, 10),
-          },
-        ]);
-        if (insErr) throw insErr;
-      }
-
-      setActionSuccess(`Assigned ${roleLabel(selectedRole)} to ${roleMember.full_name}.`);
-      setRoleMember(null);
-      await refreshAll();
-    } catch (err: any) {
-      setActionError(err.message || 'Failed to update role assignment.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Filtered lists
-  const filteredGroups = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return groups;
-    return groups.filter((g) => g.name.toLowerCase().includes(q) || g.id.toLowerCase().includes(q));
-  }, [groups, search]);
-
-  const filteredMembers = useMemo(() => {
-    let list = members;
-    if (filterGroupId !== 'all') {
-      list = list.filter((m) => m.group_id === filterGroupId);
-    }
-    const q = search.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
-      (m) =>
-        m.full_name.toLowerCase().includes(q) ||
-        (m.phone && m.phone.includes(q)) ||
-        m.id.toLowerCase().includes(q)
-    );
-  }, [members, filterGroupId, search]);
-
-  const filteredLoans = useMemo(() => {
-    let list = loans;
-    if (filterGroupId !== 'all') {
-      list = list.filter((l) => l.group_id === filterGroupId);
-    }
-    return list;
-  }, [loans, filterGroupId]);
-
-  const filteredContributions = useMemo(() => {
-    let list = contributions;
-    if (filterGroupId !== 'all') {
-      list = list.filter((c) => c.group_id === filterGroupId);
-    }
-    return list;
-  }, [contributions, filterGroupId]);
-
-  const filteredBankStatements = useMemo(() => {
-    let list = bankStatements;
-    if (filterGroupId !== 'all') {
-      list = list.filter((b) => b.group_id === filterGroupId);
-    }
-    return list;
-  }, [bankStatements, filterGroupId]);
-
-  const filteredExpenses = useMemo(() => {
-    let list = expenses;
-    if (filterGroupId !== 'all') {
-      list = list.filter((e) => e.group_id === filterGroupId);
-    }
-    const q = search.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((e) => e.description.toLowerCase().includes(q) || e.category.toLowerCase().includes(q));
-  }, [expenses, filterGroupId, search]);
-
-  const filteredAuditRows = useMemo(() => {
-    let list = auditRows;
-    const q = search.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
-      (a) =>
-        a.table_name.toLowerCase().includes(q) ||
-        a.action.toLowerCase().includes(q) ||
-        String(a.row_id).toLowerCase().includes(q)
-    );
-  }, [auditRows, search]);
-
-  // SCREEN 1: PIN LOCK
-  if (!unlocked) {
-    return (
-      <div className="superadmin-shell">
-        <header className="appbar">
-          <div className="appbar-inner" style={{ maxWidth: 1120 }}>
-            <span className="row-ico coral" style={{ width: 36, height: 36, borderRadius: 10, flex: 'none' }}>
-              <IconLock width={18} height={18} />
-            </span>
-            <span className="appbar-title">
-              <span className="appbar-name">Developer Portal</span>
-              <span className="appbar-sub">Restricted Authorization Required</span>
-            </span>
-          </div>
-        </header>
-
-        <div className="superadmin-container" style={{ alignItems: 'center', justifyContent: 'center', minHeight: '70vh' }}>
-          <div style={{ maxWidth: 440, width: '100%' }}>
-            <div
-              className="panel"
-              style={{
-                padding: 24,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                textAlign: 'center',
-                gap: 16,
-                border: '1px solid color-mix(in srgb, var(--coral) 40%, var(--hairline))',
-                background: 'radial-gradient(140% 120% at 50% 0%, var(--coral-ghost), var(--surface))',
-              }}
-            >
-              <span className="row-ico coral" style={{ width: 56, height: 56, borderRadius: 20 }}>
-                <IconLock width={26} height={26} />
-              </span>
-              <div>
-                <h2 style={{ fontSize: '1.3rem', color: 'var(--text)' }}>Developer Access Only</h2>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-3)', marginTop: 4 }}>
-                  This route provides unrestricted full database access across all tenants. Enter the Developer PIN to proceed.
-                </p>
-              </div>
-
-              {pinError && <Notice tone="danger">{pinError}</Notice>}
-
-              <form onSubmit={handleUnlockPin} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <input
-                  type="password"
-                  placeholder="Enter Developer PIN"
-                  value={pinInput}
-                  onChange={(e) => setPinInput(e.target.value)}
-                  autoFocus
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    borderRadius: 'var(--r-sm)',
-                    border: '1px solid var(--hairline)',
-                    background: 'var(--surface-2)',
-                    color: 'var(--text)',
-                    fontSize: '1.1rem',
-                    textAlign: 'center',
-                    letterSpacing: '0.2em',
-                  }}
-                />
-                <button type="submit" className="primary lg">
-                  Unlock Developer Portal
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+function shell(sub: string, body: React.ReactNode) {
   return (
     <div className="superadmin-shell">
       <header className="appbar">
@@ -742,308 +187,759 @@ export default function Admin() {
             <IconShield width={16} height={16} />
           </span>
           <span className="appbar-title">
-            <span className="appbar-name" style={{ fontSize: '1.15rem' }}>Developer Super Admin</span>
-            <span className="appbar-sub" style={{ fontSize: '0.74rem' }}>Unrestricted Multi-Tenant Database Console</span>
+            <span className="appbar-name">Developer Super Admin</span>
+            <span className="appbar-sub">{sub}</span>
           </span>
         </div>
       </header>
+      <div className="superadmin-container">{body}</div>
+    </div>
+  );
+}
 
-      <div className="superadmin-container">
-        {/* DEVELOPER STATUS BAR */}
-        <div
-          className="panel"
-          style={{
-            background: 'linear-gradient(135deg, color-mix(in srgb, var(--coral) 15%, var(--surface)), var(--surface))',
-            border: '1px solid color-mix(in srgb, var(--coral) 30%, var(--hairline))',
-            padding: 16,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-          }}
-        >
+function gate(title: string, text: React.ReactNode, action?: React.ReactNode) {
+  return (
+    <div style={{ maxWidth: 460, width: '100%', margin: '8vh auto 0' }}>
+      <div className="panel" style={{ padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 14 }}>
+        <span className="row-ico coral" style={{ width: 52, height: 52, borderRadius: 18 }}>
+          <IconLock width={24} height={24} />
+        </span>
+        <h2 style={{ fontSize: '1.2rem' }}>{title}</h2>
+        <div style={{ fontSize: '0.86rem', color: 'var(--text-3)', lineHeight: 1.5, width: '100%' }}>{text}</div>
+        {action}
+      </div>
+    </div>
+  );
+}
+
+function trash(onClick: () => void, label: string) {
+  return (
+    <button
+      type="button"
+      className="icon-btn"
+      title={`Delete ${label}`}
+      aria-label={`Delete ${label}`}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      style={{ width: 30, height: 30, color: 'var(--coral)' }}
+    >
+      <IconTrash width={12} height={12} />
+    </button>
+  );
+}
+
+type Access =
+  | { state: 'checking' }
+  | { state: 'locked'; error: string | null }
+  | { state: 'unreachable'; message: string }
+  | { state: 'ok'; email: string | null };
+
+export default function Admin() {
+  const nav = useNavigate();
+  // The console has its own sign-in, separate from the app's (see
+  // lib/superAdmin.ts). If the developer also happens to be signed in to the
+  // app as a member, "Open group" can use that; otherwise it says why not.
+  const { switchGroup, groups: userGroups } = useSession();
+
+  // ---------------------------------------------------------------- access
+  // Decided by the server on every call; this is only what to render.
+  const [access, setAccess] = useState<Access>({ state: 'checking' });
+  const [attempt, setAttempt] = useState(0);
+  const [login, setLogin] = useState({ email: '', password: '' });
+  const [signingIn, setSigningIn] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!(await hasSuperAdminSession())) {
+        if (!cancelled) setAccess((a) => (a.state === 'locked' ? a : { state: 'locked', error: null }));
+        return;
+      }
+      setAccess({ state: 'checking' });
+      try {
+        const r = await superAdmin<{ email: string | null }>('whoami');
+        if (!cancelled) setAccess({ state: 'ok', email: r.email });
+      } catch (e) {
+        if (cancelled) return;
+        const status = e instanceof SuperAdminError ? e.status : 0;
+        // 401/403 is the server's verdict on this login: sign it out of the
+        // console so the form comes back. Anything else means no verdict was
+        // reached, so keep the session and offer a retry.
+        if (status === 401 || status === 403) {
+          await superAdminSignOut();
+          setAccess({ state: 'locked', error: (e as Error).message });
+        } else {
+          setAccess({ state: 'unreachable', message: (e as Error).message });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [attempt]);
+
+  const signIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!login.email.trim() || !login.password) return;
+    haptic(10);
+    setSigningIn(true);
+    try {
+      await superAdminSignIn(login.email, login.password);
+      setLogin({ email: login.email, password: '' });
+      setAttempt((n) => n + 1);
+    } catch (err) {
+      setAccess({ state: 'locked', error: (err as Error).message });
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
+  const lock = async () => {
+    await superAdminSignOut();
+    setData(EMPTY);
+    setLoaded(false);
+    setAccess({ state: 'locked', error: null });
+  };
+
+  // ------------------------------------------------------------------ data
+  const [data, setData] = useState<LoadResult>(EMPTY);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  const refreshAll = useCallback(async () => {
+    setLoading(true);
+    setActionError(null);
+    try {
+      const r = await superAdmin<LoadResult>('load');
+      setData({ ...EMPTY, ...r });
+      setLoaded(true);
+    } catch (e) {
+      setActionError((e as Error).message || 'Could not load the database.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (access.state === 'ok') void refreshAll();
+  }, [access.state, refreshAll]);
+
+  // A success message that never leaves stops being read. Errors stay until
+  // dismissed: they may need copying.
+  useEffect(() => {
+    if (!actionSuccess) return;
+    const t = setTimeout(() => setActionSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [actionSuccess]);
+
+  const { groups, members, role_assignments: roles, loans, loan_repayments: repayments,
+    contributions, bank_statements: bankStatements, expenses, audit_log: auditRows } = data;
+
+  // ------------------------------------------------------------ navigation
+  const [section, setSection] = useState<Section>('tenants');
+  const [tab, setTab] = useState<Tab>('groups');
+  const [search, setSearch] = useState('');
+  const [filterGroupId, setFilterGroupId] = useState<string>('all');
+
+  // ------------------------------------------------------------- sheets
+  const [editGroup, setEditGroup] = useState<DbGroup | null>(null);
+  const [editMember, setEditMember] = useState<DbMember | null>(null);
+  const [isNewGroup, setIsNewGroup] = useState(false);
+  const [isNewMember, setIsNewMember] = useState(false);
+  const [roleMember, setRoleMember] = useState<DbMember | null>(null);
+  const [selectedRole, setSelectedRole] = useState<Role>('member');
+  const [selectedAudit, setSelectedAudit] = useState<DbAudit | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [typed, setTyped] = useState('');
+  // One editor for every table: the row as the database holds it, all of its
+  // columns, rather than the five fields a bespoke form happened to include.
+  const [editing, setEditing] = useState<{ table: string; pk: string; edit: boolean; row: Record<string, unknown> } | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const [groupForm, setGroupForm] = useState({ name: '', monthly_rupees: '1000' });
+  const [memberForm, setMemberForm] = useState({
+    group_id: '', full_name: '', phone: '', nominee_name: '', nominee_phone: '',
+  });
+
+  // ---------------------------------------------------------- lookups
+  const groupMap = useMemo(() => new Map(groups.map((g) => [g.id, g.name])), [groups]);
+  const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m.full_name])), [members]);
+  const memberCountByGroup = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of members) if (m.status === 'active') map.set(m.group_id, (map.get(m.group_id) ?? 0) + 1);
+    return map;
+  }, [members]);
+  const activeRolesMap = useMemo(() => {
+    const map = new Map<string, Role>();
+    roles.forEach((r) => map.set(`${r.group_id}:${r.member_id}`, r.role));
+    return map;
+  }, [roles]);
+  const myGroupIds = useMemo(() => new Set(userGroups.map((g) => g.id)), [userGroups]);
+
+  // Turns an id column into the name it points at, for the editor and the
+  // Tables browser. An id alone says nothing to the person fixing the row.
+  const describe = useCallback((col: string, value: unknown): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    if (col === 'group_id' || col === 'last_group_id') return groupMap.get(value);
+    if (/(^|_)(member|borrower|guarantor|voter|recorded_by|created_by|proposed_by|uploaded_by|confirmed_by)(_id)?$/.test(col)) {
+      return memberMap.get(value);
+    }
+    if (col === 'loan_id') {
+      const l = loans.find((x) => x.id === value);
+      return l ? `loan to ${(l.borrower_id && memberMap.get(l.borrower_id)) || l.outside_borrower_name || 'someone'}` : undefined;
+    }
+    return undefined;
+  }, [groupMap, memberMap, loans]);
+
+  const openEditor = (table: string, row: object, edit = true) => {
+    haptic(10);
+    setEditing({ table, pk: table === 'group_invites' ? 'code' : 'id', edit, row: row as Record<string, unknown> });
+  };
+
+  // Edit and delete, side by side, at the end of a list row.
+  const rowActions = (table: string, row: { id: string }, label: string, onDelete: () => void) => (
+    <span style={{ display: 'inline-flex', gap: 6 }}>
+      <button
+        type="button"
+        className="icon-btn"
+        title={`Edit ${label}`}
+        aria-label={`Edit ${label}`}
+        onClick={(e) => { e.stopPropagation(); openEditor(table, row); }}
+        style={{ width: 30, height: 30 }}
+      >
+        <IconEdit width={12} height={12} />
+      </button>
+      {trash(onDelete, label)}
+    </span>
+  );
+
+  const borrowerName = useCallback(
+    (l: DbLoan) => (l.borrower_id ? memberMap.get(l.borrower_id) : null)
+      ?? l.outside_borrower_name ?? 'Unknown borrower',
+    [memberMap],
+  );
+
+  // What is still owed on each loan, from the repayments actually recorded.
+  // The principal lent is not what is out: a half-repaid loan is half out.
+  const repaidByLoan = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of repayments) map.set(r.loan_id, (map.get(r.loan_id) ?? 0) + (r.principal_paise || 0));
+    return map;
+  }, [repayments]);
+  const runningLoans = useMemo(() => loans.filter((l) => l.status === 'disbursed'), [loans]);
+  const outstandingPaise = useMemo(
+    () => runningLoans.reduce((s, l) => s + Math.max(0, l.principal_paise - (repaidByLoan.get(l.id) ?? 0)), 0),
+    [runningLoans, repaidByLoan],
+  );
+  const totalContributionsPaise = useMemo(
+    () => contributions.reduce((acc, c) => acc + (c.amount_paise || 0), 0),
+    [contributions],
+  );
+
+  // ------------------------------------------------------------- filtering
+  const q = search.trim().toLowerCase();
+  const inGroup = useCallback(
+    (groupId: string | null | undefined) => filterGroupId === 'all' || groupId === filterGroupId,
+    [filterGroupId],
+  );
+  const has = useCallback(
+    (...fields: (string | null | undefined)[]) => !q || fields.some((f) => f && f.toLowerCase().includes(q)),
+    [q],
+  );
+
+  const filteredGroups = useMemo(
+    () => groups.filter((g) => inGroup(g.id) && has(g.name, g.id)),
+    [groups, inGroup, has],
+  );
+  const filteredMembers = useMemo(
+    () => members.filter((m) => inGroup(m.group_id)
+      && has(m.full_name, m.phone, m.id, groupMap.get(m.group_id), m.status)),
+    [members, inGroup, has, groupMap],
+  );
+  const filteredLoans = useMemo(
+    () => loans.filter((l) => inGroup(l.group_id)
+      && has(borrowerName(l), l.purpose, l.status, groupMap.get(l.group_id), l.id)),
+    [loans, inGroup, has, borrowerName, groupMap],
+  );
+  const filteredContributions = useMemo(
+    () => contributions.filter((c) => inGroup(c.group_id)
+      && has(memberMap.get(c.member_id), c.method, groupMap.get(c.group_id), c.id)),
+    [contributions, inGroup, has, memberMap, groupMap],
+  );
+  const filteredBankStatements = useMemo(
+    () => bankStatements.filter((b) => inGroup(b.group_id) && has(groupMap.get(b.group_id), b.note, b.as_of)),
+    [bankStatements, inGroup, has, groupMap],
+  );
+  const filteredExpenses = useMemo(
+    () => expenses.filter((e) => inGroup(e.group_id)
+      && has(e.description, e.category, e.status, groupMap.get(e.group_id))),
+    [expenses, inGroup, has, groupMap],
+  );
+  const filteredAuditRows = useMemo(
+    () => auditRows.filter((a) => inGroup(a.group_id) && has(a.table_name, a.action, String(a.row_id))),
+    [auditRows, inGroup, has],
+  );
+
+  const visibleIds = useMemo(() => {
+    const pick: Record<Tab, { id: string | number }[]> = {
+      groups: filteredGroups, members: filteredMembers, loans: filteredLoans,
+      contributions: filteredContributions, bank: filteredBankStatements,
+      expenses: filteredExpenses, audit: filteredAuditRows, health: [], tables: [], backup: [],
+    };
+    return pick[tab].map((x) => String(x.id));
+  }, [tab, filteredGroups, filteredMembers, filteredLoans, filteredContributions,
+    filteredBankStatements, filteredExpenses, filteredAuditRows]);
+
+  // ------------------------------------------------------------- selection
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Anything that changes what is on screen clears the selection. Keeping it
+  // across a search meant "Delete (4)" could remove three rows that were no
+  // longer visible.
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [tab, filterGroupId, search]);
+
+  // And bulk delete only ever acts on rows that are both selected AND shown.
+  const selectedVisible = useMemo(
+    () => selectedIds.filter((id) => visibleIds.includes(id)),
+    [selectedIds, visibleIds],
+  );
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+  const toggleSelectAll = () => setSelectedIds(allSelected ? [] : visibleIds);
+
+  // ---------------------------------------------------------------- deletes
+  const askDelete = (table: Table, ids: string[], label: string, what: string, confirmName?: string) => {
+    haptic(15);
+    setTyped('');
+    // Tables without a written consequence are the ones this screen knows
+    // least about: type to confirm, the safe default.
+    const needsTyping = TYPE_TO_CONFIRM.has(table) || !(table in CONSEQUENCE) || ids.length > 1;
+    setPendingDelete({
+      table, ids, label, what,
+      confirmText: needsTyping ? (table === 'groups' && confirmName ? confirmName : 'DELETE') : null,
+    });
+  };
+
+  const runDelete = async () => {
+    if (!pendingDelete) return;
+    const { table, ids, label } = pendingDelete;
+    haptic(30);
+    setBusy(true);
+    setActionError(null);
+    try {
+      const r = await superAdmin<{ deleted: number }>('delete', { table, ids });
+      // Report what the database did, not what was asked for.
+      setActionSuccess(
+        r.deleted === ids.length
+          ? `Deleted ${r.deleted} ${label}${r.deleted === 1 ? '' : 's'}.`
+          : `Deleted ${r.deleted} of ${ids.length} ${label}s — the rest were already gone.`,
+      );
+      setSelectedIds([]);
+      setPendingDelete(null);
+      setEditing(null);
+      setReloadKey((n) => n + 1);
+      await refreshAll();
+    } catch (e) {
+      setActionError((e as Error).message || `Could not delete the ${label}.`);
+      setPendingDelete(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ------------------------------------------------------------ other writes
+  const handleSaveGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    haptic(10);
+    setBusy(true);
+    setActionError(null);
+    try {
+      await superAdmin('save_group', {
+        id: isNewGroup ? undefined : editGroup?.id,
+        name: groupForm.name,
+        monthly_contribution_paise: rupeesToPaise(groupForm.monthly_rupees),
+      });
+      setActionSuccess(`Group "${groupForm.name.trim()}" ${isNewGroup ? 'created' : 'updated'}.`);
+      setEditGroup(null);
+      setIsNewGroup(false);
+      await refreshAll();
+    } catch (err) {
+      setActionError((err as Error).message || 'Could not save the group.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSaveMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    haptic(10);
+    setBusy(true);
+    setActionError(null);
+    try {
+      await superAdmin('save_member', {
+        id: isNewMember ? undefined : editMember?.id,
+        ...memberForm,
+      });
+      setActionSuccess(`Member "${memberForm.full_name.trim()}" ${isNewMember ? 'created' : 'updated'}.`);
+      setEditMember(null);
+      setIsNewMember(false);
+      await refreshAll();
+    } catch (err) {
+      setActionError((err as Error).message || 'Could not save the member.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // One RPC, one transaction (0043). The date is the operator's LOCAL day:
+  // toISOString() would record yesterday between 00:00 and 05:29 IST.
+  const handleAssignRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roleMember) return;
+    haptic(10);
+    setBusy(true);
+    setActionError(null);
+    try {
+      await superAdmin('assign_role', {
+        group_id: roleMember.group_id,
+        member_id: roleMember.id,
+        role: selectedRole,
+        on: today(),
+      });
+      setActionSuccess(`${roleMember.full_name} is now ${roleLabel(selectedRole)}.`);
+      setRoleMember(null);
+      await refreshAll();
+    } catch (err) {
+      setActionError((err as Error).message || 'Could not change the role.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSwitchToGroup = async (groupId: string) => {
+    haptic(10);
+    setActionError(null);
+    try {
+      await switchGroup(groupId);
+      nav('/');
+    } catch (err) {
+      setActionError((err as Error).message || 'Could not open the group.');
+    }
+  };
+
+  const handleExportBackup = async () => {
+    haptic(10);
+    setBusy(true);
+    setActionError(null);
+    try {
+      const dump = await superAdmin<{ exported_at: string; tables: Record<string, unknown[]> }>('backup');
+      const rows = Object.values(dump.tables).reduce((s, t) => s + t.length, 0);
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `savingsclub-backup-${toDateString()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setActionSuccess(`Backup downloaded: ${Object.keys(dump.tables).length} tables, ${rows} rows.`);
+    } catch (err) {
+      setActionError((err as Error).message || 'Could not build the backup.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ------------------------------------------------------------ health audit
+  // Derived from the data, not stored: it used to run once and then describe
+  // a database that had since changed.
+  const healthIssues = useMemo<IntegrityIssue[]>(() => {
+    const issues: IntegrityIssue[] = [];
+    const memberIds = new Set(members.map((m) => m.id));
+
+    for (const g of groups) {
+      const gRoles = roles.filter((r) => r.group_id === g.id);
+      const cashier = gRoles.find((r) => r.role === 'cashier');
+      const accountant = gRoles.find((r) => r.role === 'accountant');
+      if (!gRoles.some((r) => r.role === 'admin')) {
+        issues.push({ severity: 'danger', title: 'No admin', tenant: g.name,
+          desc: 'Nobody holds the admin office. Assign one under Members.' });
+      }
+      if (!cashier) {
+        issues.push({ severity: 'warn', title: 'No cashier', tenant: g.name,
+          desc: 'Contributions, repayments and loans cannot be recorded until one is assigned.' });
+      }
+      if (!accountant) {
+        issues.push({ severity: 'warn', title: 'No accountant', tenant: g.name,
+          desc: 'Bank reconciliation cannot be recorded until one is assigned.' });
+      }
+      if (cashier && accountant && cashier.member_id === accountant.member_id) {
+        issues.push({ severity: 'danger', title: 'Cashier and accountant are the same person', tenant: g.name,
+          desc: `${memberMap.get(cashier.member_id) ?? 'One member'} holds both offices.` });
+      }
+      const latestBank = bankStatements
+        .filter((b) => b.group_id === g.id)
+        .reduce<DbBankStatement | undefined>((latest, b) => (!latest || b.as_of > latest.as_of ? b : latest), undefined);
+      if (latestBank && latestBank.difference_paise !== 0) {
+        issues.push({ severity: 'warn', title: 'Bank does not match the books', tenant: g.name,
+          desc: `Statement of ${fmtDate(latestBank.as_of)} is off by ${formatPaise(latestBank.difference_paise)}.` });
+      }
+      const waiting = members.filter((m) => m.group_id === g.id && m.status === 'pending').length;
+      if (waiting) {
+        issues.push({ severity: 'warn', title: `${waiting} waiting for approval`, tenant: g.name,
+          desc: 'Joined with an invite code and cannot see anything until an officer approves them.' });
+      }
+    }
+
+    const orphan = (what: string, n: number) => {
+      if (n) issues.push({ severity: 'danger', title: `${n} orphan ${what}`,
+        desc: `${what[0].toUpperCase()}${what.slice(1)} that point at a group or member that no longer exists.` });
+    };
+    orphan('members', members.filter((m) => !groupMap.has(m.group_id)).length);
+    orphan('loans', loans.filter((l) => !groupMap.has(l.group_id)
+      || (l.borrower_id !== null && !memberIds.has(l.borrower_id))).length);
+    orphan('deposits', contributions.filter((c) => !groupMap.has(c.group_id) || !memberIds.has(c.member_id)).length);
+
+    if (issues.length === 0) {
+      issues.push({ severity: 'good', title: 'Everything checks out',
+        desc: 'Every group has its offices filled, the latest bank statements balance, and no record is orphaned.' });
+    }
+    return issues;
+  }, [groups, members, roles, loans, contributions, bankStatements, groupMap, memberMap]);
+
+  // ================================================================ render
+  if (access.state !== 'ok') {
+    if (access.state === 'checking') {
+      return shell('Checking access', <SkeletonList rows={3} />);
+    }
+    if (access.state === 'unreachable') {
+      return shell('Console unavailable', gate(
+        'Cannot reach the console',
+        <>
+          <p style={{ margin: 0 }}>{access.message}</p>
+          <p style={{ margin: '10px 0 0' }}>
+            This says nothing about whether your login has access — that is checked once the
+            function answers.
+          </p>
+        </>,
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+          <button type="button" className="primary lg" onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </button>
+          <button type="button" onClick={() => void lock()}>Sign out</button>
+        </div>,
+      ));
+    }
+    return shell('Sign in', gate(
+      'Super admin sign-in',
+      <>
+        <p style={{ margin: 0 }}>
+          A developer login, separate from the app — it does not sign you in to any group. Checked on the
+          server on every request, and forgotten when this tab closes.
+        </p>
+        {access.error && (
+          <div style={{ marginTop: 12, textAlign: 'left' }}><Notice tone="danger">{access.error}</Notice></div>
+        )}
+      </>,
+      <form onSubmit={(e) => void signIn(e)} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <input
+          type="email"
+          placeholder="Email"
+          aria-label="Email"
+          value={login.email}
+          onChange={(e) => setLogin({ ...login, email: e.target.value })}
+          autoFocus
+          autoComplete="username"
+          required
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          aria-label="Password"
+          value={login.password}
+          onChange={(e) => setLogin({ ...login, password: e.target.value })}
+          autoComplete="current-password"
+          required
+        />
+        <button type="submit" className="primary lg" disabled={signingIn || !login.email.trim() || !login.password}>
+          {signingIn ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>,
+    ));
+  }
+
+  const sectionTabs = SECTIONS.find((s) => s.value === section)!.tabs;
+  const tabCounts: Record<Tab, number | undefined> = {
+    groups: filteredGroups.length, members: filteredMembers.length, loans: filteredLoans.length,
+    contributions: filteredContributions.length, bank: filteredBankStatements.length,
+    expenses: filteredExpenses.length, audit: filteredAuditRows.length,
+    health: healthIssues.filter((i) => i.severity !== 'good').length || undefined, tables: undefined, backup: undefined,
+  };
+  const tabLabels: Record<Tab, string> = {
+    groups: 'Groups', members: 'Members', loans: 'Loans', contributions: 'Deposits',
+    bank: 'Bank', expenses: 'Expenses', audit: 'Audit log', health: 'Health', tables: 'All tables', backup: 'JSON backup',
+  };
+  const tableInfo = TAB_TABLE[tab];
+  const showList = loaded;
+
+  const checkbox = (id: string, label: string) => (
+    <input
+      type="checkbox"
+      className="superadmin-checkbox"
+      checked={selectedIds.includes(id)}
+      onChange={() => toggleSelect(id)}
+      onClick={(e) => e.stopPropagation()}
+      aria-label={`Select ${label}`}
+    />
+  );
+  const empty = (icon: React.ReactNode, title: string) => (
+    <div className="empty" style={{ padding: '32px 16px' }}>
+      <div className="empty-ico" style={{ width: 44, height: 44 }}>{icon}</div>
+      <div style={{ fontWeight: 600, color: 'var(--text-2)' }}>{title}</div>
+      <div style={{ fontSize: '0.82rem', color: 'var(--text-3)', marginTop: 4 }}>
+        {q || filterGroupId !== 'all' ? 'Nothing matches the current search or group filter.' : 'Nothing recorded yet.'}
+      </div>
+    </div>
+  );
+
+  return shell(access.email ? `Signed in as ${access.email}` : 'Unrestricted multi-tenant console', (
+    <>
+      {/* STATUS */}
+      <div
+        className="panel"
+        style={{
+          background: 'linear-gradient(135deg, color-mix(in srgb, var(--coral) 15%, var(--surface)), var(--surface))',
+          border: '1px solid color-mix(in srgb, var(--coral) 30%, var(--hairline))',
+          padding: 16, display: 'flex', flexDirection: 'column', gap: 12,
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="row-ico coral" style={{ width: 42, height: 42, borderRadius: 'var(--r-sm)' }}>
-              <IconShield width={20} height={20} />
-            </span>
-            <div>
-              <div style={{ fontFamily: 'var(--display)', fontSize: '1.15rem', fontWeight: 700, color: 'var(--text)' }}>
-                Database Super Admin
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>
-                RLS Bypassed · Master Service Role {serviceKey ? 'Active' : 'Unset'}
-              </div>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <Tag tone="mint">Server-checked access</Tag>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>RLS bypassed</span>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              className="sec-link"
-              onClick={() => {
-                setKeyInput(serviceKey);
-                setKeySheet(true);
-              }}
-              style={{ fontSize: '0.78rem' }}
-            >
-              <IconKey width={13} height={13} style={{ marginRight: 4 }} />
-              {serviceKey ? 'Service Key Set' : 'Configure Key'}
-            </button>
-            <button
-              type="button"
-              className="sec-link"
-              onClick={() => {
-                setDeveloperUnlocked(false);
-                setUnlocked(false);
-              }}
-              style={{ fontSize: '0.78rem', color: 'var(--coral)' }}
-            >
-              Lock Portal
-            </button>
-          </div>
+          <button type="button" className="sec-link" onClick={() => void lock()} style={{ fontSize: '0.78rem', color: 'var(--coral)' }}>
+            <IconLock width={12} height={12} style={{ marginRight: 4 }} />
+            Sign out
+          </button>
         </div>
 
-        {/* Global 4-Metric Grid */}
         <div className="stats four">
-          <Stat k="All Groups" v={groups.length} s="All DB Tenants" tone="mint" />
-          <Stat k="All Members" v={members.length} s="Across All Groups" tone="mint" />
-          <Stat k="Loans Out" v={loans.length} s={formatPaise(totalLentPaise)} tone="amber" />
-          <Stat k="Total Deposited" v={formatPaise(totalContributionsPaise)} s={`${contributions.length} rows`} tone="mint" />
+          <Stat k="Groups" v={groups.length} s="all tenants" tone="mint" />
+          <Stat k="Members" v={members.filter((m) => m.status === 'active').length}
+            s={`active · ${members.length} total`} tone="mint" />
+          <Stat k="Loans running" v={runningLoans.length} s={`${formatPaise(outstandingPaise)} still owed`} tone="amber" />
+          <Stat k="Total deposited" v={formatPaise(totalContributionsPaise)} s={`${contributions.length} deposits`} tone="mint" />
         </div>
       </div>
 
-      {actionError && <Notice tone="danger">{actionError}</Notice>}
-      {actionSuccess && <Notice tone="good">{actionSuccess}</Notice>}
-
-      {!serviceKey && (
-        <Notice tone="warn">
-          <strong>Service Role Key Required:</strong> To bypass Row Level Security (RLS) and edit/delete any data across tenants, provide your Supabase <code>service_role</code> key.
-          <button
-            type="button"
-            className="sec-link"
-            style={{ marginLeft: 8, textDecoration: 'underline' }}
-            onClick={() => setKeySheet(true)}
-          >
-            Enter Key
-          </button>
+      {actionError && (
+        <Notice tone="danger" onClick={() => setActionError(null)}>
+          {actionError} <span className="dim">· tap to dismiss</span>
         </Notice>
       )}
+      {actionSuccess && <Notice tone="good">{actionSuccess}</Notice>}
 
-      {/* Tabs & Controls */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* TABS & CONTROLS */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <Segments
-          value={tab}
-          options={[
-            { value: 'groups', label: 'All Groups', count: groups.length },
-            { value: 'members', label: 'All Members', count: filteredMembers.length },
-            { value: 'loans', label: 'Loans', count: filteredLoans.length },
-            { value: 'contributions', label: 'Deposits', count: filteredContributions.length },
-            { value: 'bank', label: 'Bank Statements', count: filteredBankStatements.length },
-            { value: 'expenses', label: 'Expenses', count: filteredExpenses.length },
-            { value: 'audit', label: 'Audit History', count: filteredAuditRows.length },
-            { value: 'health', label: 'Health Audit' },
-            { value: 'backup', label: 'JSON Backup' },
-          ]}
-          onChange={(t) => {
+          value={section}
+          options={SECTIONS.map((s) => ({ value: s.value, label: s.label }))}
+          onChange={(s) => {
             haptic(10);
-            setTab(t as typeof tab);
+            setSection(s);
+            setTab(SECTIONS.find((x) => x.value === s)!.tabs[0]);
           }}
         />
+        {sectionTabs.length > 1 && (
+          <Segments
+            value={tab}
+            options={sectionTabs.map((t) => ({ value: t, label: tabLabels[t], count: tabCounts[t] }))}
+            onChange={(t) => { haptic(10); setTab(t); }}
+          />
+        )}
 
-        {/* Polished Controls Bar with Group Filter & Search */}
         {tab !== 'health' && tab !== 'backup' && (
           <div
             className="superadmin-controls"
             style={{
-              display: 'flex',
-              gap: 10,
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              background: 'var(--surface)',
-              padding: 10,
-              borderRadius: 'var(--r)',
-              border: '1px solid var(--hairline)',
+              display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+              background: 'var(--surface)', padding: 10, borderRadius: 'var(--r)', border: '1px solid var(--hairline)',
             }}
           >
             <select
               value={filterGroupId}
               onChange={(e) => setFilterGroupId(e.target.value)}
-              style={{
-                background: 'var(--surface-2)',
-                border: '1px solid var(--hairline)',
-                borderRadius: 'var(--r-sm)',
-                padding: '9px 12px',
-                color: 'var(--text)',
-                fontSize: '0.85rem',
-                minWidth: 160,
-              }}
+              aria-label="Filter by group"
+              style={{ minWidth: 160, width: 'auto', flex: 'none', border: '1px solid var(--hairline)' }}
             >
-              <option value="all">Filter: All Groups ({groups.length})</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
+              <option value="all">All groups ({groups.length})</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
-
             <input
-              type="text"
-              placeholder="Search records by name, phone, or ID..."
+              type="search"
+              className="sa-search"
+              placeholder="Search"
+              aria-label="Search records"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{
-                flex: 1,
-                minWidth: 160,
-                background: 'var(--surface-2)',
-                border: '1px solid var(--hairline)',
-                borderRadius: 'var(--r-sm)',
-                padding: '9px 14px',
-                color: 'var(--text)',
-                fontSize: '0.85rem',
-              }}
+              style={{ flex: 1, minWidth: 160, border: '1px solid var(--hairline)' }}
             />
-
-            <button
-              type="button"
-              className="primary"
-              onClick={() => void refreshAll()}
-              disabled={loading}
-              style={{ padding: '9px 16px', fontSize: '0.82rem', borderRadius: 'var(--r-sm)', whiteSpace: 'nowrap' }}
-            >
+            <button type="button" className="sa-refresh" onClick={() => void refreshAll()} disabled={loading}>
               {loading ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
         )}
 
-        {/* BULK ACTION BAR */}
-        {tab !== 'health' && tab !== 'backup' && (
-          (() => {
-            const currentTabItems =
-              tab === 'groups'
-                ? filteredGroups
-                : tab === 'members'
-                ? filteredMembers
-                : tab === 'loans'
-                ? filteredLoans
-                : tab === 'contributions'
-                ? filteredContributions
-                : tab === 'bank'
-                ? filteredBankStatements
-                : tab === 'expenses'
-                ? filteredExpenses
-                : filteredAuditRows;
-
-            const visibleIds = currentTabItems.map((item) => String(item.id));
-            if (visibleIds.length === 0) return null;
-
-            const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
-            const selectedCount = selectedIds.length;
-
-            const entityLabel =
-              tab === 'groups'
-                ? 'group'
-                : tab === 'members'
-                ? 'member'
-                : tab === 'loans'
-                ? 'loan'
-                : tab === 'contributions'
-                ? 'contribution'
-                : tab === 'bank'
-                ? 'bank statement'
-                : tab === 'expenses'
-                ? 'expense'
-                : 'audit log';
-
-            const tableName =
-              tab === 'groups'
-                ? 'groups'
-                : tab === 'members'
-                ? 'members'
-                : tab === 'loans'
-                ? 'loans'
-                : tab === 'contributions'
-                ? 'contributions'
-                : tab === 'bank'
-                ? 'bank_statements'
-                : tab === 'expenses'
-                ? 'expenses'
-                : 'audit_log';
-
-            return (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: 10,
-                  padding: '8px 14px',
-                  borderRadius: 'var(--r-sm)',
-                  background: selectedCount > 0 ? 'color-mix(in srgb, var(--coral) 10%, var(--surface))' : 'var(--surface-2)',
-                  border: selectedCount > 0 ? '1px solid color-mix(in srgb, var(--coral) 35%, transparent)' : '1px solid var(--hairline)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      cursor: 'pointer',
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                      userSelect: 'none',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      className="superadmin-checkbox"
-                      checked={allSelected}
-                      onChange={() => toggleSelectAll(visibleIds)}
-                    />
-                    <span>
-                      {allSelected ? 'Deselect All' : 'Select All'} ({visibleIds.length})
-                    </span>
-                  </label>
-                  {selectedCount > 0 && (
-                    <Tag tone="coral">
-                      {selectedCount} selected
-                    </Tag>
+        {tableInfo && showList && visibleIds.length > 0 && (
+          <div className={`sa-bulkbar${selectedVisible.length > 0 ? ' active' : ''}`}>
+            <label>
+              <input
+                type="checkbox"
+                className="superadmin-checkbox"
+                checked={allSelected}
+                onChange={toggleSelectAll}
+                aria-label={allSelected ? 'Deselect all' : 'Select all'}
+              />
+              <span>
+                {selectedVisible.length > 0
+                  ? `${selectedVisible.length} of ${visibleIds.length} selected`
+                  : `Select all (${visibleIds.length})`}
+              </span>
+            </label>
+            {selectedVisible.length > 0 && (
+              <div className="sa-bulk-actions">
+                <button type="button" className="sec-link" onClick={() => setSelectedIds([])}>Clear</button>
+                <button
+                  type="button"
+                  className="btn-danger-outline"
+                  disabled={busy}
+                  onClick={() => askDelete(
+                    tableInfo.table, selectedVisible, tableInfo.label,
+                    `${selectedVisible.length} ${tableInfo.label}${selectedVisible.length === 1 ? '' : 's'}`,
                   )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {selectedCount > 0 && (
-                    <>
-                      <button
-                        type="button"
-                        className="sec-link"
-                        onClick={() => setSelectedIds([])}
-                        style={{ fontSize: '0.78rem' }}
-                      >
-                        Clear
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-danger-outline"
-                        disabled={bulkDeleting}
-                        onClick={() => void handleBulkDelete(tableName, entityLabel)}
-                      >
-                        <IconTrash width={13} height={13} style={{ marginRight: 6 }} />
-                        {bulkDeleting ? 'Deleting…' : `Bulk Delete (${selectedCount})`}
-                      </button>
-                    </>
-                  )}
-                </div>
+                >
+                  <IconTrash width={13} height={13} style={{ marginRight: 6 }} />
+                  Delete ({selectedVisible.length})
+                </button>
               </div>
-            );
-          })()
+            )}
+          </div>
         )}
       </div>
 
-      {/* TAB 1: ALL GROUPS */}
-      {tab === 'groups' && (
+      {/* The first load shows a skeleton, not empty lists: "no deposits"
+          and "not loaded yet" must not look the same. */}
+      {!showList && tab !== 'backup' && <SkeletonList rows={4} />}
+
+      {/* GROUPS */}
+      {showList && tab === 'groups' && (
         <Panel
-          title={`All Groups / Tenants (${filteredGroups.length})`}
+          title={`Groups (${filteredGroups.length})`}
           action={
             <button
               type="button"
@@ -1059,117 +955,84 @@ export default function Admin() {
             </button>
           }
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {filteredGroups.map((g) => {
-              const memberCount = members.filter((m) => m.group_id === g.id).length;
-              const isChecked = selectedIds.includes(g.id);
-              return (
-                <div
-                  key={g.id}
-                  className="superadmin-group-card"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 14,
-                    padding: '12px 14px',
-                    borderRadius: 'var(--r-sm)',
-                    background: isChecked ? 'color-mix(in srgb, var(--coral) 8%, var(--surface))' : 'var(--surface)',
-                    border: isChecked ? '1px solid color-mix(in srgb, var(--coral) 40%, transparent)' : '1px solid var(--hairline)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none', marginTop: 2 }}>
-                      <input
-                        type="checkbox"
-                        className="superadmin-checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleSelect(g.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        title={`Select ${g.name}`}
-                      />
-                      <span className="row-ico violet" style={{ flex: 'none' }}>
-                        {initials(g.name)}
-                      </span>
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <strong style={{ fontSize: '0.96rem', color: 'var(--text)' }}>{g.name}</strong>
-                        <Tag tone={g.setup_complete ? 'mint' : 'amber'}>
-                          {g.setup_complete ? 'Setup Done' : 'Setup Pending'}
-                        </Tag>
+          {filteredGroups.length === 0 ? empty(<IconShield width={20} height={20} />, 'No groups') : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {filteredGroups.map((g) => {
+                const isChecked = selectedIds.includes(g.id);
+                const canEnter = myGroupIds.has(g.id);
+                return (
+                  <div
+                    key={g.id}
+                    className="superadmin-group-card"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
+                      padding: '12px 14px', borderRadius: 'var(--r-sm)',
+                      background: isChecked ? 'color-mix(in srgb, var(--coral) 8%, var(--surface))' : 'var(--surface)',
+                      border: isChecked ? '1px solid color-mix(in srgb, var(--coral) 40%, transparent)' : '1px solid var(--hairline)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none', marginTop: 2 }}>
+                        {checkbox(g.id, g.name)}
+                        <span className="row-ico violet" style={{ flex: 'none' }}>{initials(g.name)}</span>
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 3, wordBreak: 'break-all' }}>
-                        UUID: <code>{g.id.slice(0, 8)}…</code> · {memberCount} members · Monthly: {formatPaise(g.monthly_contribution_paise || 0)}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <strong style={{ fontSize: '0.96rem', color: 'var(--text)' }}>{g.name}</strong>
+                          <Tag tone={g.setup_complete ? 'mint' : 'amber'}>{g.setup_complete ? 'Set up' : 'Setup pending'}</Tag>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 3, overflowWrap: 'anywhere' }}>
+                          {memberCountByGroup.get(g.id) ?? 0} active members · {formatPaise(g.monthly_contribution_paise || 0)}/month · <code>{g.id.slice(0, 8)}</code>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="group-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
-                    <button
-                      type="button"
-                      className="sec-link"
-                      title="Impersonate and switch into this tenant"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleSwitchToGroup(g.id, g.name);
-                      }}
-                      style={{ fontSize: '0.78rem', color: 'var(--mint)', whiteSpace: 'nowrap' }}
-                    >
-                      Enter Group →
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      title="Edit Group"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setGroupForm({
-                          name: g.name,
-                          monthly_rupees: String(paiseToRupees(g.monthly_contribution_paise || 0)),
-                        });
-                        setIsNewGroup(false);
-                        setEditGroup(g);
-                      }}
-                      style={{ width: 32, height: 32 }}
-                    >
-                      <IconEdit width={13} height={13} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      title="Delete Group"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleDeleteGroup(g.id, g.name);
-                      }}
-                      style={{ width: 32, height: 32, color: 'var(--coral)' }}
-                    >
-                      <IconTrash width={13} height={13} />
-                    </button>
+                    <div className="group-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
+                      {/* Opening a group's dashboard needs a membership of
+                          your own; say so up front instead of after a tap. */}
+                      <button
+                        type="button"
+                        className="sec-link"
+                        disabled={!canEnter}
+                        title={canEnter ? 'Open this group in the app' : 'Your account is not a member of this group'}
+                        onClick={() => void handleSwitchToGroup(g.id)}
+                        style={{ fontSize: '0.78rem', color: canEnter ? 'var(--mint)' : 'var(--text-3)', whiteSpace: 'nowrap' }}
+                      >
+                        {canEnter ? 'Open group →' : 'Not your group'}
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Edit group"
+                        aria-label={`Edit ${g.name}`}
+                        onClick={() => openEditor('groups', g)}
+                        style={{ width: 32, height: 32 }}
+                      >
+                        <IconEdit width={13} height={13} />
+                      </button>
+                      {trash(() => askDelete('groups', [g.id], 'group', `the group "${g.name}"`, g.name), g.name)}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </Panel>
       )}
 
-      {/* TAB 2: ALL MEMBERS */}
-      {tab === 'members' && (
+      {/* MEMBERS */}
+      {showList && tab === 'members' && (
         <Panel
-          title={`All Members (${filteredMembers.length})`}
+          title={`Members (${filteredMembers.length})`}
           action={
             <button
               type="button"
               className="primary"
+              disabled={groups.length === 0}
               onClick={() => {
                 setMemberForm({
                   group_id: filterGroupId !== 'all' ? filterGroupId : groups[0]?.id || '',
-                  full_name: '',
-                  phone: '',
-                  nominee_name: '',
-                  nominee_phone: '',
+                  full_name: '', phone: '', nominee_name: '', nominee_phone: '',
                 });
                 setIsNewMember(true);
                 setEditMember({} as DbMember);
@@ -1180,404 +1043,102 @@ export default function Admin() {
             </button>
           }
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {filteredMembers.map((m) => {
-              const currentRole = activeRolesMap.get(`${m.group_id}:${m.id}`) || 'member';
-              const isChecked = selectedIds.includes(m.id);
-              return (
-                <div
-                  key={m.id}
-                  className="superadmin-group-card"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 14,
-                    padding: '12px 14px',
-                    borderRadius: 'var(--r-sm)',
-                    background: isChecked ? 'color-mix(in srgb, var(--coral) 8%, var(--surface))' : 'var(--surface)',
-                    border: isChecked ? '1px solid color-mix(in srgb, var(--coral) 40%, transparent)' : '1px solid var(--hairline)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none', marginTop: 2 }}>
-                      <input
-                        type="checkbox"
-                        className="superadmin-checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleSelect(m.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        title={`Select ${m.full_name}`}
-                      />
-                      <span className="row-ico mint" style={{ flex: 'none' }}>
-                        {initials(m.full_name)}
-                      </span>
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <strong style={{ fontSize: '0.96rem', color: 'var(--text)' }}>{m.full_name}</strong>
-                        <Tag tone={currentRole === 'member' ? undefined : 'mint'}>
-                          {roleLabel(currentRole)}
-                        </Tag>
-                        <Tag tone="violet">{groupMap.get(m.group_id) || 'Unknown Group'}</Tag>
+          {filteredMembers.length === 0 ? empty(<IconShield width={20} height={20} />, 'No members') : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {filteredMembers.map((m) => {
+                const currentRole = activeRolesMap.get(`${m.group_id}:${m.id}`) || 'member';
+                const isChecked = selectedIds.includes(m.id);
+                return (
+                  <div
+                    key={m.id}
+                    className="superadmin-group-card"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
+                      padding: '12px 14px', borderRadius: 'var(--r-sm)',
+                      background: isChecked ? 'color-mix(in srgb, var(--coral) 8%, var(--surface))' : 'var(--surface)',
+                      border: isChecked ? '1px solid color-mix(in srgb, var(--coral) 40%, transparent)' : '1px solid var(--hairline)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none', marginTop: 2 }}>
+                        {checkbox(m.id, m.full_name)}
+                        <span className="row-ico mint" style={{ flex: 'none' }}>{initials(m.full_name)}</span>
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 4, wordBreak: 'break-all' }}>
-                        Phone: {m.phone || 'None'} · Joined: {fmtDate(m.joined_on)} · ID: <code>{m.id.slice(0, 8)}…</code>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <strong style={{ fontSize: '0.96rem', color: 'var(--text)' }}>{m.full_name}</strong>
+                          <Tag tone={currentRole === 'member' ? undefined : 'mint'}>{roleLabel(currentRole)}</Tag>
+                          {m.status !== 'active' && (
+                            <Tag tone={m.status === 'pending' ? 'amber' : 'coral'}>{m.status === 'pending' ? 'Pending' : 'Left'}</Tag>
+                          )}
+                          <Tag tone="violet">{groupMap.get(m.group_id) || 'Unknown group'}</Tag>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 4, overflowWrap: 'anywhere' }}>
+                          {m.phone || 'No phone'} · joined {fmtDate(m.joined_on)} · <code>{m.id.slice(0, 8)}</code>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="group-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
-                    <button
-                      type="button"
-                      className="sec-link"
-                      title="Change Member Role & Office"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRoleMember(m);
-                        setSelectedRole(currentRole);
-                      }}
-                      style={{ fontSize: '0.78rem', color: 'var(--violet)', whiteSpace: 'nowrap' }}
-                    >
-                      Assign Role
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      title="Edit Member"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMemberForm({
-                          group_id: m.group_id,
-                          full_name: m.full_name,
-                          phone: m.phone || '',
-                          nominee_name: m.nominee_name || '',
-                          nominee_phone: m.nominee_phone || '',
-                        });
-                        setIsNewMember(false);
-                        setEditMember(m);
-                      }}
-                      style={{ width: 32, height: 32 }}
-                    >
-                      <IconEdit width={13} height={13} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      title="Delete Member"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleDeleteMember(m.id, m.full_name);
-                      }}
-                      style={{ width: 32, height: 32, color: 'var(--coral)' }}
-                    >
-                      <IconTrash width={13} height={13} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Panel>
-      )}
-
-      {/* TAB 3: ALL LOANS */}
-      {tab === 'loans' && (
-        <Panel title={`Loans Issued (${filteredLoans.length})`}>
-          {filteredLoans.length === 0 ? (
-            <div className="empty" style={{ padding: '32px 16px' }}>
-              <div className="empty-ico" style={{ width: 44, height: 44 }}>
-                <IconShield width={20} height={20} />
-              </div>
-              <div style={{ fontWeight: 600, color: 'var(--text-2)' }}>No Loans Recorded</div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-3)', marginTop: 4 }}>
-                No loan records found for the selected tenant or filter criteria.
-              </div>
-            </div>
-          ) : (
-            <List>
-              {filteredLoans.map((l) => {
-                const isChecked = selectedIds.includes(l.id);
-                return (
-                  <Row
-                    key={l.id}
-                    icon={
-                      <input
-                        type="checkbox"
-                        className="superadmin-checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleSelect(l.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        title="Select loan"
-                      />
-                    }
-                    title={
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 650 }}>{memberMap.get(l.borrower_id) || 'Borrower'}</span>
-                        <Tag tone="amber">{l.status}</Tag>
-                      </span>
-                    }
-                    sub={`Group: ${groupMap.get(l.group_id) || 'Unknown'} · Purpose: ${l.purpose || 'None'} · Date: ${fmtDate(l.requested_at)}`}
-                    amount={formatPaise(l.principal_paise)}
-                    amountTone="coral"
-                    note={
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        title="Delete Loan"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!adminClient) return;
-                          if (!window.confirm('Delete this loan record permanently?')) return;
-                          await adminClient.from('loans').delete().eq('id', l.id);
-                          await refreshAll();
-                        }}
-                        style={{ width: 30, height: 30, color: 'var(--coral)' }}
-                      >
-                        <IconTrash width={12} height={12} />
-                      </button>
-                    }
-                  />
-                );
-              })}
-            </List>
-          )}
-        </Panel>
-      )}
-
-      {/* TAB 4: ALL CONTRIBUTIONS */}
-      {tab === 'contributions' && (
-        <Panel title={`Contributions Record (${filteredContributions.length})`}>
-          <List>
-            {filteredContributions.map((c) => {
-              const isChecked = selectedIds.includes(c.id);
-              return (
-                <Row
-                  key={c.id}
-                  icon={
-                    <input
-                      type="checkbox"
-                      className="superadmin-checkbox"
-                      checked={isChecked}
-                      onChange={() => toggleSelect(c.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      title="Select contribution"
-                    />
-                  }
-                  title={
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontWeight: 650 }}>{memberMap.get(c.member_id) || 'Member'}</span>
-                      <Tag tone="mint">{c.method}</Tag>
-                    </span>
-                  }
-                  sub={`Group: ${groupMap.get(c.group_id) || 'Unknown'} · Paid On: ${fmtDate(c.paid_on)}`}
-                  amount={formatPaise(c.amount_paise)}
-                  amountTone="mint"
-                  note={
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      title="Delete Contribution"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!adminClient) return;
-                        if (!window.confirm('Delete this contribution record permanently?')) return;
-                        await adminClient.from('contributions').delete().eq('id', c.id);
-                        await refreshAll();
-                      }}
-                      style={{ width: 30, height: 30, color: 'var(--coral)' }}
-                    >
-                      <IconTrash width={12} height={12} />
-                    </button>
-                  }
-                />
-              );
-            })}
-          </List>
-        </Panel>
-      )}
-
-      {/* TAB 5: BANK RECONCILIATION & STATEMENTS */}
-      {tab === 'bank' && (
-        <Panel title={`Bank Statements (${filteredBankStatements.length})`}>
-          {filteredBankStatements.length === 0 ? (
-            <div className="empty" style={{ padding: '32px 16px' }}>
-              <div className="empty-ico" style={{ width: 44, height: 44 }}>
-                <IconBank width={20} height={20} />
-              </div>
-              <div style={{ fontWeight: 600, color: 'var(--text-2)' }}>No Bank Statements</div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-3)', marginTop: 4 }}>
-                No bank statements uploaded for the selected group.
-              </div>
-            </div>
-          ) : (
-            <List>
-              {filteredBankStatements.map((b) => {
-                const isChecked = selectedIds.includes(b.id);
-                return (
-                  <Row
-                    key={b.id}
-                    icon={
-                      <input
-                        type="checkbox"
-                        className="superadmin-checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleSelect(b.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        title="Select statement"
-                      />
-                    }
-                    title={
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 650 }}>{groupMap.get(b.group_id) || 'Unknown Group'}</span>
-                        <Tag tone={b.difference_paise === 0 ? 'mint' : 'coral'}>
-                          {b.difference_paise === 0 ? 'Balanced' : `Diff: ${formatPaise(b.difference_paise)}`}
-                        </Tag>
-                      </span>
-                    }
-                    sub={`As of: ${fmtDate(b.as_of)} · Closing: ${formatPaise(b.closing_balance_paise)} · Expected: ${formatPaise(b.expected_balance_paise)} ${b.note ? `· ${b.note}` : ''}`}
-                    note={
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        title="Delete Statement"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!adminClient) return;
-                          if (!window.confirm('Delete this bank statement entry permanently?')) return;
-                          await adminClient.from('bank_statements').delete().eq('id', b.id);
-                          await refreshAll();
-                        }}
-                        style={{ width: 30, height: 30, color: 'var(--coral)' }}
-                      >
-                        <IconTrash width={12} height={12} />
-                      </button>
-                    }
-                  />
-                );
-              })}
-            </List>
-          )}
-        </Panel>
-      )}
-
-      {/* TAB 6: EXPENSES LEDGER */}
-      {tab === 'expenses' && (
-        <Panel title={`Expenses Ledger (${filteredExpenses.length})`}>
-          {filteredExpenses.length === 0 ? (
-            <div className="empty" style={{ padding: '32px 16px' }}>
-              <div className="empty-ico" style={{ width: 44, height: 44 }}>
-                <IconExpenses width={20} height={20} />
-              </div>
-              <div style={{ fontWeight: 600, color: 'var(--text-2)' }}>No Expenses Recorded</div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-3)', marginTop: 4 }}>
-                No group expenses found matching current filter.
-              </div>
-            </div>
-          ) : (
-            <List>
-              {filteredExpenses.map((exp) => {
-                const isChecked = selectedIds.includes(exp.id);
-                return (
-                  <Row
-                    key={exp.id}
-                    icon={
-                      <input
-                        type="checkbox"
-                        className="superadmin-checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleSelect(exp.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        title="Select expense"
-                      />
-                    }
-                    title={
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 650 }}>{exp.description}</span>
-                        <Tag tone={exp.status === 'approved' || exp.status === 'paid' ? 'mint' : exp.status === 'rejected' ? 'coral' : 'amber'}>
-                          {exp.status}
-                        </Tag>
-                        <Tag tone="violet">{exp.category}</Tag>
-                      </span>
-                    }
-                    sub={`Group: ${groupMap.get(exp.group_id) || 'Unknown'} · Method: ${exp.method} · Date: ${fmtDate(exp.incurred_on)}`}
-                    amount={formatPaise(exp.amount_paise)}
-                    amountTone="coral"
-                    note={
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        title="Delete Expense"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!adminClient) return;
-                          if (!window.confirm('Delete this expense permanently?')) return;
-                          await adminClient.from('expenses').delete().eq('id', exp.id);
-                          await refreshAll();
-                        }}
-                        style={{ width: 30, height: 30, color: 'var(--coral)' }}
-                      >
-                        <IconTrash width={12} height={12} />
-                      </button>
-                    }
-                  />
-                );
-              })}
-            </List>
-          )}
-        </Panel>
-      )}
-
-      {/* TAB 7: GLOBAL AUDIT HISTORY */}
-      {tab === 'audit' && (
-        <Panel title={`Audit History (Last ${filteredAuditRows.length} Events)`}>
-          {filteredAuditRows.length === 0 ? (
-            <div className="empty" style={{ padding: '32px 16px' }}>
-              <div className="empty-ico" style={{ width: 44, height: 44 }}>
-                <IconAudit width={20} height={20} />
-              </div>
-              <div style={{ fontWeight: 600, color: 'var(--text-2)' }}>No Audit Logs Found</div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-3)', marginTop: 4 }}>
-                The append-only database audit log has no events matching your search.
-              </div>
-            </div>
-          ) : (
-            <List>
-              {filteredAuditRows.map((a) => {
-                const isChecked = selectedIds.includes(String(a.id));
-                return (
-                  <Row
-                    key={a.id}
-                    icon={
-                      <input
-                        type="checkbox"
-                        className="superadmin-checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleSelect(String(a.id))}
-                        onClick={(e) => e.stopPropagation()}
-                        title="Select audit entry"
-                      />
-                    }
-                    title={
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <Tag tone={a.action === 'INSERT' ? 'mint' : a.action === 'DELETE' ? 'coral' : 'amber'}>
-                          {a.action}
-                        </Tag>
-                        <strong style={{ fontSize: '0.92rem' }}>{a.table_name}</strong>
-                        <span className="dim" style={{ fontSize: '0.78rem' }}>#{a.id}</span>
-                      </span>
-                    }
-                    sub={`Time: ${fmtDateTime(a.occurred_at)} (${ago(a.occurred_at)}) · Row ID: ${String(a.row_id).slice(0, 10)}…`}
-                    note={
+                    <div className="group-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
                       <button
                         type="button"
                         className="sec-link"
-                        onClick={() => setSelectedAudit(a)}
-                        style={{ fontSize: '0.76rem', color: 'var(--mint)' }}
+                        disabled={m.status !== 'active'}
+                        title={m.status === 'active' ? 'Change office' : 'Only active members can hold an office'}
+                        onClick={() => { setRoleMember(m); setSelectedRole(currentRole); }}
+                        style={{ fontSize: '0.78rem', color: m.status === 'active' ? 'var(--violet)' : 'var(--text-3)', whiteSpace: 'nowrap' }}
                       >
-                        Inspect JSON
+                        Assign role
                       </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Edit member"
+                        aria-label={`Edit ${m.full_name}`}
+                        onClick={() => openEditor('members', m)}
+                        style={{ width: 32, height: 32 }}
+                      >
+                        <IconEdit width={13} height={13} />
+                      </button>
+                      {trash(() => askDelete('members', [m.id], 'member', `the member "${m.full_name}"`), m.full_name)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+      )}
+
+      {/* LOANS */}
+      {showList && tab === 'loans' && (
+        <Panel title={`Loans (${filteredLoans.length})`} flush>
+          {filteredLoans.length === 0 ? empty(<IconShield width={20} height={20} />, 'No loans') : (
+            <List>
+              {filteredLoans.map((l) => {
+                const who = borrowerName(l);
+                const left = l.status === 'disbursed'
+                  ? Math.max(0, l.principal_paise - (repaidByLoan.get(l.id) ?? 0)) : null;
+                return (
+                  <Row
+                    key={l.id}
+                    icon={checkbox(l.id, `loan to ${who}`)}
+                    title={
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 650 }}>{who}</span>
+                        <Tag tone={l.status === 'disbursed' ? 'amber' : l.status === 'closed' ? 'mint'
+                          : l.status === 'rejected' || l.status === 'written_off' ? 'coral' : 'violet'}>
+                          {l.status.replace('_', ' ')}
+                        </Tag>
+                        {l.is_outside_borrower && <Tag>outside</Tag>}
+                      </span>
                     }
+                    sub={[groupMap.get(l.group_id) || 'Unknown group', l.purpose, fmtDate(l.requested_at.slice(0, 10)),
+                      left !== null ? `${formatPaise(left)} still owed` : null].filter(Boolean).join(' · ')}
+                    amount={formatPaise(l.principal_paise)}
+                    amountTone="coral"
+                    note={rowActions('loans', l, `loan to ${who}`, () => askDelete('loans', [l.id], 'loan',
+                      `the ${formatPaise(l.principal_paise)} loan to ${who}`))}
                   />
                 );
               })}
@@ -1586,51 +1147,154 @@ export default function Admin() {
         </Panel>
       )}
 
-      {/* TAB 8: INTEGRITY & HEALTH AUDIT */}
-      {tab === 'health' && (
+      {/* DEPOSITS */}
+      {showList && tab === 'contributions' && (
+        <Panel title={`Deposits (${filteredContributions.length})`} flush>
+          {filteredContributions.length === 0 ? empty(<IconBank width={20} height={20} />, 'No deposits') : (
+            <List>
+              {filteredContributions.map((c) => {
+                const who = memberMap.get(c.member_id) || 'Unknown member';
+                return (
+                  <Row
+                    key={c.id}
+                    icon={checkbox(c.id, `deposit by ${who}`)}
+                    title={
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 650 }}>{who}</span>
+                        <Tag tone="mint">{c.method}</Tag>
+                      </span>
+                    }
+                    sub={`${groupMap.get(c.group_id) || 'Unknown group'} · ${fmtDate(c.paid_on)}`}
+                    amount={formatPaise(c.amount_paise)}
+                    amountTone="mint"
+                    note={rowActions('contributions', c, `deposit by ${who}`, () => askDelete('contributions', [c.id], 'deposit',
+                      `${who}'s ${formatPaise(c.amount_paise)} deposit of ${fmtDate(c.paid_on)}`))}
+                  />
+                );
+              })}
+            </List>
+          )}
+        </Panel>
+      )}
+
+      {/* BANK */}
+      {showList && tab === 'bank' && (
+        <Panel title={`Bank statements (${filteredBankStatements.length})`} flush>
+          {filteredBankStatements.length === 0 ? empty(<IconBank width={20} height={20} />, 'No bank statements') : (
+            <List>
+              {filteredBankStatements.map((b) => (
+                <Row
+                  key={b.id}
+                  icon={checkbox(b.id, `statement of ${b.as_of}`)}
+                  title={
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontWeight: 650 }}>{groupMap.get(b.group_id) || 'Unknown group'}</span>
+                      <Tag tone={b.difference_paise === 0 ? 'mint' : 'coral'}>
+                        {b.difference_paise === 0 ? 'Balanced' : `Off by ${formatPaise(b.difference_paise)}`}
+                      </Tag>
+                    </span>
+                  }
+                  sub={[fmtDate(b.as_of), `Bank ${formatPaise(b.closing_balance_paise)}`,
+                    `Books ${formatPaise(b.expected_balance_paise)}`, b.note].filter(Boolean).join(' · ')}
+                  note={rowActions('bank_statements', b, `statement of ${b.as_of}`, () => askDelete('bank_statements', [b.id], 'bank statement',
+                    `the bank statement of ${fmtDate(b.as_of)}`))}
+                />
+              ))}
+            </List>
+          )}
+        </Panel>
+      )}
+
+      {/* EXPENSES */}
+      {showList && tab === 'expenses' && (
+        <Panel title={`Expenses (${filteredExpenses.length})`} flush>
+          {filteredExpenses.length === 0 ? empty(<IconExpenses width={20} height={20} />, 'No expenses') : (
+            <List>
+              {filteredExpenses.map((exp) => (
+                <Row
+                  key={exp.id}
+                  icon={checkbox(exp.id, exp.description)}
+                  title={
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontWeight: 650 }}>{exp.description}</span>
+                      <Tag tone={exp.status === 'approved' || exp.status === 'paid' ? 'mint' : exp.status === 'rejected' ? 'coral' : 'amber'}>
+                        {exp.status}
+                      </Tag>
+                      <Tag tone="violet">{exp.category.replace('_', ' ')}</Tag>
+                    </span>
+                  }
+                  sub={`${groupMap.get(exp.group_id) || 'Unknown group'} · ${exp.method} · ${fmtDate(exp.incurred_on)}`}
+                  amount={formatPaise(exp.amount_paise)}
+                  amountTone="coral"
+                  note={rowActions('expenses', exp, exp.description, () => askDelete('expenses', [exp.id], 'expense',
+                    `the ${formatPaise(exp.amount_paise)} expense "${exp.description}"`))}
+                />
+              ))}
+            </List>
+          )}
+        </Panel>
+      )}
+
+      {/* AUDIT */}
+      {showList && tab === 'audit' && (
+        <Panel title={`Audit log (latest ${filteredAuditRows.length})`} flush>
+          {filteredAuditRows.length === 0 ? empty(<IconAudit width={20} height={20} />, 'No audit entries') : (
+            <List>
+              {filteredAuditRows.map((a) => (
+                <Row
+                  key={a.id}
+                  icon={checkbox(String(a.id), `audit entry ${a.id}`)}
+                  title={
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Tag tone={a.action === 'INSERT' ? 'mint' : a.action === 'DELETE' ? 'coral' : 'amber'}>{a.action}</Tag>
+                      <strong style={{ fontSize: '0.92rem' }}>{a.table_name}</strong>
+                      <span className="dim" style={{ fontSize: '0.78rem' }}>#{a.id}</span>
+                    </span>
+                  }
+                  sub={[a.group_id ? groupMap.get(a.group_id) : null, fmtDateTime(a.occurred_at), ago(a.occurred_at)]
+                    .filter(Boolean).join(' · ')}
+                  note={
+                    <button type="button" className="sec-link" onClick={() => setSelectedAudit(a)}
+                      style={{ fontSize: '0.76rem', color: 'var(--mint)' }}>
+                      Inspect
+                    </button>
+                  }
+                />
+              ))}
+            </List>
+          )}
+        </Panel>
+      )}
+
+      {/* HEALTH */}
+      {showList && tab === 'health' && (
         <Panel
-          title="Multi-Tenant Integrity & Health Audit"
+          title="Integrity check"
           action={
-            <button
-              type="button"
-              className="sec-link"
-              onClick={runHealthAudit}
-              disabled={checkingHealth}
-            >
+            <button type="button" className="sec-link" onClick={() => void refreshAll()} disabled={loading}>
               <IconWrench width={13} height={13} style={{ marginRight: 4 }} />
-              Re-run Audit
+              {loading ? 'Checking…' : 'Reload and re-check'}
             </button>
           }
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {healthIssues.map((issue, idx) => (
               <div
                 key={idx}
                 style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 12,
-                  padding: 14,
-                  borderRadius: 'var(--r-sm)',
-                  border: '1px solid var(--hairline)',
-                  background:
-                    issue.severity === 'danger'
-                      ? 'color-mix(in srgb, var(--coral) 12%, var(--surface))'
-                      : issue.severity === 'warn'
-                      ? 'color-mix(in srgb, var(--amber) 12%, var(--surface))'
-                      : 'color-mix(in srgb, var(--mint) 12%, var(--surface))',
+                  display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14,
+                  borderRadius: 'var(--r-sm)', border: '1px solid var(--hairline)',
+                  background: `color-mix(in srgb, var(--${issue.severity === 'danger' ? 'coral' : issue.severity === 'warn' ? 'amber' : 'mint'}) 12%, var(--surface))`,
                 }}
               >
                 <Tag tone={issue.severity === 'good' ? 'mint' : issue.severity === 'warn' ? 'amber' : 'coral'}>
-                  {issue.severity.toUpperCase()}
+                  {issue.severity === 'good' ? 'OK' : issue.severity === 'warn' ? 'Check' : 'Fix'}
                 </Tag>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 650, color: 'var(--text)', fontSize: '0.92rem' }}>
-                    {issue.title} {issue.tenant && <span className="dim">({issue.tenant})</span>}
+                    {issue.title} {issue.tenant && <span className="dim">· {issue.tenant}</span>}
                   </div>
-                  <div style={{ color: 'var(--text-2)', fontSize: '0.82rem', marginTop: 3 }}>
-                    {issue.desc}
-                  </div>
+                  <div style={{ color: 'var(--text-2)', fontSize: '0.82rem', marginTop: 3 }}>{issue.desc}</div>
                 </div>
               </div>
             ))}
@@ -1638,262 +1302,209 @@ export default function Admin() {
         </Panel>
       )}
 
-      {/* TAB 6: JSON BACKUP EXPORT */}
+      {/* BACKUP */}
       {tab === 'backup' && (
-        <Panel title="Full Database Backup & Disaster Recovery">
+        <Panel title="Full database backup">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <p style={{ color: 'var(--text-2)', fontSize: '0.88rem', margin: 0 }}>
-              Export the entire multi-tenant platform database including groups, active members, role assignments, loans, and all contribution records into an offline JSON snapshot.
+              Every table a restore would need — groups, profiles, members, roles, invites, months, deposits,
+              loans with their votes, schedules and repayments, expenses and votes, cash, bank statements,
+              payouts, share-outs, meetings and the full audit log — as one JSON file. Nothing is capped at
+              1,000 rows.
             </p>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" className="primary lg" onClick={handleExportBackup}>
-                <IconDownload width={16} height={16} style={{ marginRight: 8 }} />
-                Export Full Database JSON Backup
-              </button>
-            </div>
+            <button type="button" className="primary lg" onClick={() => void handleExportBackup()} disabled={busy}>
+              <IconDownload width={16} height={16} style={{ marginRight: 8 }} />
+              {busy ? 'Building backup…' : 'Download JSON backup'}
+            </button>
           </div>
         </Panel>
       )}
 
-      {/* MODAL 1: SERVICE ROLE KEY CONFIGURATION */}
-      <Sheet open={keySheet} title="Supabase Service Role Key" onClose={() => setKeySheet(false)}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Notice tone="warn">
-            The <code>service_role</code> key bypasses all Postgres Row-Level Security policies. It is stored in local storage for this session and enables full developer CRUD.
-          </Notice>
-          <Field label="Service Role Key (from Supabase Project Settings > API)">
-            <textarea
-              rows={4}
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value)}
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                fontFamily: 'var(--mono)',
-                fontSize: '0.8rem',
-                borderRadius: 'var(--r-sm)',
-                border: '1px solid var(--hairline)',
-                background: 'var(--surface-2)',
-                color: 'var(--text)',
-              }}
-            />
-          </Field>
-          <button type="button" className="primary lg" onClick={handleSaveKey}>
-            Apply Service Role Key
-          </button>
-        </div>
-      </Sheet>
+      {/* EVERY TABLE */}
+      {tab === 'tables' && (
+        <TableBrowser
+          groupFilter={filterGroupId}
+          search={search}
+          reloadKey={reloadKey}
+          describe={describe}
+          onOpen={(t, row) => openEditor(t.name, row, t.edit)}
+        />
+      )}
 
-      {/* MODAL 2: EDIT / CREATE GROUP */}
+      {/* ROW EDITOR */}
+      {editing && (
+        <RowEditor
+          key={`${editing.table}:${String(editing.row[editing.pk])}`}
+          table={editing.table}
+          pk={editing.pk}
+          row={editing.row}
+          editable={editing.edit}
+          describe={describe}
+          onClose={() => setEditing(null)}
+          onSaved={(msg) => {
+            setActionSuccess(msg);
+            setEditing(null);
+            setReloadKey((n) => n + 1);
+            void refreshAll();
+          }}
+          onDelete={() => askDelete(
+            editing.table, [String(editing.row[editing.pk])], `${editing.table} row`,
+            `this ${editing.table} row`,
+            editing.table === 'groups' ? String(editing.row.name ?? '') : undefined,
+          )}
+        />
+      )}
+
+      {/* CONFIRM DELETE */}
+      {pendingDelete && (
+        <Sheet open title="Delete permanently?" onClose={() => { if (!busy) setPendingDelete(null); }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <p style={{ margin: 0, fontSize: '0.95rem' }}>
+              You are about to delete <strong>{pendingDelete.what}</strong>.
+            </p>
+            <Notice tone="danger">{CONSEQUENCE[pendingDelete.table] ?? GENERIC_CONSEQUENCE}</Notice>
+            {pendingDelete.confirmText && (
+              <Field label={`Type ${pendingDelete.confirmText} to confirm`}>
+                <input
+                  type="text"
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
+            )}
+            <div className="btn-row stack" style={{ marginTop: 0 }}>
+              <button
+                type="button"
+                className="danger"
+                disabled={busy || (pendingDelete.confirmText !== null && typed.trim() !== pendingDelete.confirmText)}
+                onClick={() => void runDelete()}
+              >
+                {busy ? 'Deleting…' : `Delete ${pendingDelete.ids.length === 1 ? pendingDelete.label : `${pendingDelete.ids.length} ${pendingDelete.label}s`}`}
+              </button>
+              <button type="button" onClick={() => setPendingDelete(null)} disabled={busy}>Cancel</button>
+            </div>
+          </div>
+        </Sheet>
+      )}
+
+      {/* EDIT / CREATE GROUP */}
       {editGroup && (
-        <Sheet
-          open={Boolean(editGroup)}
-          title={isNewGroup ? 'Create New Group' : `Edit Group: ${editGroup.name}`}
-          onClose={() => setEditGroup(null)}
-        >
+        <Sheet open title={isNewGroup ? 'Create group' : `Edit ${editGroup.name}`} onClose={() => setEditGroup(null)}>
           <form onSubmit={handleSaveGroup} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Field label="Group Name">
-              <input
-                type="text"
-                required
-                value={groupForm.name}
+            <Field label="Group name">
+              <input type="text" required value={groupForm.name}
                 onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })}
-                placeholder="e.g. Friends Savings Sangam"
-              />
+                placeholder="e.g. Friends Savings Sangam" />
             </Field>
-            <Field label="Monthly Contribution (₹)">
-              <input
-                type="number"
-                required
-                value={groupForm.monthly_rupees}
-                onChange={(e) => setGroupForm({ ...groupForm, monthly_rupees: e.target.value })}
-              />
+            <Field label="Monthly contribution (₹)">
+              <input type="number" required min={0} step={1} inputMode="numeric" value={groupForm.monthly_rupees}
+                onChange={(e) => setGroupForm({ ...groupForm, monthly_rupees: e.target.value })} />
             </Field>
-            <button type="submit" className="primary lg" disabled={loading}>
-              {loading ? 'Saving…' : isNewGroup ? 'Create Group' : 'Save Changes'}
+            <button type="submit" className="primary lg" disabled={busy}>
+              {busy ? 'Saving…' : isNewGroup ? 'Create group' : 'Save changes'}
             </button>
           </form>
         </Sheet>
       )}
 
-      {/* MODAL 3: EDIT / CREATE MEMBER */}
+      {/* EDIT / CREATE MEMBER */}
       {editMember && (
-        <Sheet
-          open={Boolean(editMember)}
-          title={isNewMember ? 'Create Member' : `Edit Member: ${editMember.full_name}`}
-          onClose={() => setEditMember(null)}
-        >
+        <Sheet open title={isNewMember ? 'Create member' : `Edit ${editMember.full_name}`} onClose={() => setEditMember(null)}>
           <form onSubmit={handleSaveMember} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Field label="Assigned Group">
-              <select
-                value={memberForm.group_id}
-                onChange={(e) => setMemberForm({ ...memberForm, group_id: e.target.value })}
-                required
-              >
+            <Field label="Group">
+              <select value={memberForm.group_id} required
+                onChange={(e) => setMemberForm({ ...memberForm, group_id: e.target.value })}>
                 <option value="">Select a group</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
+                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </Field>
-            <Field label="Full Name">
-              <input
-                type="text"
-                required
-                value={memberForm.full_name}
-                onChange={(e) => setMemberForm({ ...memberForm, full_name: e.target.value })}
-              />
+            <Field label="Full name">
+              <input type="text" required value={memberForm.full_name}
+                onChange={(e) => setMemberForm({ ...memberForm, full_name: e.target.value })} />
             </Field>
             <Field label="Phone">
-              <input
-                type="tel"
-                value={memberForm.phone}
-                onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })}
-                placeholder="e.g. 9876543210"
-              />
+              <input type="tel" value={memberForm.phone} placeholder="e.g. 9876543210"
+                onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })} />
             </Field>
-            <Field label="Nominee Name">
-              <input
-                type="text"
-                value={memberForm.nominee_name}
-                onChange={(e) => setMemberForm({ ...memberForm, nominee_name: e.target.value })}
-              />
+            <Field label="Nominee name">
+              <input type="text" value={memberForm.nominee_name}
+                onChange={(e) => setMemberForm({ ...memberForm, nominee_name: e.target.value })} />
             </Field>
-            <Field label="Nominee Phone">
-              <input
-                type="tel"
-                value={memberForm.nominee_phone}
-                onChange={(e) => setMemberForm({ ...memberForm, nominee_phone: e.target.value })}
-              />
+            <Field label="Nominee phone">
+              <input type="tel" value={memberForm.nominee_phone}
+                onChange={(e) => setMemberForm({ ...memberForm, nominee_phone: e.target.value })} />
             </Field>
-            <button type="submit" className="primary lg" disabled={loading}>
-              {loading ? 'Saving…' : isNewMember ? 'Create Member' : 'Save Changes'}
+            <button type="submit" className="primary lg" disabled={busy}>
+              {busy ? 'Saving…' : isNewMember ? 'Create member' : 'Save changes'}
             </button>
           </form>
         </Sheet>
       )}
 
-      {/* MODAL 4: ROLE & OFFICE ASSIGNMENT */}
+      {/* ROLE */}
       {roleMember && (
-        <Sheet
-          open={Boolean(roleMember)}
-          title={`Assign Role: ${roleMember.full_name}`}
-          onClose={() => setRoleMember(null)}
-        >
+        <Sheet open title={`Office for ${roleMember.full_name}`} onClose={() => setRoleMember(null)}>
           <form onSubmit={handleAssignRole} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Notice tone="good">
-              Group: <strong>{groupMap.get(roleMember.group_id)}</strong>. Changing this role updates office assignments and handles turnover automatically.
+              Group: <strong>{groupMap.get(roleMember.group_id)}</strong>. Whoever holds the chosen office now
+              hands it over today, in the same step. The admin office cannot be left empty.
             </Notice>
-            <Field label="Select Office / Role">
-              <select
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value as Role)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: 'var(--r-sm)',
-                  background: 'var(--surface-2)',
-                  border: '1px solid var(--hairline)',
-                  color: 'var(--text)',
-                }}
-              >
-                <option value="member">Regular Member (No office)</option>
-                <option value="admin">Admin (Group Administrator)</option>
-                <option value="cashier">Cashier (Holds cash float & records entries)</option>
-                <option value="accountant">Accountant (Bank reconciliation & ledger)</option>
+            <Field label="Office">
+              <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value as Role)}>
+                <option value="member">Member (no office)</option>
+                <option value="admin">Admin</option>
+                <option value="cashier">Cashier</option>
+                <option value="accountant">Accountant</option>
               </select>
             </Field>
-            <button type="submit" className="primary lg" disabled={loading}>
-              {loading ? 'Updating…' : 'Save Office Assignment'}
+            <button type="submit" className="primary lg" disabled={busy}>
+              {busy ? 'Saving…' : 'Save office'}
             </button>
           </form>
         </Sheet>
       )}
 
-      {/* MODAL 5: AUDIT LOG INSPECTOR */}
+      {/* AUDIT INSPECTOR */}
       {selectedAudit && (
-        <Sheet
-          open={Boolean(selectedAudit)}
-          title={`Audit Event #${selectedAudit.id}: ${selectedAudit.action} on ${selectedAudit.table_name}`}
-          onClose={() => setSelectedAudit(null)}
-        >
+        <Sheet open title={`Audit #${selectedAudit.id} · ${selectedAudit.action} ${selectedAudit.table_name}`}
+          onClose={() => setSelectedAudit(null)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <Tag tone={selectedAudit.action === 'INSERT' ? 'mint' : selectedAudit.action === 'DELETE' ? 'coral' : 'amber'}>
                 {selectedAudit.action}
               </Tag>
               <span style={{ fontSize: '0.82rem', color: 'var(--text-3)' }}>
-                {fmtDateTime(selectedAudit.occurred_at)} ({ago(selectedAudit.occurred_at)})
+                {fmtDateTime(selectedAudit.occurred_at)} · {ago(selectedAudit.occurred_at)}
               </span>
             </div>
-
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>
-              <strong>Row ID:</strong> <code>{selectedAudit.row_id}</code>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-2)', overflowWrap: 'anywhere' }}>
+              <strong>Row:</strong> <code>{selectedAudit.row_id}</code>
             </div>
-
             {selectedAudit.changed_keys && selectedAudit.changed_keys.length > 0 && (
-              <div>
-                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', marginBottom: 4 }}>
-                  CHANGED KEYS:
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {selectedAudit.changed_keys.map((k) => (
-                    <Tag key={k} tone="violet">{k}</Tag>
-                  ))}
-                </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {selectedAudit.changed_keys.map((k) => <Tag key={k} tone="violet">{k}</Tag>)}
               </div>
             )}
-
-            <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', marginBottom: 4 }}>
-                NEW DATA SNAPSHOT:
-              </div>
-              <pre
-                style={{
-                  background: 'var(--surface-2)',
-                  padding: 12,
-                  borderRadius: 'var(--r-sm)',
-                  border: '1px solid var(--hairline)',
-                  fontSize: '0.76rem',
-                  maxHeight: 200,
-                  overflow: 'auto',
-                  margin: 0,
-                  color: 'var(--text)',
-                }}
-              >
-                {JSON.stringify(selectedAudit.new_data || {}, null, 2)}
-              </pre>
-            </div>
-
-            {selectedAudit.old_data && (
-              <div>
+            {(['new_data', 'old_data'] as const).map((k) => selectedAudit[k] && (
+              <div key={k}>
                 <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', marginBottom: 4 }}>
-                  OLD DATA SNAPSHOT:
+                  {k === 'new_data' ? 'After' : 'Before'}
                 </div>
-                <pre
-                  style={{
-                    background: 'var(--surface-2)',
-                    padding: 12,
-                    borderRadius: 'var(--r-sm)',
-                    border: '1px solid var(--hairline)',
-                    fontSize: '0.76rem',
-                    maxHeight: 180,
-                    overflow: 'auto',
-                    margin: 0,
-                    color: 'var(--text-3)',
-                  }}
-                >
-                  {JSON.stringify(selectedAudit.old_data, null, 2)}
+                <pre style={{
+                  background: 'var(--surface-2)', padding: 12, borderRadius: 'var(--r-sm)',
+                  border: '1px solid var(--hairline)', fontSize: '0.76rem', maxHeight: 220,
+                  overflow: 'auto', margin: 0, color: k === 'new_data' ? 'var(--text)' : 'var(--text-3)',
+                }}>
+                  {JSON.stringify(selectedAudit[k], null, 2)}
                 </pre>
               </div>
-            )}
+            ))}
           </div>
         </Sheet>
       )}
-      </div>
-    </div>
-  );
+    </>
+  ));
 }
