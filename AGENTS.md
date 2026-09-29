@@ -354,7 +354,12 @@ for f in supabase/migrations/*.sql; do
 done
 ```
 
-The shim supplies what Supabase provides and vanilla Postgres does not: the
+`scripts/replay.sh` does all of this (drop, shim, every migration in its own
+transaction, then both SQL suites); `--no-tests` stops after the replay. Run
+the suites with `-v ON_ERROR_STOP=1` — without it psql carries on past a
+`FAIL` and still prints `ALL ASSERTIONS PASSED` at the end.
+
+The shim (`supabase/tests/shim.sql`) supplies what Supabase provides and vanilla Postgres does not: the
 `anon` / `authenticated` / `service_role` roles, `auth.users`, and
 `auth.uid()` / `auth.jwt()` / `auth.role()`. **`auth.uid()` must read `sub`
 out of `request.jwt.claims`**, exactly as the real one does — a shim that
@@ -453,7 +458,7 @@ Six rules, every one of which was learned by breaking a real push:
 The backfill block in `0012` returns early when `members` is empty, so it is a
 no-op on a fresh database.
 
-### Applied & Prepared Migrations (0001–0037)
+### Applied & Prepared Migrations (0001–0045)
 
 | Migration | Name | Description |
 |---|---|---|
@@ -494,6 +499,14 @@ no-op on a fresh database.
 | `0035` | `readable_money_in_errors.sql` | User-friendly `fmt_rupees` formatting with numeric overload |
 | `0036` | `settable_meeting_fine.sql` | Meeting absent fee configuration in `update_config` |
 | `0037` | `guard_definer_aggregates.sql` | Strict group-membership assertions in SECURITY DEFINER money aggregates |
+| `0038` | `allow_member_update_name.sql` | Members may edit their own `full_name` |
+| `0039` | `outside_borrower_loans.sql` | Loans to non-members, vouched for by a guarantor; `v_loan_status` / `v_reminders` rebuilt |
+| `0040` | `remove_member_same_day_role.sql` | `remove_member` deletes zero-day roles instead of breaking `end_after_start` |
+| `0041` | `admin_delete_audit_logs.sql` | service_role-only RPC to purge audit rows (developer console) |
+| `0042` | `add_upi_payment_method.sql` | `upi` payment method |
+| `0043` | `super_admin_server_side.sql` | `super_admins` allowlist + atomic `admin_assign_role()`, both service_role only |
+| `0044` | `enable_realtime.sql` | Adds the tables FundContext listens to into `supabase_realtime` — live updates had never fired |
+| `0045` | `audit_late_tables.sql` | Attaches `trg_audit` to the six tables created after 0012 (payouts, share-outs, schedules, meetings), which were never audited |
 
 ---
 
@@ -809,4 +822,5 @@ When touching database schema or migrations:
 - Check migration status: `npx supabase migration list`
 - Dry run migrations: `npx supabase db push --dry-run`
 - Push migrations: `npx supabase db push --yes` (never use `db reset` without explicit user permission).
-- Remote status: Migrations 0001–0037 are fully applied on the remote database. Tables like `distributions`, `distribution_lines`, `meetings`, `meeting_attendance`, `member_payouts` and `loan_instalments` (created by `0027_loan_schedule.sql` — the file is named for the concept, the table is not) and their RPCs are live.
+- **A new table is not audited, or live, until a migration says so.** `fn_attach_audit_triggers()` only runs when called, and `supabase_realtime` only carries the tables added to it: 0025–0030 shipped six tables with neither, and nothing failed. A migration that creates a table must call `fn_attach_audit_triggers()` (0045), and add the table to 0044's publication list if FundContext listens to it. `assertions.sql` check 5 catches the first.
+- Remote status: Migrations 0001–0043 are applied on the remote database; 0044–0045 are written and pending a push. Tables like `distributions`, `distribution_lines`, `meetings`, `meeting_attendance`, `member_payouts` and `loan_instalments` (created by `0027_loan_schedule.sql` — the file is named for the concept, the table is not) and their RPCs are live.

@@ -93,13 +93,17 @@ do $$
 declare
   v_missing text[];
 begin
-  -- 5. Every business table must carry the audit trigger.
+  -- 5. Every business table must carry the audit trigger. The exclusions are
+  --    exactly fn_attach_audit_triggers()'s (0045): the log itself, and the
+  --    two tables that are not group business. This check exempted only
+  --    audit_log, so it failed on profiles from 0012 on -- and nobody noticed
+  --    the six money tables from 0025-0030 that were genuinely unaudited.
   select array_agg(c.relname order by c.relname) into v_missing
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public'
     and c.relkind = 'r'
-    and c.relname <> 'audit_log'
+    and c.relname not in ('audit_log', 'profiles', 'super_admins')
     and not exists (
       select 1 from pg_trigger t
       where t.tgrelid = c.oid and t.tgname = 'trg_audit'
@@ -127,10 +131,15 @@ end $$;
 -- ---------------------------------------------------------------------------
 -- 7 & 8. Behavioural checks under a real member JWT.
 --
--- These need test members and a test loan. Everything is created inside one
--- block and removed again at the end, so a passing run leaves the database
--- exactly as it found it. The cleanup is in an EXCEPTION handler too, so a
--- failing assertion still cleans up before it re-raises.
+-- These need a test group, test members and a test loan. They were written
+-- before 0012 made every row belong to a group, so from then on the first
+-- INSERT failed on `members.group_id` and nothing below it ever ran.
+--
+-- Everything now happens inside an inner BEGIN block that ends by raising a
+-- sentinel, which plpgsql answers by rolling the whole block back -- group,
+-- members, loan, votes AND the audit rows they generated. Deleting row by row
+-- could not do that: the audit log refuses DELETE, and its rows reference the
+-- group. A real FAIL is a different message, so it still propagates.
 --
 -- Note on the "must be refused" checks: each one asserts on the SQLSTATE it
 -- expects, not merely that *something* threw. A bare `when others` would turn
@@ -141,22 +150,31 @@ do $$
 declare
   v_auth     uuid := gen_random_uuid();
   v_auth2    uuid := gen_random_uuid();
+  v_auth3    uuid := gen_random_uuid();
+  v_group    uuid;
   v_alice    uuid;
   v_bob      uuid;
   v_borrower uuid;
   v_other    uuid;
   v_loan     uuid;
   v_ok       boolean;
-  v_state    text;
 begin
-  insert into members (auth_user_id, full_name, joined_on)
-  values (v_auth, '~test Alice', current_date - 400) returning id into v_alice;
-  insert into members (full_name, joined_on)
-  values ('~test Bob', current_date - 400) returning id into v_bob;
+ begin
+  insert into auth.users (id, email, aud, role, created_at, updated_at) values
+    (v_auth,  'alice.assert@test.invalid',    'authenticated', 'authenticated', now(), now()),
+    (v_auth2, 'borrower.assert@test.invalid', 'authenticated', 'authenticated', now(), now()),
+    (v_auth3, 'other.assert@test.invalid',    'authenticated', 'authenticated', now(), now());
+  insert into groups (name, created_by) values ('~test assertions', v_auth) returning id into v_group;
 
-  -- Impersonate Alice.
+  insert into members (group_id, auth_user_id, full_name, joined_on)
+  values (v_group, v_auth, '~test Alice', current_date - 400) returning id into v_alice;
+  insert into members (group_id, full_name, joined_on)
+  values (v_group, '~test Bob', current_date - 400) returning id into v_bob;
+
+  -- Impersonate Alice, in the test group -- the claim PostgREST would carry.
   perform set_config('request.jwt.claims',
-    json_build_object('sub', v_auth::text, 'role', 'authenticated')::text, true);
+    json_build_object('sub', v_auth::text, 'role', 'authenticated',
+                      'app_metadata', json_build_object('group_id', v_group))::text, true);
   perform set_config('role', 'authenticated', true);
 
   if current_member_id() is distinct from v_alice then
@@ -167,10 +185,10 @@ begin
   -- A direct INSERT into loans must be refused by RLS (42501).
   v_ok := false;
   begin
-    insert into loans (borrower_id, guarantor_id, principal_paise, rate_bp,
+    insert into loans (group_id, borrower_id, guarantor_id, principal_paise, rate_bp,
                        overdue_rate_bp, term_months, fund_total_at_request_paise,
                        eligible_voter_count, required_approvals, borrower_role_at_request)
-    values (v_alice, v_bob, 100000, 200, 300, 6, 1000000, 6, 4, 'member');
+    values (v_group, v_alice, v_bob, 100000, 200, 300, 6, 1000000, 6, 4, 'member');
   exception when insufficient_privilege then
     v_ok := true;
   end;
@@ -182,8 +200,8 @@ begin
   -- A direct INSERT into loan_votes must be refused by RLS (42501).
   v_ok := false;
   begin
-    insert into loan_votes (loan_id, voter_id, vote)
-    values (gen_random_uuid(), v_alice, 'approve');
+    insert into loan_votes (group_id, loan_id, voter_id, vote)
+    values (v_group, gen_random_uuid(), v_alice, 'approve');
   exception when insufficient_privilege then
     v_ok := true;
   end;
@@ -195,8 +213,8 @@ begin
   -- Writing to the audit log must be refused.
   v_ok := false;
   begin
-    insert into audit_log (table_name, row_id, action)
-    values ('members', v_alice::text, 'INSERT');
+    insert into audit_log (group_id, table_name, row_id, action)
+    values (v_group, 'members', v_alice::text, 'INSERT');
   exception when insufficient_privilege then
     v_ok := true;
   end;
@@ -208,19 +226,20 @@ begin
   -- ---- the self-approval rule, the most important guard in the app --------
   perform set_config('role', 'postgres', true);
 
-  insert into members (auth_user_id, full_name, joined_on)
-  values (v_auth2, '~test Borrower', current_date - 400) returning id into v_borrower;
-  insert into members (full_name, joined_on)
-  values ('~test Other', current_date - 400) returning id into v_other;
+  insert into members (group_id, auth_user_id, full_name, joined_on)
+  values (v_group, v_auth2, '~test Borrower', current_date - 400) returning id into v_borrower;
+  insert into members (group_id, auth_user_id, full_name, joined_on)
+  values (v_group, v_auth3, '~test Other', current_date - 400) returning id into v_other;
 
-  insert into loans (borrower_id, guarantor_id, principal_paise, rate_bp,
+  insert into loans (group_id, borrower_id, guarantor_id, principal_paise, rate_bp,
                      overdue_rate_bp, term_months, fund_total_at_request_paise,
                      eligible_voter_count, required_approvals, borrower_role_at_request)
-  values (v_borrower, v_other, 100000, 200, 300, 6, 10000000, 6, 4, 'member')
+  values (v_group, v_borrower, v_other, 100000, 200, 300, 6, 10000000, 6, 4, 'member')
   returning id into v_loan;
 
   perform set_config('request.jwt.claims',
-    json_build_object('sub', v_auth2::text, 'role', 'authenticated')::text, true);
+    json_build_object('sub', v_auth2::text, 'role', 'authenticated',
+                      'app_metadata', json_build_object('group_id', v_group))::text, true);
 
   v_ok := false;
   begin
@@ -236,7 +255,8 @@ begin
   -- A different member MUST be able to vote -- otherwise the check above
   -- would pass even if voting were broken for everyone.
   perform set_config('request.jwt.claims',
-    json_build_object('sub', v_auth::text, 'role', 'authenticated')::text, true);
+    json_build_object('sub', v_auth::text, 'role', 'authenticated',
+                      'app_metadata', json_build_object('group_id', v_group))::text, true);
   perform cast_loan_vote(v_loan, 'approve', 'assertion test');
 
   if not exists (
@@ -246,31 +266,22 @@ begin
   end if;
   raise notice 'PASS: a non-borrower can vote';
 
-  -- ---- cleanup -----------------------------------------------------------
+  -- ---- undo everything ---------------------------------------------------
+  raise exception '__assertions_rollback__';
+ exception
+  when raise_exception then
+    -- The sentinel: this block has been rolled back, audit rows included.
+    -- Anything else raised here is a real FAIL and goes on up.
+    if sqlerrm <> '__assertions_rollback__' then
+      raise;
+    end if;
+ end;
   perform set_config('role', 'postgres', true);
   perform set_config('request.jwt.claims', null, true);
-
-  delete from loan_votes where loan_id = v_loan;
-  delete from loans where id = v_loan;
-  delete from members where id in (v_alice, v_bob, v_borrower, v_other);
-
-  -- The audit rows these operations generated are deliberately NOT deleted:
-  -- audit_log is append-only by design, enforced by a trigger that refuses
-  -- DELETE even for the table owner. Test rows appear in the log named
-  -- '~test ...' -- that is correct behaviour, not leftover mess.
-
-  raise notice 'PASS: behavioural checks complete, test data removed';
-
-exception
-  when others then
-    -- Clean up even on failure, then re-raise so the run still fails loudly.
-    get stacked diagnostics v_state = returned_sqlstate;
-    perform set_config('role', 'postgres', true);
-    perform set_config('request.jwt.claims', null, true);
-    delete from loan_votes where loan_id = v_loan;
-    delete from loans where id = v_loan;
-    delete from members where full_name like '~test %';
-    raise;
+  if exists (select 1 from groups where name = '~test assertions') then
+    raise exception 'FAIL: the behavioural checks left their test group behind';
+  end if;
+  raise notice 'PASS: behavioural checks complete, every test row rolled back';
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -347,6 +358,47 @@ begin
     raise exception 'FAIL: direct write policies on setup tables: %', v_bad;
   end if;
   raise notice 'PASS: roles and config are RPC-only';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 11. The developer console's database surface is service_role only (0041,
+--     0043). The Edge Function holds that role; nothing a signed-in member
+--     holds may read the allowlist of super admins, add themselves to it, or
+--     call the console's RPCs -- admin_assign_role() skips every role check
+--     the app's assign_role() makes, and admin_delete_audit_logs() empties the
+--     append-only log.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_bad text[] := '{}';
+  r text;
+  f text;
+begin
+  foreach r in array array['anon', 'authenticated'] loop
+    if has_table_privilege(r, 'public.super_admins', 'SELECT')
+       or has_table_privilege(r, 'public.super_admins', 'INSERT')
+       or has_table_privilege(r, 'public.super_admins', 'UPDATE')
+       or has_table_privilege(r, 'public.super_admins', 'DELETE') then
+      v_bad := v_bad || (r || ' on super_admins');
+    end if;
+    foreach f in array array[
+      'public.admin_assign_role(uuid, uuid, role_enum, date)',
+      'public.admin_delete_audit_logs(bigint[])'
+    ] loop
+      if has_function_privilege(r, f, 'EXECUTE') then
+        v_bad := v_bad || (r || ' can execute ' || f);
+      end if;
+    end loop;
+  end loop;
+
+  if not (select relrowsecurity from pg_class where oid = 'public.super_admins'::regclass) then
+    v_bad := v_bad || 'RLS off on super_admins'::text;
+  end if;
+
+  if array_length(v_bad, 1) > 0 then
+    raise exception 'FAIL: console surface reachable by members: %', v_bad;
+  end if;
+  raise notice 'PASS: super_admins and the console RPCs are service_role only';
 end $$;
 
 select 'ALL ASSERTIONS PASSED' as result;

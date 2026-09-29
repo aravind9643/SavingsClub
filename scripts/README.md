@@ -4,6 +4,8 @@ Drive the app as real members, in whole scenarios — a month of collections, a
 loan from request to repayment, a group winding up, two groups side by side.
 
 ```bash
+PGPASSWORD=... bash scripts/replay.sh           # rebuild sanchay_test, run assertions + isolation
+PGPASSWORD=... bash scripts/replay.sh --no-tests && node scripts/test-scenarios.mjs
 node scripts/test-scenarios.mjs                 # everything, against local
 node scripts/test-scenarios.mjs --list
 node scripts/test-scenarios.mjs --only=loans
