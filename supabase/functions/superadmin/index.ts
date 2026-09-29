@@ -124,9 +124,17 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Use POST' }, 405);
 
+  // SUPERADMIN_DB_KEY is a new-style secret key (sb_secret_...), set with
+  // `supabase secrets set`. The legacy SUPABASE_SERVICE_ROLE_KEY is only a
+  // fallback: the old JWT service_role key leaked through a VITE_ variable,
+  // and once legacy keys are disabled in the dashboard it stops working --
+  // which is the point. A secret key can be revoked on its own, without
+  // touching the anon key or signing anyone out.
+  const dbKey = Deno.env.get('SUPERADMIN_DB_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!dbKey) return json({ error: 'The console has no database key — set SUPERADMIN_DB_KEY' }, 503);
   const db = createClient(
     Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    dbKey,
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
