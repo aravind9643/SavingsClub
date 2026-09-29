@@ -1,4 +1,31 @@
-const CACHE_NAME = 'savingsclub-v1';
+const CACHE_NAME = 'savingsclub-v2';
+
+// Phone notifications (the `notify` Edge Function's daily digest). The
+// payload is { title, body, url, tag }; the same tag each day makes today's
+// digest replace yesterday's instead of stacking up.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { /* not JSON */ }
+  event.waitUntil(self.registration.showNotification(data.title || 'SavingsClub', {
+    body: data.body || 'You have something to look at in SavingsClub.',
+    tag: data.tag || 'savingsclub',
+    renotify: true,
+    icon: '/icon.svg',
+    badge: '/icon.svg',
+    data: { url: data.url || '/' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = wins.find((w) => w.url.startsWith(self.location.origin));
+    if (open) { await open.focus(); return open.navigate(url); }
+    return self.clients.openWindow(url);
+  })());
+});
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -28,7 +55,8 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   // Only cache GET requests and skip Supabase/API requests
-  if (event.request.method !== 'GET' || event.request.url.includes('/rest/v1/') || event.request.url.includes('/auth/v1/')) {
+  if (event.request.method !== 'GET' || event.request.url.includes('/rest/v1/') || event.request.url.includes('/auth/v1/')
+      || event.request.url.includes('/functions/v1/') || event.request.url.includes('/realtime/v1/')) {
     return;
   }
 

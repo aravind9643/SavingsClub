@@ -4,10 +4,10 @@ import { useQuery, invalidate } from '../hooks/useQuery';
 import { useSession } from './SessionContext';
 import { formatPaise, formatPaiseShort } from '../lib/money';
 import { daysBetween, today } from '../lib/dates';
-import { fmtDate } from '../components/ui';
+import { useT, useLang, dateIn, monthIn } from '../lib/i18n';
 import type {
   FundSummary, CashAlert, LoanRow, UnpaidRow, PendingMember, ExpenseRow,
-  ContributionPeriod, Distribution, BankStatement,
+  ContributionPeriod, Distribution, BankStatement, PaymentClaim,
 } from '../lib/types';
 
 export const FUND_KEY = 'fund';
@@ -37,19 +37,18 @@ interface FundValue {
       ever said when it has actually been checked. */
   settled: boolean;
   retry: () => void;
+  /** The reader's own "I've paid" claims still waiting for an officer. */
+  myPendingClaimsPaise: number;
 }
 
 const SEVERITY_ORDER: Record<Alert['severity'], number> = { danger: 0, warn: 1, info: 2 };
 
-function monthName(periodMonth: string): string {
-  const [y, m] = periodMonth.slice(0, 10).split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'long' });
-}
-
 const Ctx = createContext<FundValue | null>(null);
 
 export function FundProvider({ children }: { children: ReactNode }) {
-  const { member, currentGroupId, group, isOfficer, role } = useSession();
+  const { member, currentGroupId, group, isOfficer, role, config } = useSession();
+  const t = useT();
+  const [lang] = useLang();
   const isMoneyHandler = role === 'cashier' || role === 'accountant';
   const enabled = Boolean(member && currentGroupId);
 
@@ -93,6 +92,11 @@ export function FundProvider({ children }: { children: ReactNode }) {
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'distributions', filter: `group_id=eq.${currentGroupId}` },
         () => invalidate('fund', 'distributions'))
+      // 0046: a member says they paid -> the cashier's queue; the cashier
+      // decides -> the member's Home.
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'payment_claims', filter: `group_id=eq.${currentGroupId}` },
+        () => invalidate('fund', 'claims', 'contributions', 'positions'))
       .subscribe();
 
     return () => { void supabase.removeChannel(ch); };
@@ -108,8 +112,8 @@ export function FundProvider({ children }: { children: ReactNode }) {
   });
 
   // Every loan still in play, in one read: votes owed, the reader's own
-  // requests, approved loans nobody has paid out, and loans falling behind are
-  // all derived from it below.
+  // requests, approved loans nobody has paid out, loans falling behind, and
+  // loans the reader vouched for are all derived from it below.
   const openLoansQ = useQuery<LoanRow[]>(enabled ? `${FUND_KEY}:openloans` : null, async () => {
     let q = supabase
       .from('v_loan_status').select('*').in('status', ['requested', 'approved', 'disbursed']);
@@ -201,6 +205,29 @@ export function FundProvider({ children }: { children: ReactNode }) {
     return (data ?? []) as UnpaidRow[];
   });
 
+  // "I've paid" claims (0046): every pending one in the group -- the reader's
+  // own change what Home tells them they owe, and an officer confirms the
+  // rest -- plus the reader's own turned down this past week, with the reason.
+  const claimsQ = useQuery<PaymentClaim[]>(enabled ? `${FUND_KEY}:claims` : null, async () => {
+    const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    const [pending, rejected] = await Promise.all([
+      supabase.from('payment_claims').select('*')
+        .eq('group_id', currentGroupId!).eq('status', 'pending'),
+      supabase.from('payment_claims').select('*')
+        .eq('group_id', currentGroupId!).eq('member_id', member!.id)
+        .eq('status', 'rejected').gt('decided_at', weekAgo),
+    ]);
+    if (pending.error) throw pending.error;
+    if (rejected.error) throw rejected.error;
+    return [...(pending.data ?? []), ...(rejected.data ?? [])] as PaymentClaim[];
+  });
+
+  const namesQ = useQuery<Map<string, string>>(enabled ? `${FUND_KEY}:names` : null, async () => {
+    const { data, error } = await supabase.from('members').select('id, full_name').eq('group_id', currentGroupId!);
+    if (error) throw error;
+    return new Map((data ?? []).map((m) => [m.id as string, m.full_name as string]));
+  });
+
   const offices = useQuery<{ role: string }[]>(enabled ? `${FUND_KEY}:roles` : null, async () => {
     let q = supabase
       .from('role_assignments').select('role').is('end_date', null);
@@ -225,34 +252,54 @@ export function FundProvider({ children }: { children: ReactNode }) {
 
   const alerts: Alert[] = [];
   const fund = fundQ.data;
+  const d = (iso: string | null | undefined) => dateIn(lang, iso);
+  const month = (iso: string) => monthIn(lang, iso);
 
+  // Both "too much cash" and "bank shows more" are fixed the same way, so
+  // both land on the deposit sheet rather than on a screen to hunt through.
   if (fund && fund.cash_float_paise > fund.cash_float_limit_paise) {
-    alerts.push({
-      id: 'float',
-      severity: 'danger',
-      message: 'Too much cash in hand — put the extra in the bank',
-      to: '/cash',
-    });
+    alerts.push({ id: 'float', severity: 'danger', message: t('a.float'), to: '/cash?deposit=1' });
   }
   const me = member?.id;
   const openLoans = openLoansQ.data ?? [];
   const isMine = (l: LoanRow) => Boolean(me) && l.borrower_id === me;
+  const claims = claimsQ.data ?? [];
+  const names = namesQ.data ?? new Map<string, string>();
 
   // ---- the reader's own position first: what they owe, and what they wait on.
+  const myPending = claims.filter((c) => c.status === 'pending' && c.member_id === me);
+  const myPendingPaise = myPending.reduce((s, c) => s + c.amount_paise, 0);
   const myUnpaid = (unpaidQ.data ?? []).filter((u) => u.member_id === me);
   if (myUnpaid.length) {
     // The shortfall, not the full month -- a part payment must reduce what
     // the member is told they owe, or the figure contradicts their receipt.
-    const owed = myUnpaid.reduce((s, u) => s + u.shortfall_paise, 0);
-    const late = myUnpaid.some((u) => u.is_overdue);
-    const first = myUnpaid[0];
+    // And less what they have already sent and are waiting on: telling a
+    // member who paid an hour ago to pay is how they pay twice.
+    const owed = myUnpaid.reduce((s, u) => s + u.shortfall_paise, 0) - myPendingPaise;
+    if (owed > 0) {
+      const late = myUnpaid.some((u) => u.is_overdue);
+      const first = myUnpaid[0];
+      alerts.push({
+        id: 'my-unpaid',
+        severity: late ? 'danger' : 'warn',
+        message: late
+          ? t('a.my.overdue', { amount: formatPaise(owed) })
+          : t('a.my.due', { amount: formatPaise(owed), month: month(first.period_month), date: d(first.grace_date) }),
+        to: '/deposits?pay=1',
+      });
+    }
+  }
+  if (myPendingPaise > 0) {
     alerts.push({
-      id: 'my-unpaid',
-      severity: late ? 'danger' : 'warn',
-      message: late
-        ? `Your ${formatPaise(owed)} contribution is overdue — please pay it`
-        : `Pay your ${formatPaise(owed)} for ${monthName(first.period_month)} by ${fmtDate(first.grace_date)}`,
-      to: '/deposits',
+      id: 'my-claim', severity: 'info',
+      message: t('a.my.claim', { amount: formatPaise(myPendingPaise) }), to: '/deposits?pay=1',
+    });
+  }
+  for (const c of claims.filter((x) => x.status === 'rejected' && x.member_id === me)) {
+    alerts.push({
+      id: `my-claim-no:${c.id}`, severity: 'warn',
+      message: t('a.my.claim.rejected', { amount: formatPaise(c.amount_paise), reason: c.decision_note ?? '' }),
+      to: '/deposits?pay=1',
     });
   }
 
@@ -262,42 +309,49 @@ export function FundProvider({ children }: { children: ReactNode }) {
         id: `my-loan-late:${l.id}`,
         severity: 'danger',
         message: l.arrears_paise > 0
-          ? `Your loan is ${formatPaise(l.arrears_paise)} behind — please repay`
-          : `Your loan was due on ${fmtDate(l.due_on)} — ${formatPaise(l.total_due_paise)} still owed`,
+          ? t('a.my.loan.behind', { amount: formatPaise(l.arrears_paise) })
+          : t('a.my.loan.late', { date: d(l.due_on), amount: formatPaise(l.total_due_paise) }),
         to: `/loans/${l.id}`,
       });
     } else if (l.status === 'disbursed' && l.next_due_on && daysBetween(today(), l.next_due_on.slice(0, 10)) <= 7) {
       alerts.push({
-        id: `my-loan-due:${l.id}`,
-        severity: 'warn',
-        message: `Your next loan instalment is due ${fmtDate(l.next_due_on)}`,
-        to: `/loans/${l.id}`,
+        id: `my-loan-due:${l.id}`, severity: 'warn',
+        message: t('a.my.loan.next', { date: d(l.next_due_on) }), to: `/loans/${l.id}`,
       });
     } else if (l.status === 'requested') {
       alerts.push({
-        id: `my-loan-req:${l.id}`,
-        severity: 'info',
-        message: `Your ${formatPaiseShort(l.principal_paise)} loan request is waiting for votes — `
-          + `${l.approvals} of ${l.required_approvals} approvals so far`,
+        id: `my-loan-req:${l.id}`, severity: 'info',
+        message: t('a.my.loan.req', {
+          amount: formatPaiseShort(l.principal_paise), yes: l.approvals, need: l.required_approvals,
+        }),
         to: `/loans/${l.id}`,
       });
     } else if (l.status === 'approved') {
       alerts.push({
-        id: `my-loan-ok:${l.id}`,
-        severity: 'info',
-        message: `Your ${formatPaiseShort(l.principal_paise)} loan is approved — waiting to be paid out`,
-        to: `/loans/${l.id}`,
+        id: `my-loan-ok:${l.id}`, severity: 'info',
+        message: t('a.my.loan.ok', { amount: formatPaiseShort(l.principal_paise) }), to: `/loans/${l.id}`,
       });
     }
+  }
+
+  // ---- loans the reader vouched for. A guarantor answers for the loan if
+  // the borrower stops paying, and used to learn it only by going to look.
+  for (const l of openLoans.filter((x) => x.guarantor_id === me && !isMine(x) && x.status === 'disbursed' && x.is_overdue)) {
+    alerts.push({
+      id: `guarantee:${l.id}`,
+      severity: 'danger',
+      message: l.arrears_paise > 0
+        ? t('a.guarantee.behind', { name: l.borrower_name, amount: formatPaise(l.arrears_paise) })
+        : t('a.guarantee.late', { name: l.borrower_name }),
+      to: `/loans/${l.id}`,
+    });
   }
 
   const myExpenses = (expenseQ.data ?? []).filter((e) => e.created_by === me);
   for (const e of myExpenses) {
     alerts.push({
-      id: `my-expense:${e.id}`,
-      severity: 'info',
-      message: `Your spending request "${e.description}" is waiting for votes — `
-        + `${e.approvals} of ${e.required_approvals} so far`,
+      id: `my-expense:${e.id}`, severity: 'info',
+      message: t('a.my.expense', { what: e.description, yes: e.approvals, need: e.required_approvals }),
       to: '/expenses',
     });
   }
@@ -309,9 +363,24 @@ export function FundProvider({ children }: { children: ReactNode }) {
       id: 'loanvote',
       severity: 'warn',
       message: loanVotes.length === 1
-        ? `${loanVotes[0].borrower_name}'s ${formatPaiseShort(loanVotes[0].principal_paise)} loan request needs your vote`
-        : `${loanVotes.length} loan requests are waiting for your vote`,
+        ? t('a.loanvote.one', { name: loanVotes[0].borrower_name, amount: formatPaiseShort(loanVotes[0].principal_paise) })
+        : t('a.loanvote.many', { n: loanVotes.length }),
       to: loanVotes.length === 1 ? `/loans/${loanVotes[0].id}` : '/loans',
+    });
+  }
+
+  // Claims only the OTHER money officer can confirm are not this reader's job.
+  const toConfirm = isMoneyHandler
+    ? claims.filter((c) => c.status === 'pending' && c.member_id !== me)
+    : [];
+  if (toConfirm.length) {
+    alerts.push({
+      id: 'claims',
+      severity: 'warn',
+      message: toConfirm.length === 1
+        ? t('a.claims.one', { name: names.get(toConfirm[0].member_id) ?? '—', amount: formatPaise(toConfirm[0].amount_paise) })
+        : t('a.claims.many', { n: toConfirm.length, amount: formatPaise(toConfirm.reduce((s, c) => s + c.amount_paise, 0)) }),
+      to: '/deposits',
     });
   }
 
@@ -325,65 +394,49 @@ export function FundProvider({ children }: { children: ReactNode }) {
       id: 'payout',
       severity: 'warn',
       message: toPayOut.length === 1
-        ? `Pay out ${toPayOut[0].borrower_name}'s approved ${formatPaiseShort(toPayOut[0].principal_paise)} loan`
-        : `${toPayOut.length} approved loans are waiting to be paid out`,
+        ? t('a.payout.one', { name: toPayOut[0].borrower_name, amount: formatPaiseShort(toPayOut[0].principal_paise) })
+        : t('a.payout.many', { n: toPayOut.length }),
       to: toPayOut.length === 1 ? `/loans/${toPayOut[0].id}` : '/loans',
     });
   }
 
-  const overdue = openLoans.filter((l) => l.status === 'disbursed' && l.is_overdue && !isMine(l));
+  // The reader's own loans are said above, and loans they vouched for too.
+  const overdue = openLoans.filter((l) => l.status === 'disbursed' && l.is_overdue && !isMine(l) && l.guarantor_id !== me);
   if (overdue.length) {
-    alerts.push({
-      id: 'overdue',
-      severity: 'danger',
-      // is_overdue means "behind on the plan OR past the final date" since
-      // 0027. Saying "past its due date" is wrong for the common case: a
-      // borrower nine months into a twelve-month loan who has missed
-      // instalments is behind, not past the end.
-      message: (() => {
-        const n = overdue.length;
-        const behind = overdue.filter((l) => (l.arrears_paise ?? 0) > 0).length;
-        if (behind === n) {
-          return n === 1 ? '1 loan is behind on repayments'
-                         : `${n} loans are behind on repayments`;
-        }
-        if (behind === 0) {
-          return n === 1 ? '1 loan is past its final date'
-                         : `${n} loans are past their final date`;
-        }
-        return `${n} loans need chasing — ${behind} behind on repayments`;
-      })(),
-      to: '/loans',
-    });
+    // is_overdue means "behind on the plan OR past the final date" since
+    // 0027. Saying "past its due date" is wrong for the common case: a
+    // borrower nine months into a twelve-month loan who has missed
+    // instalments is behind, not past the end.
+    const n = overdue.length;
+    const behind = overdue.filter((l) => (l.arrears_paise ?? 0) > 0).length;
+    const message = behind === n
+      ? (n === 1 ? t('a.overdue.behind.one') : t('a.overdue.behind.many', { n }))
+      : behind === 0
+        ? (n === 1 ? t('a.overdue.final.one') : t('a.overdue.final.many', { n }))
+        : t('a.overdue.mixed', { n, behind });
+    alerts.push({ id: 'overdue', severity: 'danger', message, to: '/loans' });
   }
   if (cashQ.data?.length) {
     alerts.push({
-      id: 'unreported',
-      severity: 'danger',
-      message: cashQ.data.length === 1
-        ? '1 cash payment was not told to the group in time'
-        : `${cashQ.data.length} cash payments were not told to the group in time`,
+      id: 'unreported', severity: 'danger',
+      message: cashQ.data.length === 1 ? t('a.unreported.one') : t('a.unreported.many', { n: cashQ.data.length }),
       to: '/cash',
     });
   }
   if (pendingQ.data?.length) {
     alerts.push({
-      id: 'pending',
-      severity: 'warn',
-      message: pendingQ.data.length === 1
-        ? '1 person is waiting to be let into the group'
-        : `${pendingQ.data.length} people are waiting to be let into the group`,
+      id: 'pending', severity: 'warn',
+      message: pendingQ.data.length === 1 ? t('a.pending.one') : t('a.pending.many', { n: pendingQ.data.length }),
       to: '/members',
     });
   }
   const expenseVotes = (expenseQ.data ?? []).filter((e) => e.can_i_vote);
   if (expenseVotes.length) {
     alerts.push({
-      id: 'expensevote',
-      severity: 'warn',
+      id: 'expensevote', severity: 'warn',
       message: expenseVotes.length === 1
-        ? `"${expenseVotes[0].description}" (${formatPaiseShort(expenseVotes[0].amount_paise)}) needs your vote`
-        : `${expenseVotes.length} spending requests are waiting for your vote`,
+        ? t('a.expvote.one', { what: expenseVotes[0].description, amount: formatPaiseShort(expenseVotes[0].amount_paise) })
+        : t('a.expvote.many', { n: expenseVotes.length }),
       to: '/expenses',
     });
   }
@@ -394,11 +447,8 @@ export function FundProvider({ children }: { children: ReactNode }) {
   );
   if (othersLate.size) {
     alerts.push({
-      id: 'unpaid',
-      severity: 'warn',
-      message: othersLate.size === 1
-        ? '1 member is late with their contribution'
-        : `${othersLate.size} members are late with their contributions`,
+      id: 'unpaid', severity: 'warn',
+      message: othersLate.size === 1 ? t('a.late.one') : t('a.late.many', { n: othersLate.size }),
       to: '/deposits',
     });
   }
@@ -415,10 +465,8 @@ export function FundProvider({ children }: { children: ReactNode }) {
     const thisMonth = today().slice(0, 7);
     if (isOfficer && !periods.some((p) => p.period_month.slice(0, 7) === thisMonth)) {
       alerts.push({
-        id: 'open-month',
-        severity: 'warn',
-        message: `${monthName(`${thisMonth}-01`)} is not open yet — open it so payments can be recorded`,
-        to: '/deposits',
+        id: 'open-month', severity: 'warn',
+        message: t('a.open', { month: month(`${thisMonth}-01`) }), to: '/deposits',
       });
     }
     // close_period refuses before the grace date, so it is only offered after.
@@ -427,29 +475,31 @@ export function FundProvider({ children }: { children: ReactNode }) {
       : [];
     if (toClose.length) {
       alerts.push({
-        id: 'close-month',
-        severity: 'info',
+        id: 'close-month', severity: 'info',
         message: toClose.length === 1
-          ? `${monthName(toClose[0].period_month)} is past its grace date — close it to lock the entries`
-          : `${toClose.length} past months are still open — close them to lock the entries`,
+          ? t('a.close.one', { month: month(toClose[0].period_month) })
+          : t('a.close.many', { n: toClose.length }),
         to: '/deposits',
       });
     }
   }
+  // Members can only pay from the app once an officer says where to.
+  if (isOfficer && officesFilled && !config?.upi_id) {
+    alerts.push({ id: 'upi', severity: 'info', message: t('a.upi'), to: '/settings' });
+  }
 
   // ---- share-outs. Proposed by one officer, agreed by another; everyone can
   // see one is pending, because it is the largest movement a group makes.
-  for (const d of distributionsQ.data ?? []) {
-    const label = d.kind === 'final' ? 'final share-out' : 'profit share-out';
-    const mine = d.proposed_by === me;
+  for (const dist of distributionsQ.data ?? []) {
+    const kind = t(dist.kind === 'final' ? 'a.dist.final' : 'a.dist.profit');
+    const mine = dist.proposed_by === me;
+    const amount = formatPaise(dist.total_paise);
     alerts.push({
-      id: `distribution:${d.id}`,
+      id: `distribution:${dist.id}`,
       severity: isOfficer && !mine ? 'warn' : 'info',
       message: isOfficer && !mine
-        ? `A ${formatPaise(d.total_paise)} ${label} is waiting for you to agree it`
-        : mine
-          ? `Your ${formatPaise(d.total_paise)} ${label} is waiting for another officer to agree it`
-          : `A ${formatPaise(d.total_paise)} ${label} has been proposed`,
+        ? t('a.dist.agree', { amount, kind })
+        : mine ? t('a.dist.mine', { amount, kind }) : t('a.dist.seen', { amount, kind }),
       to: '/treasury',
     });
   }
@@ -457,69 +507,46 @@ export function FundProvider({ children }: { children: ReactNode }) {
   // ---- reconciliation. A statement that does not match the books is the one
   // number in the app that says something is wrong with the others.
   //
-  // It names both figures and the likeliest cause. "₹2,000 more than the
-  // books expect" left the officer to work out what to do; the usual cause
-  // of "bank has more" is cash that was paid in at the bank without the
-  // cash-to-bank move being recorded, so the books still think it is in hand.
+  // It names both figures and the likeliest cause. The usual cause of "bank
+  // has more" is cash paid in at the bank without the deposit being
+  // recorded, so the books still think it is in hand -- and that case opens
+  // the deposit sheet directly.
   const bank = bankQ.data;
   if (bank && bank.difference_paise !== 0) {
-    const on = new Date(`${bank.as_of.slice(0, 10)}T00:00:00`)
-      .toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     const more = bank.difference_paise > 0;
-    const hint = more && (fund?.cash_float_paise ?? 0) > 0
-      ? ' — if cash was paid into the bank, record it under Treasury → Cash'
-      : more ? '' : ' — look for a withdrawal or charge not yet recorded';
+    const cashy = more && (fund?.cash_float_paise ?? 0) > 0;
     alerts.push({
       id: 'bank-mismatch',
       severity: 'danger',
-      message: `Bank shows ${formatPaise(bank.closing_balance_paise)} on ${on}, books expect `
-        + `${formatPaise(bank.expected_balance_paise)}${hint}`,
-      to: '/bank',
+      message: t('a.bank', {
+        bank: formatPaise(bank.closing_balance_paise), date: d(bank.as_of),
+        books: formatPaise(bank.expected_balance_paise),
+      }) + (cashy ? t('a.bank.cash') : more ? '' : t('a.bank.less')),
+      to: cashy && role === 'cashier' ? '/cash?deposit=1' : '/bank',
     });
   }
   // Only worth saying once there IS a fund. On a brand-new group everything is
   // zero, and "no lending capacity" then describes an empty pot rather than a
   // problem anyone can act on.
   if (fund && fund.total_fund_paise > 0 && fund.still_lendable_paise <= 0) {
-    alerts.push({
-      id: 'nolend',
-      severity: 'warn',
-      message: 'Nothing left to lend — the rest must stay in the bank',
-      to: '/loans',
-    });
+    alerts.push({ id: 'nolend', severity: 'warn', message: t('a.nolend'), to: '/loans' });
   }
 
   // Until both money offices are filled, contributions, loans and cash cannot
-  // be recorded at all -- the RPCs require one of those roles.
-  // But if there is only 1 member (the creator), they cannot fill both offices yet
-  // because cashier and accountant must be different people. Prompt them to invite members first!
+  // be recorded at all -- the RPCs require one of those roles. A group of one
+  // cannot fill both (cashier and accountant must be different people), so it
+  // is asked to invite first.
   if (memberCount !== undefined && memberCount <= 1) {
-    alerts.push({
-      id: 'invite',
-      severity: 'warn',
-      message: 'Invite members to join — you need at least 2 members to assign cashier and accountant',
-      to: '/settings',
-    });
+    alerts.push({ id: 'invite', severity: 'warn', message: t('a.invite'), to: '/settings' });
   } else if (offices.data) {
     const has = (r: string) => offices.data!.some((o) => o.role === r);
     if (!has('cashier') || !has('accountant')) {
-      alerts.push({
-        id: 'offices',
-        severity: 'danger',
-        message:
-          'Pick a cashier and an accountant — until then no money can be recorded',
-        to: '/members',
-      });
+      alerts.push({ id: 'offices', severity: 'danger', message: t('a.offices'), to: '/members' });
     }
   }
 
   if (group && !group.setup_complete) {
-    alerts.push({
-      id: 'setup',
-      severity: 'warn',
-      message: 'Finish setting up — check the group rules and save them',
-      to: '/settings',
-    });
+    alerts.push({ id: 'setup', severity: 'warn', message: t('a.setup'), to: '/settings' });
   }
 
   alerts.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
@@ -529,7 +556,7 @@ export function FundProvider({ children }: { children: ReactNode }) {
   // say to a member.
   const queries = [
     fundQ, openLoansQ, periodsQ, distributionsQ, bankQ, pendingQ, expenseQ,
-    cashQ, unpaidQ, offices, memberCountQ,
+    cashQ, unpaidQ, claimsQ, namesQ, offices, memberCountQ,
   ];
   const errors = [...new Set(queries.map((q) => q.error).filter((e): e is string => Boolean(e)))];
 
@@ -541,6 +568,7 @@ export function FundProvider({ children }: { children: ReactNode }) {
     errors,
     settled: enabled && queries.every((q) => !q.loading && !q.error),
     retry: () => invalidate(FUND_KEY),
+    myPendingClaimsPaise: myPendingPaise,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

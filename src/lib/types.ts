@@ -267,6 +267,27 @@ export interface AppConfig {
   meeting_absent_fee_paise?: number;
   opened_on?: string | null;
   opening_locked?: boolean;
+  /** Where members pay by UPI (0046). Set by an officer in Settings. */
+  upi_id?: string | null;
+  upi_payee_name?: string | null;
+}
+
+/** A member's "I've paid" -- not money until an officer confirms it (0046). */
+export interface PaymentClaim {
+  id: string;
+  group_id: string;
+  period_id: string;
+  member_id: string;
+  amount_paise: number;
+  paid_on: string;
+  method: 'upi' | 'bank';
+  reference: string | null;
+  status: 'pending' | 'confirmed' | 'rejected' | 'withdrawn';
+  submitted_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  contribution_id: string | null;
 }
 
 export type PayoutKind = 'exit' | 'dividend' | 'interim';

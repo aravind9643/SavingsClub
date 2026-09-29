@@ -1,5 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import PaySheet from '../components/PaySheet';
+import ClaimsReview from './money/ClaimsReview';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery, useMutation } from '../hooks/useQuery';
@@ -20,7 +22,16 @@ type MemberFilter = 'all' | 'unpaid' | 'paid';
 export default function Deposits() {
   const nav = useNavigate();
   const { config, role, currentGroupId, group } = useSession();
-  const { fund } = useFund();
+  const { fund, alerts } = useFund();
+  const [params, setParams] = useSearchParams();
+  // ?pay=1 is where Home's "pay" alert lands: open the pay sheet directly.
+  const [payOpen, setPayOpen] = useState(params.get('pay') === '1');
+  const closePay = () => {
+    setPayOpen(false);
+    if (params.has('pay')) { params.delete('pay'); setParams(params, { replace: true }); }
+  };
+  // FundContext has already worked out whether the reader owes anything.
+  const iOwe = alerts.some((a) => a.id === 'my-unpaid');
   const [periodId, setPeriodId] = useState<string>('');
   const [memberFilter, setMemberFilter] = useState<MemberFilter>('all');
   const [search, setSearch] = useState('');
@@ -111,6 +122,10 @@ export default function Deposits() {
   }, [periods, periodId]);
 
   const period = periods.find((p) => p.id === periodId) ?? periods[0];
+  const memberNames = useMemo(
+    () => new Map((membersQ.data ?? []).map((m) => [m.id, m.full_name])),
+    [membersQ.data],
+  );
   const allActiveMembers = useMemo(() => {
     const map = new Map<string, Member>();
     for (const mem of (membersQ.data ?? []).filter((x) => x.is_active)) {
@@ -264,6 +279,16 @@ export default function Deposits() {
             label: monthLabel(p.period_month, true),
           }))}
         />
+
+        {/* The member's own way to pay, and the officer's queue of "I've
+            paid" to check -- both above the month's figures, because both
+            are the reason to open this screen. */}
+        {iOwe && (
+          <button type="button" className="primary lg" onClick={() => { haptic(10); setPayOpen(true); }}>
+            Pay my deposit
+          </button>
+        )}
+        <ClaimsReview names={memberNames} />
 
         {period && (
           <div className="hero" style={{ padding: '18px 18px 16px' }}>
@@ -524,6 +549,8 @@ export default function Deposits() {
           onClose={() => setReceiptData(null)}
         />
       )}
+
+      {payOpen && <PaySheet onClose={closePay} />}
     </>
   );
 }

@@ -23,10 +23,13 @@ import type {
 import { FundGrowthChart } from '../components/FundGrowthChart';
 import { buildFundHistory, interestShare, type LedgerRows } from '../lib/fundHistory';
 import { downloadCsv, paiseToCsv } from '../lib/export';
+import { useT, useLang, dateIn } from '../lib/i18n';
 
 export default function Dashboard() {
   const nav = useNavigate();
-  const { fund, alerts, loading, errors: alertErrors, settled, retry } = useFund();
+  const { fund, alerts, loading, errors: alertErrors, settled, retry, myPendingClaimsPaise } = useFund();
+  const t = useT();
+  const [lang] = useLang();
   const { member, config, group, currentGroupId, role } = useSession();
   const [reportOpen, setReportOpen] = useState(false);
 
@@ -214,30 +217,28 @@ export default function Dashboard() {
   const myUnpaid = (unpaidQ.data ?? []).find((u) => u.member_id === member?.id);
 
   let monthStat = {
-    v: 'Not started',
-    s: 'this month is not open yet',
+    v: t('home.month.notopen'),
+    s: t('home.month.notopen.sub'),
     tone: undefined as 'mint' | 'amber' | 'coral' | undefined,
   };
 
+  // What is still owed once "I've paid" claims are taken off it. A member
+  // who sent the money an hour ago is waiting, not owing.
+  const stillOwed = Math.max(0, (myUnpaid?.shortfall_paise ?? 0) - myPendingClaimsPaise);
+
   if (latestPeriod.data) {
-    if (myUnpaid) {
+    if (myUnpaid && stillOwed === 0) {
+      monthStat = { v: t('home.month.waiting'), s: t('home.month.waiting.sub'), tone: 'amber' };
+    } else if (myUnpaid) {
       monthStat = {
-        v: formatPaiseShort(myUnpaid.shortfall_paise),
-        s: myUnpaid.is_overdue ? 'overdue' : `due ${fmtDate(myUnpaid.due_date)}`,
+        v: formatPaiseShort(stillOwed),
+        s: myUnpaid.is_overdue ? t('home.month.overdue') : t('home.month.due', { date: dateIn(lang, myUnpaid.due_date) }),
         tone: myUnpaid.is_overdue ? 'coral' : 'amber',
       };
     } else if (myPaidContrib.data) {
-      monthStat = {
-        v: 'Paid',
-        s: 'thank you',
-        tone: 'mint',
-      };
+      monthStat = { v: t('home.month.paid'), s: t('home.month.paid.sub'), tone: 'mint' };
     } else {
-      monthStat = {
-        v: 'Nothing due',
-        s: 'you joined after this month',
-        tone: undefined,
-      };
+      monthStat = { v: t('home.month.none'), s: t('home.month.none.sub'), tone: undefined };
     }
   }
 
@@ -263,11 +264,10 @@ export default function Dashboard() {
   // how a region trains people to stop looking at it.
   // The shortfall, not the full month -- a part payment must reduce what
   // the member is told they owe, or the figure contradicts their receipt.
-  const dueThisMonth = myUnpaid?.shortfall_paise ?? 0;
-  const homeSub = dueThisMonth > 0
-    ? `${formatPaiseShort(dueThisMonth)} ${myUnpaid?.is_overdue ? 'late' : 'to pay this month'}`
+  const homeSub = stillOwed > 0
+    ? t(myUnpaid?.is_overdue ? 'home.sub.late' : 'home.sub.due', { amount: formatPaiseShort(stillOwed) })
     : myPosition
-      ? `${formatPaiseShort(myPosition.contributed_paise)} saved · nothing to pay`
+      ? t('home.sub.clear', { amount: formatPaiseShort(myPosition.contributed_paise) })
       : undefined;
 
   const nextMeeting = nextMeetingQ.data;
@@ -278,7 +278,7 @@ export default function Dashboard() {
   return (
     <>
       <Screen
-        title="Overview"
+        title={t('home.title')}
         sub={homeSub}
         action={
           <button
@@ -316,7 +316,7 @@ export default function Dashboard() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="dim" style={{ fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 650 }}>
-                  Your Account
+                  {t('home.account')}
                 </span>
                 <span className="tag mint" style={{ fontSize: '0.72rem' }}>
                   {roleLabel(role)}
@@ -324,32 +324,42 @@ export default function Dashboard() {
               </div>
               {myPosition && (
                 <span className="dim" style={{ fontSize: '0.82rem' }}>
-                  {Number(myPosition.share_pct).toFixed(1)}% group share
+                  {t('home.share', { pct: Number(myPosition.share_pct).toFixed(1) })}
                 </span>
               )}
             </div>
 
             {myPosition ? (
-              <div className="stats three" style={{ margin: 0 }}>
-                <Stat
-                  k="You have saved"
-                  v={formatPaiseShort(myPosition.contributed_paise)}
-                  s="total accumulated"
-                  tone="mint"
-                />
-                <Stat
-                  k="This month"
-                  v={monthStat.v}
-                  s={monthStat.s}
-                  tone={monthStat.tone}
-                />
-                <Stat
-                  k="Active loan"
-                  v={myPosition.outstanding_paise > 0 ? formatPaiseShort(myPosition.outstanding_paise) : 'None'}
-                  s={myPosition.outstanding_paise > 0 ? 'to repay' : `can borrow up to ${formatPaiseShort(fund?.per_member_cap_paise ?? 0)}`}
-                  tone={myPosition.outstanding_paise > 0 ? 'coral' : undefined}
-                />
-              </div>
+              <>
+                <div className="stats three" style={{ margin: 0 }}>
+                  <Stat
+                    k={t('home.saved')}
+                    v={formatPaiseShort(myPosition.contributed_paise)}
+                    s={t('home.saved.sub')}
+                    tone="mint"
+                  />
+                  <Stat
+                    k={t('home.month')}
+                    v={monthStat.v}
+                    s={monthStat.s}
+                    tone={monthStat.tone}
+                  />
+                  <Stat
+                    k={t('home.loan')}
+                    v={myPosition.outstanding_paise > 0 ? formatPaiseShort(myPosition.outstanding_paise) : t('home.loan.none')}
+                    s={myPosition.outstanding_paise > 0 ? t('home.loan.repay') : t('home.loan.canborrow', { amount: formatPaiseShort(fund?.per_member_cap_paise ?? 0) })}
+                    tone={myPosition.outstanding_paise > 0 ? 'coral' : undefined}
+                  />
+                </div>
+                {/* The one action that clears the "This month" figure, next
+                    to it. */}
+                {stillOwed > 0 && (
+                  <button type="button" className="primary block" style={{ marginTop: 14 }}
+                    onClick={() => { haptic(10); nav('/deposits?pay=1'); }}>
+                    {t('home.pay', { amount: formatPaise(stillOwed) })}
+                  </button>
+                )}
+              </>
             ) : positions.loading || !positions.data ? (
               <div className="stats three" style={{ margin: 0 }} aria-busy="true" aria-label="Loading your figures">
                 {[0, 1, 2].map((i) => (
@@ -365,7 +375,7 @@ export default function Dashboard() {
               // changed under an open tab), but a blank card would be worse.
               <button type="button" className="notice warn" onClick={() => { haptic(10); positions.refetch(); }}>
                 <span className="dot" />
-                <span style={{ flex: 1 }}>Your figures could not be found just now — tap to refresh.</span>
+                <span style={{ flex: 1 }}>{t('home.figures.missing')}</span>
               </button>
             )}
           </div>
@@ -379,7 +389,7 @@ export default function Dashboard() {
         <section aria-label="Needs attention" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {(loadErrors.length > 0 || alerts.length > 0) && (
             <div className="sec-head">
-              <h2>Needs attention</h2>
+              <h2>{t('home.attention')}</h2>
               {/* A bare number at the far right read as a stray page number.
                   A badge in the colour of the worst item says "count". */}
               <span
@@ -393,7 +403,7 @@ export default function Dashboard() {
           )}
           {loadErrors.length > 0 && (
             <Notice tone="danger" onClick={() => { haptic(10); retryAll(); }}>
-              <strong>Some figures could not be loaded</strong> — {loadErrors[0]}. Tap to try again.
+              {t('home.loadfail', { error: loadErrors[0] })}
             </Notice>
           )}
           {alerts.map((a) => (
@@ -406,7 +416,7 @@ export default function Dashboard() {
             </Notice>
           ))}
           {allClear && (
-            <Notice tone="good">All caught up — nothing needs you right now.</Notice>
+            <Notice tone="good">{t('home.allclear')}</Notice>
           )}
         </section>
 
@@ -447,7 +457,7 @@ export default function Dashboard() {
               <IconDeposits width={17} height={17} />
             </span>
             <span style={{ fontSize: '0.74rem', fontWeight: 650, color: 'var(--text)' }}>
-              Deposit
+              {t('home.q.deposit')}
             </span>
           </button>
 
@@ -486,7 +496,7 @@ export default function Dashboard() {
               <IconLoans width={17} height={17} />
             </span>
             <span style={{ fontSize: '0.74rem', fontWeight: 650, color: 'var(--text)' }}>
-              Get Loan
+              {t('home.q.loan')}
             </span>
           </button>
 
@@ -534,7 +544,7 @@ export default function Dashboard() {
               <IconShare width={17} height={17} />
             </span>
             <span style={{ fontSize: '0.74rem', fontWeight: 650, color: 'var(--text)' }}>
-              Invite
+              {t('home.q.invite')}
             </span>
           </button>
 
@@ -573,7 +583,7 @@ export default function Dashboard() {
               <IconTreasury width={17} height={17} />
             </span>
             <span style={{ fontSize: '0.74rem', fontWeight: 650, color: 'var(--text)' }}>
-              Statement
+              {t('home.q.statement')}
             </span>
           </button>
         </div>
@@ -675,7 +685,7 @@ export default function Dashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px' }}>
               <h2 style={{ fontSize: '1.15rem', fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>
-                Group Vault
+                {t('home.vault')}
               </h2>
               <button
                 type="button"
@@ -686,23 +696,23 @@ export default function Dashboard() {
                   setReportOpen(true);
                 }}
               >
-                Statement →
+                {t('home.statement')}
               </button>
             </div>
 
             <Hero
-              label="Total Pooled Savings"
+              label={t('home.vault.total')}
               paise={fund.total_fund_paise}
               meta={
                 <>
                   <Chip tone="mint">
-                    Can lend <b>{formatPaiseShort(fund.still_lendable_paise)}</b>
+                    {t('home.vault.lend')} <b>{formatPaiseShort(fund.still_lendable_paise)}</b>
                   </Chip>
                   <Chip tone="violet">
-                    On loan <b>{formatPaiseShort(fund.outstanding_paise)}</b>
+                    {t('home.vault.onloan')} <b>{formatPaiseShort(fund.outstanding_paise)}</b>
                   </Chip>
                   <Chip>
-                    Reserve <b>{formatPaiseShort(fund.reserve_paise)}</b>
+                    {t('home.vault.reserve')} <b>{formatPaiseShort(fund.reserve_paise)}</b>
                   </Chip>
                 </>
               }
@@ -729,8 +739,8 @@ export default function Dashboard() {
             >
               <span style={{ flex: 'none', fontSize: '1.05rem' }}>🛡️</span>
               <div>
-                <b>{formatPaiseShort(fund.reserve_paise)}</b> safety reserve locked.
-                {config ? ` Group earns ${(config.loan_rate_bp / 100).toFixed(1)}% monthly interest on active loans.` : ''}
+                {t('home.vault.note', { reserve: formatPaiseShort(fund.reserve_paise) })}
+                {config ? t('home.vault.rate', { rate: (config.loan_rate_bp / 100).toFixed(1) }) : ''}
               </div>
             </div>
           </div>
@@ -740,7 +750,7 @@ export default function Dashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {/* Recent Activity Feed */}
             <Panel
-              title="Recent Activity"
+              title={t('home.activity')}
               flush
               action={
                 <button
@@ -750,13 +760,13 @@ export default function Dashboard() {
                     nav('/audit');
                   }}
                 >
-                  History
+                  {t('home.history')}
                 </button>
               }
             >
               {activity.length === 0 ? (
                 <Empty icon={<IconInbox width={22} height={22} />}>
-                  No activity recorded yet.
+                  {t('home.activity.none')}
                 </Empty>
               ) : (
                 <List>
@@ -782,7 +792,7 @@ export default function Dashboard() {
                                   : 'coral'
                       }
                       title={describe(row, memberNames)}
-                      sub={inCash ? `${ago(row.occurred_at)} · in cash` : ago(row.occurred_at)}
+                      sub={inCash ? `${ago(row.occurred_at)} · ${t('home.activity.cash')}` : ago(row.occurred_at)}
                       chevron
                       onClick={() => {
                         haptic(10);
@@ -798,7 +808,7 @@ export default function Dashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {/* Members Savings Leaderboard */}
             <Panel
-              title="Member Savings"
+              title={t('home.savers')}
               flush
               action={
                 <button
@@ -808,12 +818,12 @@ export default function Dashboard() {
                     nav('/members');
                   }}
                 >
-                  See all
+                  {t('home.seeall')}
                 </button>
               }
             >
               {(positions.data ?? []).length === 0 ? (
-                <Empty icon={<IconCheck width={22} height={22} />}>No members found.</Empty>
+                <Empty icon={<IconCheck width={22} height={22} />}>{t('home.savers.none')}</Empty>
               ) : (
                 <List>
                   {/* Sorted here, not trusted from the query: Members and
@@ -825,7 +835,7 @@ export default function Dashboard() {
                       key={pos.member_id}
                       icon={initials(pos.full_name)}
                       title={pos.full_name}
-                      sub={pos.role === 'member' ? `${pos.periods_paid} months paid` : `${roleLabel(pos.role)} · ${pos.periods_paid} months`}
+                      sub={pos.role === 'member' ? t('home.months.paid', { n: pos.periods_paid }) : `${roleLabel(pos.role)} · ${pos.periods_paid} months`}
                       amount={formatPaiseShort(pos.contributed_paise)}
                       note={`${Number(pos.share_pct).toFixed(0)}%`}
                       chevron

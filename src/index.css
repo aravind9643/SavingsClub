@@ -1290,6 +1290,21 @@ button.primary:disabled {
   box-shadow: none;
   opacity: 0.8;
 }
+/* A link that looks like a button -- for upi:// links, which must be real
+   anchors so the phone hands them to the payment app. */
+a.btn-link {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 18px; border-radius: var(--r-full);
+  font-weight: 650; text-decoration: none; color: var(--text);
+  background: var(--surface-2); border: 1.5px solid var(--hairline);
+}
+a.btn-link.primary {
+  background: linear-gradient(135deg, var(--mint), #34c787);
+  border-color: transparent; color: var(--on-accent);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--mint) 25%, transparent);
+}
+a.btn-link.lg { padding: 14px 20px; font-size: 1rem; }
+a.btn-link:active { transform: scale(0.97); }
 button.danger  { background: var(--coral);  border-color: var(--coral);  color: #fff; }
 button.ghost   { background: transparent; }
 button.block   { width: 100%; }

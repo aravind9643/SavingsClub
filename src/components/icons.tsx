@@ -15,7 +15,7 @@ import {
   faArrowUp, faArrowDown, faArrowLeft, faInbox, faTableColumns, faShareNodes, faCalendarCheck,
   faUserPen, faLayerGroup, faEye, faEyeSlash, faEnvelope, faLock, faKey,
   faCircleQuestion, faBookOpen, faLightbulb, faShieldHalved, faServer, faDatabase,
-  faTrash, faPen, faDownload, faFileExport, faWrench,
+  faTrash, faPen, faDownload, faFileExport, faWrench, faBell,
 } from '@fortawesome/free-solid-svg-icons';
 
 config.autoAddCss = false;
@@ -54,6 +54,7 @@ export const IconExpenses = make(faReceipt);
 export const IconCash = make(faWallet);
 export const IconWallet = make(faWallet);
 export const IconBank = make(faBuildingColumns);
+export const IconBell = make(faBell);
 export const IconMembers = make(faPeopleGroup);
 export const IconCommunity = IconMembers;
 export const IconSettings = make(faGear);

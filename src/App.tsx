@@ -14,6 +14,7 @@ import {
   IconArrowLeft,
 } from './components/icons';
 import { haptic } from './lib/haptics';
+import { useT, type MsgKey } from './lib/i18n';
 
 // Only Home ships in the first bundle: it is the first screen a signed-in
 // member sees. Login and Onboard are needed only before that, by people who
@@ -35,12 +36,12 @@ const Help = lazy(() => import('./pages/Help'));
 const Admin = lazy(() => import('./pages/Admin'));
 
 /** Five intuitive destinations for community savings groups */
-const TABS = [
-  { to: '/', label: 'Home', Icon: IconHome, end: true },
-  { to: '/deposits', label: 'Deposits', Icon: IconDeposits },
-  { to: '/loans', label: 'Loans', Icon: IconLoans },
-  { to: '/treasury', label: 'Treasury', Icon: IconTreasury },
-  { to: '/community', label: 'Community', Icon: IconMembers },
+const TABS: { to: string; label: MsgKey; Icon: typeof IconHome; end?: boolean }[] = [
+  { to: '/', label: 'tab.home', Icon: IconHome, end: true },
+  { to: '/deposits', label: 'tab.deposits', Icon: IconDeposits },
+  { to: '/loans', label: 'tab.loans', Icon: IconLoans },
+  { to: '/treasury', label: 'tab.treasury', Icon: IconTreasury },
+  { to: '/community', label: 'tab.community', Icon: IconMembers },
 ];
 
 type Theme = 'dark' | 'light';
@@ -79,16 +80,16 @@ export function useGroupSwitcher() {
 function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
   const { alerts } = useFund();
   const { group } = useSession();
+  const t = useT();
 
   // A dot on the tab that owns the most urgent thing needing attention.
+  // Compared on the path alone: an alert may carry "?pay=1" or "?deposit=1"
+  // to open the fix directly, and that must not hide which tab owns it.
   const blipFor = (to: string) => {
-    if (to === '/treasury') {
-      return alerts.some((a) => a.severity === 'danger' && (a.to === '/cash' || a.to === '/bank' || a.to === '/treasury'));
-    }
-    if (to === '/community') {
-      return alerts.some((a) => a.severity === 'danger' && (a.to === '/members' || a.to === '/community'));
-    }
-    return alerts.some((a) => a.severity === 'danger' && (a.to === to || a.to.startsWith(`${to}/`)));
+    const paths = alerts.filter((a) => a.severity === 'danger').map((a) => a.to.split('?')[0]);
+    if (to === '/treasury') return paths.some((p) => p === '/cash' || p === '/bank' || p === '/treasury');
+    if (to === '/community') return paths.some((p) => p === '/members' || p === '/community');
+    return paths.some((p) => p === to || p.startsWith(`${to}/`));
   };
 
   const location = useLocation();
@@ -126,7 +127,7 @@ function TabBar({ onSwitchGroup }: { onSwitchGroup: () => void }) {
           }}
         >
           <Icon />
-          <span>{label}</span>
+          <span>{t(label)}</span>
           {blipFor(to) ? <i className="blip" /> : null}
         </NavLink>
       ))}

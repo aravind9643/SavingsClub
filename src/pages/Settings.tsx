@@ -160,6 +160,8 @@ export default function Settings() {
 
       <InvitePanel />
 
+      <UpiPanel />
+
       <Panel title="Monthly savings & meetings">
         <div className="field-row">
           <Field label="Amount each month (₹)">
@@ -313,6 +315,48 @@ export default function Settings() {
  * so "new code" doubles as "stop the old one working", which is what someone
  * reaches for when a code has spread further than they meant.
  */
+/**
+ * Where members pay by UPI. Saved on its own, not with the rules above:
+ * set_group_upi() validates the ID's shape, so a typo is refused here rather
+ * than every member's payment app refusing it later.
+ */
+function UpiPanel() {
+  const { config, refresh } = useSession();
+  const [vpa, setVpa] = useState(config?.upi_id ?? '');
+  const [payee, setPayee] = useState(config?.upi_payee_name ?? '');
+  const [done, setDone] = useState(false);
+  const save = useMutation(async () => {
+    const { error } = await supabase.rpc('set_group_upi', {
+      p_upi_id: vpa.trim() || null, p_payee_name: payee.trim() || null,
+    });
+    if (error) throw error;
+  }, { invalidates: ['config', 'session'], onSuccess: () => { setDone(true); refresh(); } });
+
+  return (
+    <Panel title="Where members pay (UPI)">
+      <p className="dim" style={{ marginTop: 0 }}>
+        Members get a Pay button that opens their UPI app with the amount filled in. Use a UPI ID linked
+        to the group's bank account — money sent here is recorded as reaching the bank, not the cashier's hand.
+      </p>
+      <Field label="Group UPI ID">
+        <input value={vpa} onChange={(e) => { setVpa(e.target.value); setDone(false); }}
+          placeholder="e.g. sangam.savings@okicici" autoCapitalize="none" autoComplete="off" spellCheck={false} />
+      </Field>
+      <Field label="Name shown to the payer (optional)">
+        <input value={payee} onChange={(e) => { setPayee(e.target.value); setDone(false); }}
+          placeholder="As on the bank account" />
+      </Field>
+      <ErrorNote error={save.error} />
+      {done && <Notice tone="good">Saved. Members can now pay from the app.</Notice>}
+      <div className="btn-row">
+        <Busy className="primary" pending={save.pending} onClick={() => void save.run()}>
+          {vpa.trim() ? 'Save UPI ID' : 'Remove UPI ID'}
+        </Busy>
+      </div>
+    </Panel>
+  );
+}
+
 function InvitePanel() {
   const { currentGroupId, group } = useSession();
 

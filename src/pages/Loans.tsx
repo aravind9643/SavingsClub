@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Screen } from '../App';
 import { supabase } from '../lib/supabase';
 import { useQuery } from '../hooks/useQuery';
-import { formatPaiseShort } from '../lib/money';
+import { formatPaise, formatPaiseShort } from '../lib/money';
 import { useSession } from '../context/SessionContext';
 import {
   List, Row, Empty, SkeletonList, Segments, Notice, Tag, initials, fmtDate, toneForStatus, labelForStatus,
@@ -11,11 +11,11 @@ import {
 import { IconPlus, IconLoans } from '../components/icons';
 import type { LoanRow } from '../lib/types';
 
-type Filter = 'all' | 'voting' | 'active' | 'done';
+type Filter = 'all' | 'voting' | 'active' | 'done' | 'vouched';
 
 export default function Loans() {
   const nav = useNavigate();
-  const { currentGroupId } = useSession();
+  const { currentGroupId, member } = useSession();
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
 
@@ -34,8 +34,17 @@ export default function Loans() {
   const done = all.filter((l) =>
     l.status === 'closed' || l.status === 'rejected' || l.status === 'written_off');
 
+  // Loans the reader stood guarantor for. A guarantor answers for the loan
+  // if the borrower stops paying, so these get their own view rather than
+  // being found by scrolling.
+  const vouched = all.filter((l) => l.guarantor_id === member?.id && l.borrower_id !== member?.id);
+  const vouchedRunning = vouched.filter((l) => l.status === 'disbursed');
+  const vouchedOwed = vouchedRunning.reduce((s, l) => s + l.outstanding_principal_paise, 0);
+  const vouchedBehind = vouchedRunning.filter((l) => l.is_overdue);
+
   const shown =
-    filter === 'voting' ? voting : filter === 'active' ? active : filter === 'done' ? done : all;
+    filter === 'voting' ? voting : filter === 'active' ? active : filter === 'done' ? done
+      : filter === 'vouched' ? vouched : all;
 
   const qClean = search.trim().toLowerCase();
   const filtered = shown.filter((l) => {
@@ -58,6 +67,7 @@ export default function Loans() {
             { value: 'voting', label: 'Voting', count: voting.length },
             { value: 'active', label: 'Running', count: active.length },
             { value: 'done', label: 'Finished', count: done.length },
+            ...(vouched.length ? [{ value: 'vouched' as const, label: 'I vouched for', count: vouched.length }] : []),
           ]}
         />
 
@@ -119,6 +129,19 @@ export default function Loans() {
               <strong>Action needed:</strong> You have {voting.filter((l) => l.can_i_vote).length === 1 ? '1 loan request waiting for your vote' : `${voting.filter((l) => l.can_i_vote).length} loan requests waiting for your vote`}.
             </Notice>
           </div>
+        )}
+
+        {vouchedRunning.length > 0 && (filter === 'vouched' || vouchedBehind.length > 0) && (
+          <Notice
+            tone={vouchedBehind.length ? 'danger' : 'info'}
+            onClick={filter === 'vouched' ? undefined : () => setFilter('vouched')}
+          >
+            You vouched for {vouchedRunning.length === 1 ? '1 running loan' : `${vouchedRunning.length} running loans`}
+            {' '}with {formatPaise(vouchedOwed)} still to repay
+            {vouchedBehind.length
+              ? ` — ${vouchedBehind.length} behind. If a borrower stops paying, the group looks to you.`
+              : '.'}
+          </Notice>
         )}
 
         {q.loading && !q.data ? (

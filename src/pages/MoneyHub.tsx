@@ -6,7 +6,7 @@ import { useQuery, useMutation } from '../hooks/useQuery';
 import { useSession } from '../context/SessionContext';
 import { useFund } from '../context/FundContext';
 import {
-  formatPaise, formatPaiseShort, paiseToRupees,
+  formatPaise, formatPaiseShort,
 } from '../lib/money';
 import { haptic } from '../lib/haptics';
 import {
@@ -22,6 +22,7 @@ import type {
 } from '../lib/types';
 import { BankStatementSheet } from './money/BankStatementSheet';
 import { CashMovementSheet } from './money/CashMovementSheet';
+import { DepositToBankSheet } from './money/DepositToBankSheet';
 import { DistributionSheet } from './money/DistributionSheet';
 import { ExpenseVoteCard } from './money/ExpenseVoteCard';
 import { ProposeExpenseSheet } from './money/ProposeExpenseSheet';
@@ -48,6 +49,11 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
   // Dialog sheets
   const [bankSheet, setBankSheet] = useState(false);
   const [cashSheet, setCashSheet] = useState(false);
+  // ?deposit=1 is where the "cash over limit" and "bank shows more" alerts
+  // land, so the fix is one tap from the problem.
+  const [depositSheet, setDepositSheet] = useState<{ suggest?: number } | null>(
+    params.get('deposit') === '1' ? {} : null,
+  );
   const [expenseSheet, setExpenseSheet] = useState(false);
   const [reportSheet, setReportSheet] = useState(false);
   const [distSheet, setDistSheet] = useState(false);
@@ -718,13 +724,7 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
                   isCashier
                     ? () => {
                         haptic(10);
-                        const excess = paiseToRupees(cashBalance - cashLimit);
-                        setInitialCashData({
-                          direction: 'out',
-                          amount: String(excess),
-                          purpose: 'Deposit excess cash into bank',
-                        });
-                        setCashSheet(true);
+                        setDepositSheet({ suggest: cashBalance - cashLimit });
                       }
                     : undefined
                 }
@@ -735,17 +735,28 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
             )}
 
             {isCashier && (
-              <div className="btn-row">
+              <div className="btn-row stack">
                 <button
                   type="button"
                   className="primary block"
+                  disabled={cashBalance <= 0}
+                  onClick={() => {
+                    haptic(10);
+                    setDepositSheet({});
+                  }}
+                >
+                  <IconBank width={16} height={16} /> Deposit cash in bank
+                </button>
+                <button
+                  type="button"
+                  className="subtle block"
                   onClick={() => {
                     haptic(10);
                     setInitialCashData(undefined);
                     setCashSheet(true);
                   }}
                 >
-                  <IconPlus width={16} height={16} /> Record Cash Movement
+                  <IconPlus width={16} height={16} /> Record other cash movement
                 </button>
               </div>
             )}
@@ -869,6 +880,16 @@ export default function MoneyHub({ defaultTab }: { defaultTab?: HubTab }) {
       {/* ------------------------------------------------------- MODAL SHEETS */}
       {bankSheet && (
         <BankStatementSheet onClose={() => setBankSheet(false)} />
+      )}
+      {depositSheet && (
+        <DepositToBankSheet
+          heldPaise={cashBalance}
+          suggestPaise={depositSheet.suggest}
+          onClose={() => {
+            setDepositSheet(null);
+            if (params.has('deposit')) { params.delete('deposit'); setParams(params, { replace: true }); }
+          }}
+        />
       )}
       {cashSheet && (
         <CashMovementSheet initial={initialCashData} onClose={() => setCashSheet(false)} />

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useT, useLang } from '../lib/i18n';
+import { pushState, enablePush, disablePush, syncPushLanguage, type PushState } from '../lib/push';
 import { useSession } from '../context/SessionContext';
 import { useAppTheme, useGroupSwitcher } from '../App';
 import { supabase } from '../lib/supabase';
@@ -7,7 +9,7 @@ import {
   Sheet, List, Row, Field, Busy, ErrorNote, initials, Tag, roleLabel,
 } from './ui';
 import {
-  IconSun, IconMoon, IconLogout, IconUserEdit, IconSwitch,
+  IconSun, IconMoon, IconLogout, IconUserEdit, IconSwitch, IconBell,
 } from './icons';
 import { haptic } from '../lib/haptics';
 
@@ -21,6 +23,15 @@ export default function ProfileSheet({
   const { member, role, group, groups, signOut, refresh } = useSession();
   const openSwitcher = useGroupSwitcher();
   const { theme, setTheme } = useAppTheme();
+
+  const t = useT();
+  const [lang, setLang] = useLang();
+  const [pushSt, setPushSt] = useState<PushState>('unconfigured');
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) void pushState().then(setPushSt).catch(() => setPushSt('unsupported'));
+  }, [open]);
 
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(member?.full_name ?? '');
@@ -215,6 +226,42 @@ export default function ProfileSheet({
         />
 
         <Row
+          icon={<span style={{ fontWeight: 700, fontSize: '0.8rem' }}>{lang === 'te' ? 'తె' : 'En'}</span>}
+          iconTone="amber"
+          title={t('prof.lang')}
+          sub={t('prof.lang.sub')}
+          note={lang === 'te' ? 'తెలుగు' : 'English'}
+          onClick={() => {
+            haptic(10);
+            setLang(lang === 'te' ? 'en' : 'te');
+            void syncPushLanguage().catch(() => {});
+          }}
+        />
+
+        {pushSt !== 'unconfigured' && (
+          <Row
+            icon={<IconBell width={18} height={18} />}
+            iconTone={pushSt === 'on' ? 'mint' : undefined}
+            title={t('prof.notify')}
+            sub={pushSt === 'on' ? t('prof.notify.on')
+              : pushSt === 'blocked' ? t('prof.notify.blocked')
+                : pushSt === 'unsupported' ? t('prof.notify.unsupported')
+                  : pushSt === 'needs-install' ? t('prof.notify.ios')
+                    : t('prof.notify.off')}
+            note={pushBusy ? '…' : pushSt === 'on' ? 'On' : pushSt === 'off' ? 'Off' : undefined}
+            onClick={pushSt === 'on' || pushSt === 'off' ? () => {
+              haptic(10);
+              setPushBusy(true);
+              setPushError(null);
+              (pushSt === 'on' ? disablePush() : enablePush())
+                .then(setPushSt)
+                .catch((e: Error) => setPushError(e.message))
+                .finally(() => setPushBusy(false));
+            } : undefined}
+          />
+        )}
+
+        <Row
           icon={<IconLogout width={18} height={18} />}
           iconTone="coral"
           title="Sign out"
@@ -222,10 +269,13 @@ export default function ProfileSheet({
           onClick={() => {
             haptic(10);
             onClose();
-            void signOut();
+            // A phone passed to someone else must not keep receiving this
+            // person's digest.
+            void disablePush().catch(() => {}).finally(() => void signOut());
           }}
         />
       </List>
+      <ErrorNote error={pushError} />
     </Sheet>
   );
 }
