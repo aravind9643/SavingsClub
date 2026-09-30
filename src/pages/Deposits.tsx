@@ -731,12 +731,17 @@ function ReceiptSheet({
 }) {
   const [copied, setCopied] = useState(false);
 
+  const totalPaise = receipt.amountPaise + receipt.lateFeePaise;
+  const paidLine = receipt.lateFeePaise > 0
+    ? `${formatPaise(totalPaise)} (${formatPaise(receipt.amountPaise)} deposit + ${formatPaise(receipt.lateFeePaise)} late fee)`
+    : formatPaise(totalPaise);
+
   const text = `🧾 *Receipt — ${groupName}*
 *Name:* ${receipt.memberName}
 *Month:* ${receipt.month}
-*Paid:* ${formatPaise(receipt.amountPaise)} (${receipt.method.toUpperCase()})
-${receipt.note ? `*Note / Ref:* ${receipt.note}\n` : ''}${receipt.lateFeePaise > 0 ? `*Late fee:* ${formatPaise(receipt.lateFeePaise)}\n` : ''}*On:* ${fmtDate(receipt.paidOn)}
-${fundTotalPaise !== undefined ? `*Total fund now:* ${formatPaise(fundTotalPaise)}\n` : ''}
+*Paid:* ${paidLine} by ${receipt.method.toUpperCase()}
+${receipt.note ? `*Note / Ref:* ${receipt.note}\n` : ''}*On:* ${fmtDate(receipt.paidOn)}
+${fundTotalPaise !== undefined ? `*Group fund now:* ${formatPaise(fundTotalPaise)}\n` : ''}
 _Recorded on SavingsClub_`;
 
   function shareWhatsApp() {
@@ -758,7 +763,7 @@ _Recorded on SavingsClub_`;
     <Sheet open title="Payment receipt" onClose={onClose}>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
         <div style={{ fontSize: '1.8rem', fontWeight: 700, fontFamily: 'var(--display)' }}>
-          {formatPaise(receipt.amountPaise + receipt.lateFeePaise)}
+          {formatPaise(totalPaise)}
         </div>
         <p className="dim" style={{ marginTop: 4 }}>
           {receipt.memberName} · {receipt.month}
@@ -770,34 +775,28 @@ _Recorded on SavingsClub_`;
           <Row title="Payment date" note={fmtDate(receipt.paidOn)} />
           <Row title="Method" note={receipt.method.toUpperCase()} />
           {receipt.note && <Row title="Note / Ref" note={receipt.note} />}
-          <Row title="Amount paid" amount={formatPaise(receipt.amountPaise)} />
-          {receipt.lateFeePaise > 0 && (
-            <Row title="Late fee" amount={`+${formatPaise(receipt.lateFeePaise)}`} amountTone="coral" />
-          )}
-          {fundTotalPaise !== undefined && (
-            <Row title="Group fund total" amount={formatPaise(fundTotalPaise)} amountTone="mint" />
+          {receipt.lateFeePaise > 0 ? (
+            <>
+              <Row title="Deposit" amount={formatPaise(receipt.amountPaise)} />
+              <Row title="Late fee" amount={`+${formatPaise(receipt.lateFeePaise)}`} amountTone="coral" />
+              <Row title="Total paid" amount={formatPaise(totalPaise)} />
+            </>
+          ) : (
+            <Row title="Amount paid" amount={formatPaise(totalPaise)} />
           )}
         </List>
       </Panel>
 
+      {/* The whole group's balance, not this payment -- kept apart so it is
+          not read as the last line of the sum above. */}
+      {fundTotalPaise !== undefined && (
+        <p className="dim" style={{ textAlign: 'center', margin: '12px 0 0' }}>
+          Group fund now: <strong style={{ color: 'var(--mint)' }}>{formatPaise(fundTotalPaise)}</strong>
+        </p>
+      )}
+
       <div className="btn-row stack" style={{ marginTop: 20 }}>
-        <button
-          type="button"
-          className="sec-link"
-          style={{
-            background: '#25D366',
-            color: '#fff',
-            padding: '12px 18px',
-            borderRadius: 'var(--r-sm)',
-            fontWeight: 700,
-            fontSize: '0.92rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-          }}
-          onClick={shareWhatsApp}
-        >
+        <button type="button" className="whatsapp" onClick={shareWhatsApp}>
           <IconShare width={16} height={16} />
           Send Receipt on WhatsApp
         </button>

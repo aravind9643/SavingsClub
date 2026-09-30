@@ -802,6 +802,12 @@ button.row {
   position: absolute; left: 58px; right: 0; top: 0;
   height: 1px; background: var(--hairline-soft);
 }
+/* No icon: the divider starts where the text does, not under a missing
+   38px icon. */
+.row + .row:not(:has(> .row-ico))::before { left: 14px; }
+@media (max-width: 380px) { .row + .row:not(:has(> .row-ico))::before { left: 10px; } }
+/* A list inside a flush panel is one card, not a box within a box. */
+.panel.flush > .list { border: 0; border-radius: 0; background: transparent; }
 .row:hover { background: var(--surface-2); }
 .row:active { background: var(--surface-3); }
 .row.static { cursor: default; }
@@ -1309,6 +1315,9 @@ button.danger  { background: var(--coral);  border-color: var(--coral);  color: 
 button.ghost   { background: transparent; }
 button.block   { width: 100%; }
 button.lg      { padding: 14px 20px; font-size: 1rem; }
+/* WhatsApp's green, shaped like every other button. Dark text: white on
+   #25D366 is under 2:1. */
+button.whatsapp { background: #25D366; border-color: transparent; color: #062e16; }
 
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .btn-row.stack { flex-direction: column; }

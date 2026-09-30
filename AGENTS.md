@@ -458,7 +458,7 @@ Six rules, every one of which was learned by breaking a real push:
 The backfill block in `0012` returns early when `members` is empty, so it is a
 no-op on a fresh database.
 
-### Applied & Prepared Migrations (0001–0048)
+### Applied & Prepared Migrations (0001–0049)
 
 | Migration | Name | Description |
 |---|---|---|
@@ -510,6 +510,7 @@ no-op on a fresh database.
 | `0046` | `upi_claims_bank_deposit.sql` | `deposit_cash_to_bank()`; `groups.upi_id` + `set_group_upi()`; `payment_claims` — a member's "I've paid", confirmed through `record_contribution()` by the *other* money officer |
 | `0047` | `push_notifications.sql` | `push_subscriptions` (own-row read, RPC writes, endpoint must be a push service); service-role `notifications_due()` that impersonates each member and reads the screens' own views |
 | `0048` | `preview_invite_for_non_members.sql` | `preview_invite()` counts members inline instead of via the guarded `active_member_count()`, which had refused every joiner since 0037 |
+| `0049` | `claims_include_late_fee.sql` | `payment_quote()`; a claim includes the late fee instead of having it added on top at confirmation, so the fund grows by exactly what arrived |
 
 ### Payments, claims and notifications (0046–0047)
 
@@ -520,6 +521,13 @@ no-op on a fresh database.
   Pending claims DO count against what a member may still claim, or two claims
   for the same month would both look payable. The officer who made a payment
   cannot confirm it.
+- **A claim is the total that arrived, late fee inside it (0049).** For cash,
+  `record_contribution()` adds the fee on top because the cashier collects
+  both. A claim must not: 0046 did, and a late ₹500 UPI payment was booked as
+  ₹550. `payment_quote()` is the one place that says what to send (deposit +
+  fee if late − pending claims); the pay sheet, the UPI link and the claim cap
+  all use it. `confirm_payment_claim()` takes the fee out first and refuses if
+  amount + fee ≠ the claim.
 - **UPI money goes to the bank, not the float** — `record_contribution` only
   writes `cash_ledger` for `method = 'cash'`. `groups.upi_id` should be a VPA on
   the group's bank account for that to stay true.
@@ -858,5 +866,5 @@ When touching database schema or migrations:
 - Dry run migrations: `npx supabase db push --dry-run`
 - Push migrations: `npx supabase db push --yes` (never use `db reset` without explicit user permission).
 - **A new table is not audited, or live, until a migration says so.** `fn_attach_audit_triggers()` only runs when called, and `supabase_realtime` only carries the tables added to it: 0025–0030 shipped six tables with neither, and nothing failed. A migration that creates a table must call `fn_attach_audit_triggers()` (0045), and add the table to 0044's publication list if FundContext listens to it. `assertions.sql` check 5 catches the first.
-- Remote status: Migrations 0001–0045 are applied on the remote database; 0046–0048 are written and pending a push.
+- Remote status: Migrations 0001–0047 are applied on the remote database; 0048–0049 are written and pending a push.
 - Unit tests: `npm run test:unit` (money conversion, fund history, CSV, UPI links, translations, Web Push crypto). Tables like `distributions`, `distribution_lines`, `meetings`, `meeting_attendance`, `member_payouts` and `loan_instalments` (created by `0027_loan_schedule.sql` — the file is named for the concept, the table is not) and their RPCs are live.

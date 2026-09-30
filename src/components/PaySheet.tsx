@@ -10,6 +10,8 @@ import { haptic } from '../lib/haptics';
 import { Sheet, Field, Busy, ErrorNote, Notice } from './ui';
 import type { UnpaidRow, PaymentClaim } from '../lib/types';
 
+type Quote = { due: number; fee: number; pending: number; toPay: number };
+
 /**
  * Paying a month, for the member who owes it.
  *
@@ -43,7 +45,27 @@ export default function PaySheet({ onClose }: { onClose: () => void }) {
   const pending = (claimsQ.data ?? [])
     .filter((c) => c.period_id === period?.period_id)
     .reduce((s, c) => s + c.amount_paise, 0);
-  const owed = Math.max(0, (period?.shortfall_paise ?? 0) - pending);
+
+  // What to send today, late fee included, from the same function that caps
+  // the claim (payment_quote, 0049). Asking for the deposit alone let a late
+  // payment be confirmed as deposit + fee -- Rs.50 the bank never received.
+  const quoteQ = useQuery<Quote | null>(
+    period ? `fund:quote:${period.period_id}:${today()}` : null,
+    async () => {
+      const { data, error } = await supabase.rpc('payment_quote', { p_period_id: period!.period_id });
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, number | string> | undefined;
+      if (!row) return null;
+      return {
+        due: Number(row.due_paise), fee: Number(row.late_fee_paise),
+        pending: Number(row.pending_paise), toPay: Number(row.to_pay_paise),
+      };
+    },
+  );
+  const quote = quoteQ.data ?? null;
+  const owed = quote ? quote.toPay : 0;
+  // The fee is shown only while it is still part of what to send.
+  const fee = quote && quote.toPay > 0 ? quote.fee : 0;
 
   const vpa = config?.upi_id ?? null;
   const payee = config?.upi_payee_name || group?.name || 'SavingsClub';
@@ -107,7 +129,7 @@ export default function PaySheet({ onClose }: { onClose: () => void }) {
 
   return (
     <Sheet open title={title} onClose={onClose}>
-      {!period || (unpaidQ.data && owed === 0 && pending === 0) ? (
+      {!period || (quote && owed === 0 && pending === 0) ? (
         <Notice tone="good">{t('pay.nothing')}</Notice>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -116,9 +138,15 @@ export default function PaySheet({ onClose }: { onClose: () => void }) {
               {t('pay.owed')}
             </div>
             <div style={{ fontFamily: 'var(--display)', fontSize: '2.2rem', fontWeight: 800 }}>
-              {formatPaise(owed)}
+              {quote ? formatPaise(owed) : '…'}
             </div>
+            {fee > 0 && (
+              <div className="dim" style={{ marginTop: 2 }}>
+                {t('pay.fee', { deposit: formatPaise(owed - fee), fee: formatPaise(fee) })}
+              </div>
+            )}
           </div>
+          <ErrorNote error={quoteQ.error} />
 
           {(claimsQ.data ?? []).map((c) => (
             <Notice key={c.id} tone="info">
