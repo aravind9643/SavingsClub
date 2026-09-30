@@ -602,6 +602,12 @@ function RecordSheet({
   // charge that will not happen.
   const willCharge =
     new Date(paidOn) > new Date(period.grace_date) && feesAlreadyCharged === 0;
+  const feePaise = willCharge ? (config?.late_fee_paise ?? 0) : 0;
+  const depositPaise = amount ? rupeesToPaise(amount) : 0;
+  // What changes hands. The fee goes on top of the typed deposit, so the
+  // button must say the total -- "Record Rs.500" that books Rs.550 is how a
+  // cashier ends up Rs.50 short at the count.
+  const totalPaise = depositPaise + feePaise;
 
   const save = useMutation(
     async () => {
@@ -663,7 +669,8 @@ function RecordSheet({
       <AmountField value={amount} onChange={setAmount} autoFocus />
 
       <p className="dim" style={{ marginTop: 8, fontSize: '0.85rem' }}>
-        A part payment is fine — record the rest whenever it arrives.
+        The deposit only{feePaise > 0 ? ' — the late fee is added for you' : ''}. A part
+        payment is fine; record the rest whenever it arrives.
       </p>
 
       <div className="field-row" style={{ marginTop: 14 }}>
@@ -679,19 +686,33 @@ function RecordSheet({
         </Field>
       </div>
 
-      <Field label="Note / Reference (optional)">
-        <input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="UPI reference, cheque no. or note"
-        />
-      </Field>
+      <div style={{ marginTop: 14 }}>
+        <Field label={method === 'cash' ? 'Note (optional)' : 'Reference (optional)'}>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={
+              method === 'upi' ? 'UPI transaction ID'
+                : method === 'bank' ? 'Bank reference or cheque no.'
+                : 'Anything worth remembering'
+            }
+          />
+        </Field>
+      </div>
 
-      {willCharge && (
+      {feePaise > 0 && (
         <div style={{ marginTop: 14 }}>
           <Notice tone="warn">
-            This is after {fmtDate(period.grace_date)}, so a late fee of{' '}
-            {formatPaise(config?.late_fee_paise ?? 0)} is added.
+            Paid after {fmtDate(period.grace_date)}, so a {formatPaise(feePaise)} late fee is
+            added.{' '}
+            {depositPaise > 0 && (
+              <>
+                {method === 'cash' ? 'Collect ' : 'Check that '}
+                <strong>{formatPaise(totalPaise)}</strong>
+                {method === 'cash' ? ' in all' : ' arrived'} ({formatPaise(depositPaise)} deposit
+                {' '}+ {formatPaise(feePaise)} fee).
+              </>
+            )}
           </Notice>
         </div>
       )}
@@ -708,10 +729,10 @@ function RecordSheet({
         <Busy
           className="primary lg"
           pending={save.pending}
-          disabled={!amount}
+          disabled={!depositPaise}
           onClick={() => void save.run()}
         >
-          Record {amount ? formatPaise(rupeesToPaise(amount)) : 'payment'}
+          Record {depositPaise ? formatPaise(totalPaise) : 'payment'}
         </Busy>
       </div>
     </Sheet>
