@@ -458,7 +458,7 @@ Six rules, every one of which was learned by breaking a real push:
 The backfill block in `0012` returns early when `members` is empty, so it is a
 no-op on a fresh database.
 
-### Applied & Prepared Migrations (0001–0047)
+### Applied & Prepared Migrations (0001–0048)
 
 | Migration | Name | Description |
 |---|---|---|
@@ -509,6 +509,7 @@ no-op on a fresh database.
 | `0045` | `audit_late_tables.sql` | Attaches `trg_audit` to the six tables created after 0012 (payouts, share-outs, schedules, meetings), which were never audited |
 | `0046` | `upi_claims_bank_deposit.sql` | `deposit_cash_to_bank()`; `groups.upi_id` + `set_group_upi()`; `payment_claims` — a member's "I've paid", confirmed through `record_contribution()` by the *other* money officer |
 | `0047` | `push_notifications.sql` | `push_subscriptions` (own-row read, RPC writes, endpoint must be a push service); service-role `notifications_due()` that impersonates each member and reads the screens' own views |
+| `0048` | `preview_invite_for_non_members.sql` | `preview_invite()` counts members inline instead of via the guarded `active_member_count()`, which had refused every joiner since 0037 |
 
 ### Payments, claims and notifications (0046–0047)
 
@@ -741,6 +742,13 @@ DEFINER, and RLS is exactly what SECURITY DEFINER turns off.
 `fn_assert_member_of()` is now the single home for the rule — and it checks
 **membership, not the claim**, because the attack *is* a forged claim.
 
+The flip side: **a function meant for non-members must not call a guarded
+aggregate.** `preview_invite()` (run by someone who is joining, so never yet a
+member) called `active_member_count()`, and from 0037 to 0048 every invite
+answered "You are not a member of this group". Nobody could join. It counts
+inline now, and `Club.joins()` in the scenarios previews before joining, as
+the app does.
+
 ## The developer console (`/admin`) never holds a key
 
 `/admin` bypasses RLS, so it must not run in the browser with the
@@ -850,5 +858,5 @@ When touching database schema or migrations:
 - Dry run migrations: `npx supabase db push --dry-run`
 - Push migrations: `npx supabase db push --yes` (never use `db reset` without explicit user permission).
 - **A new table is not audited, or live, until a migration says so.** `fn_attach_audit_triggers()` only runs when called, and `supabase_realtime` only carries the tables added to it: 0025–0030 shipped six tables with neither, and nothing failed. A migration that creates a table must call `fn_attach_audit_triggers()` (0045), and add the table to 0044's publication list if FundContext listens to it. `assertions.sql` check 5 catches the first.
-- Remote status: Migrations 0001–0045 are applied on the remote database; 0046–0047 are written and pending a push.
+- Remote status: Migrations 0001–0045 are applied on the remote database; 0046–0048 are written and pending a push.
 - Unit tests: `npm run test:unit` (money conversion, fund history, CSV, UPI links, translations, Web Push crypto). Tables like `distributions`, `distribution_lines`, `meetings`, `meeting_attendance`, `member_payouts` and `loan_instalments` (created by `0027_loan_schedule.sql` — the file is named for the concept, the table is not) and their RPCs are live.

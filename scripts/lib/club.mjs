@@ -270,6 +270,11 @@ export class Club {
     const email = `${name.toLowerCase().replace(/\W+/g, '')}.${uniq()}@test.invalid`;
     const user = await this.driver.createUser(email);
     const m = new Member(this, user, name);
+    // The app previews first; a joiner is not a member yet, so this is the
+    // call a membership guard breaks (0048).
+    const preview = await this.driver.rpc(user, null, 'preview_invite', { p_code: code });
+    const row = Array.isArray(preview) ? preview[0] : preview;
+    if (!row?.valid) throw new Error(`preview_invite refused a good code: ${row?.reason}`);
     await this.driver.rpc(user, null, 'join_group_with_code', {
       p_code: code,
       p_full_name: name,
