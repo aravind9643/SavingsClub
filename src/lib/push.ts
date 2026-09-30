@@ -34,10 +34,13 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
 }
 
 export async function pushState(): Promise<PushState> {
+  // First: with no key the feature is off for everyone, and the Profile row
+  // is hidden -- not "add to Home Screen" or "unsupported" for a feature that
+  // does not exist yet.
+  if (!PUBLIC_KEY) return 'unconfigured';
   // iPhone Safari offers push only to an app added to the Home Screen.
   if (isIos() && !isStandalone()) return 'needs-install';
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported';
-  if (!PUBLIC_KEY) return 'unconfigured';
   if (Notification.permission === 'denied') return 'blocked';
   const reg = await registration();
   const sub = await reg?.pushManager.getSubscription();
